@@ -80,6 +80,29 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// 영구 디스크가 없는 환경(Render 무료 플랜 등)에서는 슬립·재배포마다 DB가 비워진다.
+// 시연용 예시 신고(data.seed.json)가 있으면 DB가 없을 때만 1회 주입해,
+// 깨어난 직후에도 화면이 비어 보이지 않게 한다.
+// 이미 DB 파일이 있으면 절대 건드리지 않으므로 실제 접수 데이터를 덮어쓰지 않는다.
+function seedReportsIfEmpty() {
+  try {
+    if (fs.existsSync(DB_FILE)) return;
+
+    const seedFile = path.join(process.cwd(), "data.seed.json");
+    if (!fs.existsSync(seedFile)) return;
+
+    const parsed = JSON.parse(fs.readFileSync(seedFile, "utf-8"));
+    if (!Array.isArray(parsed) || parsed.length === 0) return;
+
+    fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
+    console.log(`[seed] 예시 신고 ${parsed.length}건을 주입했습니다.`);
+  } catch (err) {
+    console.error("[seed] 시드 데이터 주입 실패:", err);
+  }
+}
+
+seedReportsIfEmpty();
+
 function isEmailAdmin(email?: string | null): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
