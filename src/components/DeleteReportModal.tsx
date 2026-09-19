@@ -107,7 +107,7 @@ export function DeleteReportModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-y-auto max-h-[calc(100vh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200">

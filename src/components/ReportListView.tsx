@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Search,
   Sparkles,
@@ -97,6 +98,14 @@ export function ReportListView({
     () => ISSUE_CATEGORIES.filter((c) => source.some((r) => r.category === c)),
     [source]
   );
+
+  // 탭을 바꾸면 이전 탭에만 있던 카테고리가 선택된 채로 남는다.
+  // 그러면 select 가 빈칸으로 보이고 목록도 비는데 이유를 알 수 없으므로 초기화한다.
+  useEffect(() => {
+    if (filters.category !== "ALL" && !availableCategories.includes(filters.category as never)) {
+      setField("category", "ALL");
+    }
+  }, [availableCategories, filters.category, setField]);
 
   const handleAiSummary = async () => {
     if (isSummarizing) return; // 중복 요청 방지 (§22)
@@ -342,15 +351,22 @@ export function ReportListView({
         error={summaryError}
       />
 
-      {/* 인쇄 / PDF 전용 문서 — 화면에서는 숨기고 @media print 에서만 표시한다.
-          현재 필터가 적용된 목록을 그대로 내보낸다. */}
-      <div id="schoolfix-print-document" className="hidden print:block">
-        <ReportPdfDocument
-          reports={filtered}
-          stats={exportStats}
-          summary={summaryData?.summary ?? null}
-        />
-      </div>
+      {/*
+        인쇄 / PDF 전용 문서.
+        document.body 직계로 렌더링해야 @media print 에서
+        나머지 UI 만 display:none 으로 끌 수 있다(빈 페이지 방지).
+        현재 필터가 적용된 목록과 그 목록에서 계산한 통계를 그대로 내보낸다.
+      */}
+      {createPortal(
+        <div id="schoolfix-print-document" className="hidden print:block">
+          <ReportPdfDocument
+            reports={filtered}
+            stats={exportStats}
+            summary={summaryData?.summary ?? null}
+          />
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

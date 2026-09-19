@@ -1,89 +1,30 @@
 @import "tailwindcss";
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-/* Prevent background page scrolling when modal is open */
+/* 모달이 열려 있는 동안 뒤 페이지가 스크롤되지 않게 한다 */
 body.modal-open {
   overflow: hidden !important;
   overscroll-behavior: none;
 }
 
-/* Modal internal scrollbar refinement to prevent content crowding */
-.custom-modal-scrollbar {
-  scrollbar-gutter: stable;
-}
-
-.custom-modal-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.custom-modal-scrollbar::-webkit-scrollbar-track {
-  background: #f8fafc;
-  border-radius: 4px;
-}
-
-.custom-modal-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-.custom-modal-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Dedicated Print Stylesheet for SchoolFix PDF Report Document */
+/*
+ * 인쇄 / PDF 저장
+ *
+ * 인쇄 문서는 createPortal 로 document.body 바로 아래에 렌더링된다.
+ * 덕분에 "body 의 직계 자식 중 인쇄 문서가 아닌 것"만 display:none 으로 끄면 된다.
+ *
+ * 이전에는 body * { visibility: hidden } 으로 모든 요소를 숨겼는데,
+ * visibility 로 숨긴 요소는 자리를 그대로 차지하기 때문에
+ * 보고서 뒤에 빈 페이지가 여러 장 딸려 나왔다.
+ */
 @media print {
-  /*
-   * 인쇄 문서가 화면에 있을 때만 나머지 UI 를 숨긴다.
-   * :has() 가드가 없으면 신고 목록이 아닌 화면(홈, 신고 작성)에서 Ctrl+P 를 눌렀을 때
-   * #schoolfix-print-document 가 없는데 body 전체가 숨겨져 완전히 빈 페이지가 인쇄된다.
-   */
-  body:has(#schoolfix-print-document) * {
-    visibility: hidden !important;
-  }
-
-  /* Exclusively reveal the dedicated PDF report document */
-  #schoolfix-print-document,
-  #schoolfix-print-document * {
-    visibility: visible !important;
+  body:has(#schoolfix-print-document) > *:not(#schoolfix-print-document) {
+    display: none !important;
   }
 
   #schoolfix-print-document {
     display: block !important;
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
-    min-height: 100% !important;
-    margin: 0 !important;
-    padding: 12mm 10mm !important;
-    background: #ffffff !important;
-    color: #0f172a !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    overflow: visible !important;
-    z-index: 99999 !important;
-  }
-
-  /* Prevent awkward page breaks inside report cards/tables */
-  .pdf-section-avoid-break {
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
+    background: #ffffff;
+    color: #0f172a;
   }
 
   @page {

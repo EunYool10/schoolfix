@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   X,
   MapPin,
@@ -37,6 +37,7 @@ export function ReportDetailModal({
 }: ReportDetailModalProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -54,6 +55,19 @@ export function ReportDetailModal({
   useEffect(() => {
     setIsMenuOpen(false);
   }, [report?.id]);
+
+  // 더보기 메뉴는 바깥을 클릭하면 닫혀야 한다.
+  // 이 처리가 없으면 메뉴가 열린 채로 남아 본문 위를 계속 가린다.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [isMenuOpen]);
 
   if (!isOpen || !report) return null;
 
@@ -85,7 +99,7 @@ export function ReportDetailModal({
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">{report.id}</span>
               </div>
-              <h3 className="text-base font-bold text-slate-900 truncate">
+              <h3 className="text-base font-bold text-slate-900 break-keep">
                 {report.title || `${report.location} ${report.category}`}
               </h3>
             </div>
@@ -93,7 +107,7 @@ export function ReportDetailModal({
             <div className="flex items-center gap-1 shrink-0">
               {/* 삭제는 보조 액션이다. 더보기 메뉴 안에 두어 강조하지 않는다(§3, §31). */}
               {onRequestDelete && (
-                <div className="relative">
+                <div className="relative" ref={menuRef}>
                   <button
                     type="button"
                     onClick={() => setIsMenuOpen((v) => !v)}
@@ -225,7 +239,7 @@ function InfoCell({
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
       </div>
-      <p className="mt-1 font-bold text-slate-900 text-sm truncate">{value}</p>
+      <p className="mt-1 font-bold text-slate-900 text-sm break-keep">{value}</p>
     </div>
   );
 }

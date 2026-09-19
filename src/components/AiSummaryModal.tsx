@@ -43,10 +43,10 @@ export function AiSummaryModal({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200 bg-slate-50 shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-blue-600" />
             <h3 className="text-sm font-bold text-slate-900">AI 신고 요약</h3>
@@ -61,7 +61,7 @@ export function AiSummaryModal({
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 overflow-y-auto min-h-0">
           {isLoading && (
             <div className="py-10 text-center space-y-3">
               <Loader2 className="h-6 w-6 text-blue-600 animate-spin mx-auto" />
