@@ -1,20 +1,136 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# SchoolFix — 학교 불편사항 신고 및 시설 안전 관리
 
-# Run and deploy your AI Studio app
+학생이 교내 시설 문제를 신고하면, 담당 부서가 처리 현황을 관리하고, AI가 누적된 신고를 분석해 안전 리포트를 만들어 주는 웹 서비스입니다.
 
-This contains everything you need to run your app locally.
+"복도 타일이 들떠서 넘어질 뻔했다" 같은 제보가 종이나 구두로 흩어지지 않고, 접수번호와 처리 이력이 남는 기록으로 관리되는 것을 목표로 합니다.
 
-View your app in AI Studio: https://ai.studio/apps/29952aa3-35e7-43cc-8ca6-f9b8f863f9a7
+---
 
-## Run Locally
+## 무엇을 할 수 있나
 
-**Prerequisites:**  Node.js
+### 학생·교직원
 
+- **신고 접수** — 위치(교실·복도·화장실 등 10종)와 문제 종류(시설 고장·안전 위험·위생 문제 등 7종)를 고르고 내용을 작성합니다. 사진 첨부(최대 8MB)와 **익명 접수**를 지원합니다.
+- **작성 도우미** — 상황별 예시 문구 10종을 제공해, 무엇을 어떻게 써야 할지 막막한 학생도 버튼 한 번으로 초안을 채울 수 있습니다.
+- **내 신고 내역** — 본인이 접수한 신고의 처리 단계를 타임라인으로 확인합니다. 익명으로 넣어도 브라우저에 접수번호가 남아 결과를 추적할 수 있습니다.
+- **전체 진행상황** — 학교 전체의 신고 처리 현황을 봅니다. 이 화면에는 **신고자 이름·이메일·관리자 메모가 일절 포함되지 않습니다.**
 
-1. Install dependencies:
-   `npm install`
-2. Set the `OPENAI_API_KEY` in [.env.local](.env.local) to your OpenAI API key
-3. Run the app:
-   `npm run dev`
+### 관리자
+
+- **신고 관리** — 검색, 상태·우선순위·위치별 필터, 정렬. 담당 부서(시설관리실·행정실·학생안전부 등) 배정, 조치 내용 기록, 삭제.
+- **처리 단계** — `접수 대기 → 확인 중 → 처리 중 → 처리 완료` 4단계. 각 단계 전환 시각이 자동 기록되어 타임라인으로 남습니다.
+- **AI 안전 리포트** — 누적된 신고를 전수 분석해 위험 우선순위, 취약 구역(hotspot), 반복 발생 패턴, 권고 조치를 정리합니다. 인쇄/PDF 저장과 HTML 내보내기를 지원합니다.
+
+AI가 존재하지 않는 신고를 지어내지 않도록, 서버가 응답에서 **실제 DB에 없는 접수번호를 걸러내고 통계를 다시 계산**합니다. API 키가 없거나 호출이 실패하면 키워드 기반의 결정론적 분석으로 대체되어 화면이 비지 않습니다.
+
+---
+
+## 기술 구성
+
+| 영역 | 사용 기술 |
+|---|---|
+| 프론트엔드 | React 19, TypeScript, Tailwind CSS 4, Vite 8 |
+| 백엔드 | Express 4 (단일 파일 `server.ts`) |
+| 저장소 | JSON 파일 (`data/*.json`) |
+| 인증 | Google Identity Services (ID 토큰 서버 검증 + 세션 토큰) |
+| AI | OpenAI `gpt-5.6-terra` → `gpt-5.6-luna` 폴백 |
+
+별도 DB 없이 JSON 파일에 기록하므로 설치가 간단합니다. 대신 대량 트래픽이나 다중 인스턴스에는 적합하지 않습니다.
+
+---
+
+## 로컬에서 실행하기
+
+**필요한 것:** Node.js 20 이상
+
+```bash
+npm install
+npm run dev
+```
+
+`http://localhost:3000` 에서 열립니다.
+
+AI 분석과 Google 로그인을 쓰려면 `.env.local` 파일을 만들고 값을 채웁니다. (`.env.example` 참고)
+
+```bash
+OPENAI_API_KEY="sk-..."
+GOOGLE_CLIENT_ID="...apps.googleusercontent.com"
+```
+
+키가 없어도 **신고 접수·조회·전체 진행상황은 그대로 동작합니다.** AI 분석 탭과 관리자 로그인만 비활성화됩니다.
+
+### 환경 변수
+
+| 변수 | 필수 | 설명 |
+|---|---|---|
+| `OPENAI_API_KEY` | AI 분석 시 | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) 에서 발급 |
+| `GOOGLE_CLIENT_ID` | 로그인 시 | Google Cloud Console → OAuth 2.0 클라이언트 ID. **승인된 JavaScript 원본**에 접속 주소를 등록해야 합니다 |
+| `ADMIN_EMAILS` | 선택 | 관리자 이메일 목록(쉼표 구분) |
+| `PORT` | 선택 | 기본 3000. 호스팅 플랫폼이 자동 주입 |
+| `DATA_DIR` | 선택 | JSON 저장 경로. 영구 디스크를 쓸 때 지정 |
+
+### 명령어
+
+```bash
+npm run dev     # 개발 서버 (Vite HMR)
+npm run lint    # 타입 검사 (tsc --noEmit)
+npm run build   # 프로덕션 빌드
+npm start       # 빌드 결과 실행
+```
+
+---
+
+## 프로젝트 구조
+
+```
+server.ts              Express 서버 전체 (API, 인증, AI 분석)
+data.seed.json         시연용 예시 신고 — DB가 비어 있을 때만 주입
+src/
+  App.tsx              전역 상태, 인증, API 호출
+  types.ts             타입 정의, 상태/우선순위 표시 규칙
+  components/          화면 21종 (뷰 5 + 모달 8 + 공용)
+  data/formExamples.ts 신고 작성 예시 문구
+  utils/               AI 분석 실패 시 대체 로직
+data/                  JSON 저장소 (git 제외 — 개인정보 포함)
+```
+
+---
+
+## API
+
+| 메서드 | 경로 | 권한 | 설명 |
+|---|---|---|---|
+| GET | `/api/health` | 공개 | 상태 확인 |
+| GET | `/api/reports/overall` | 공개 | 전체 현황 (개인정보 제거) |
+| GET | `/api/reports` | 세션 | 관리자는 원본, 그 외는 본인 신고만 원본 |
+| GET | `/api/reports/my` | 세션 | 내 신고 목록 |
+| POST | `/api/reports` | 공개 | 신고 접수 (익명 허용) |
+| PATCH | `/api/reports/:id` | 본인/관리자 | 신고 내용 수정 |
+| PATCH | `/api/reports/:id/process` | 관리자 | 담당자·조치내용·상태 일괄 처리 |
+| DELETE | `/api/reports/:id` | 관리자 | 신고 삭제 |
+| POST | `/api/ai/analyze` | 관리자 | AI 안전 리포트 생성 |
+
+인증은 `Authorization: Bearer <세션 토큰>` 헤더로 전달합니다. 토큰은 Google 로그인 성공 시 서버가 발급하며 30일간 유효합니다.
+
+---
+
+## 배포
+
+[`render.yaml`](render.yaml) 이 포함되어 있어 Render에서 **New → Blueprint** 로 저장소를 연결하면 자동 구성됩니다. `OPENAI_API_KEY` 와 `GOOGLE_CLIENT_ID` 는 저장소에 커밋하지 않고 대시보드에서 입력합니다.
+
+배포 후 `https://<주소>/api/health` 가 `{"status":"ok"}` 를 반환하면 정상입니다.
+
+### 무료 플랜을 쓸 때
+
+- 15분간 요청이 없으면 서비스가 잠들고, 다음 접속에 30~60초가 걸립니다.
+- 영구 디스크를 쓸 수 없어 **재시작·재배포 시 저장된 신고와 계정이 초기화됩니다.** 이때 `data.seed.json` 의 예시 신고가 자동 복원되어 화면이 비지는 않습니다.
+
+데이터를 계속 보관하려면 유료 플랜에서 영구 디스크를 붙이거나(`render.yaml` 의 주석 참고), JSON 파일 대신 외부 데이터베이스를 연결해야 합니다.
+
+---
+
+## 알아두어야 할 점
+
+이 프로젝트는 **교내 시연과 소규모 운영을 염두에 둔 구성**입니다. 실제 학생 개인정보를 다루므로, 상시 운영으로 전환할 계획이라면 인증 경로 점검과 데이터 백업 체계를 먼저 갖추는 것을 권장합니다.
+
+`data/` 폴더에는 신고자 이름과 이메일이 저장되며 git에 포함되지 않습니다.
