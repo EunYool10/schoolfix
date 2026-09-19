@@ -1,0 +1,20 @@
+{
+  "short_name": "SchoolFix",
+  "name": "SchoolFix - 학교 불편사항 신고 및 시설 안전 관리",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#1d4ed8",
+  "display": "standalone"
+}

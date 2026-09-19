@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Prevent background page scrolling when modal is open */
+body.modal-open {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+/* Modal internal scrollbar refinement to prevent content crowding */
+.custom-modal-scrollbar {
+  scrollbar-gutter: stable;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-radius: 4px;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.custom-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dedicated Print Stylesheet for SchoolFix PDF Report Document */
+@media print {
+  /* Hide all regular UI including navigation, modals backdrop, buttons */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Exclusively reveal the dedicated PDF report document */
+  #schoolfix-print-document,
+  #schoolfix-print-document * {
+    visibility: visible !important;
+  }
+
+  #schoolfix-print-document {
+    display: block !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    min-height: 100% !important;
+    margin: 0 !important;
+    padding: 12mm 10mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    z-index: 99999 !important;
+  }
+
+  /* Prevent awkward page breaks inside report cards/tables */
+  .pdf-section-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+}

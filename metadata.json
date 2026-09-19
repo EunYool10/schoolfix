@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix SchoolFix - 학교 불편사항 신고 및 시설 안전 관리",
+  "description": "학생들의 교내 불편 및 시설 안전 위험을 신고 접수하고 실제 데이터에 기반하여 처리 및 관리하는 신뢰성 있는 학교 시설 안전 관리 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

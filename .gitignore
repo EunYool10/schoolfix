@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# JSON 데이터베이스: 학생 실명/이메일 등 개인정보가 저장되므로 커밋하지 않는다.
+# 운영 환경에서는 영구 디스크(DATA_DIR)에 보관하며, 없으면 서버가 부팅 시 생성한다.
+data/

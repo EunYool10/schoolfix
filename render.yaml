@@ -1,0 +1,43 @@
+# Render 배포 설정 (Blueprint)
+# 대시보드에서 "New > Blueprint"로 저장소를 연결하면 이 파일대로 구성됩니다.
+#
+# 중요: disk 는 유료 플랜(Starter 이상)에서만 사용할 수 있습니다.
+# 무료 플랜으로 올리면 파일시스템이 휘발성이라 재배포·재시작마다
+# 신고/사용자/세션 데이터가 모두 사라집니다.
+
+services:
+  - type: web
+    name: schoolfix
+    runtime: node
+    plan: starter # 영구 디스크에 필요. free 로 바꾸면 disk 항목을 지워야 합니다.
+    region: singapore # 한국에서 가장 가까운 리전
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+
+    # 영구 디스크: 여기에 data/*.json 이 저장됩니다.
+    disk:
+      name: schoolfix-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # server.ts 가 이 경로에 JSON DB를 읽고 씁니다. 위 mountPath 와 반드시 일치시킵니다.
+      - key: DATA_DIR
+        value: /var/data
+
+      # 관리자 이메일 (쉼표 구분). server.ts 의 DEFAULT_ADMIN_EMAILS 에 추가되는 개념입니다.
+      - key: ADMIN_EMAILS
+        value: eunyool100208@gmail.com,studioteamdeer@gmail.com
+
+      # 아래 두 개는 값을 커밋하지 않습니다.
+      # Render 대시보드 > Environment 에서 직접 입력하세요.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+    # PORT 는 Render 가 자동 주입하며 server.ts 가 process.env.PORT 로 읽습니다.
