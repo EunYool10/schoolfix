@@ -31,15 +31,12 @@ services:
       - key: NODE_ENV
         value: production
 
-      # 관리자 이메일 (쉼표 구분). server.ts 의 DEFAULT_ADMIN_EMAILS 에 추가되는 개념입니다.
-      - key: ADMIN_EMAILS
-        value: eunyool100208@gmail.com,studioteamdeer@gmail.com
-
-      # 아래 두 개는 값을 커밋하지 않습니다.
-      # Render 대시보드 > Environment 에서 직접 입력하세요.
+      # 아래 두 값은 커밋하지 않습니다 — Render 대시보드 > Environment 에서 직접 입력하세요.
       - key: OPENAI_API_KEY
         sync: false
-      - key: GOOGLE_CLIENT_ID
+      # 신고 삭제에 필요한 관리자 비밀번호의 bcrypt 해시.
+      # 이 항목이 없으면 삭제 기능이 영구히 503 을 반환한다.
+      - key: ADMIN_PASSWORD_HASH
         sync: false
 
       # ── 유료 플랜으로 올릴 때 활성화 (위 mountPath 와 일치시킬 것) ──

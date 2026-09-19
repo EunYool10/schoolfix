@@ -92,7 +92,12 @@ function sanitizeForPrompt(text: string): string {
     .slice(0, 500); // 과도한 입력 크기 제한 (§27)
 }
 
-export function buildSummaryPrompt(reports: AiReportInput[], stats: ReportStatistics): string {
+/**
+ * AI 에게는 통계를 전달하지 않는다.
+ * 숫자를 보여주면 요약 문장에 건수를 섞어 쓰게 되고, 그 값이 서버 계산과 어긋날 수 있다.
+ * 통계는 서버가 따로 계산해 화면에 표시한다(§20).
+ */
+export function buildSummaryPrompt(reports: AiReportInput[]): string {
   const blocks = reports
     .slice(0, 60) // 입력 크기 상한
     .map(
@@ -114,7 +119,6 @@ ${blocks}
 
 export async function generateAiSummary(
   reports: AiReportInput[],
-  stats: ReportStatistics,
   apiKey: string
 ): Promise<AiSummaryResult> {
   const { default: OpenAI } = await import("openai");
@@ -128,7 +132,7 @@ export async function generateAiSummary(
         model,
         messages: [
           { role: "system", content: SUMMARY_SYSTEM_PROMPT },
-          { role: "user", content: buildSummaryPrompt(reports, stats) },
+          { role: "user", content: buildSummaryPrompt(reports) },
         ],
         response_format: {
           type: "json_schema",

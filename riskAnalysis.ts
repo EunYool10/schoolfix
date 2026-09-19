@@ -123,6 +123,12 @@ export function computeRepeatBonus(
   return 2;
 }
 
+/** 등급이 바뀌는 점수 경계 */
+const BAND_BOUNDARIES = [25, 50, 75];
+
+/** 경계에서 이 점수 이내면 판정이 불안정하다고 본다 */
+const BOUNDARY_MARGIN = 3;
+
 /**
  * §12 — 점수 구간으로 등급을 정한다.
  *   0~24 낮음 / 25~49 중간 / 50~74 높음 / 75~100 긴급
@@ -150,7 +156,14 @@ export function resolveRiskLevel(
   }
 
   const level = scoreToLevel(score);
-  return { level, forceHumanReview: level === "긴급" };
+
+  // 구간 경계에 가까운 점수는 담당자 검토로 넘긴다.
+  // 모델이 temperature 0 을 지원하지 않아 위험요소 채점에 약간의 편차가 있고,
+  // 48점과 52점처럼 몇 점 차이로 '중간'과 '높음'이 갈리는 경우가 실제로 관찰된다.
+  // 이런 건은 등급을 단정하지 않고 사람이 확인하도록 표시하는 편이 정확하다(§17).
+  const nearBoundary = BAND_BOUNDARIES.some((b) => Math.abs(score - b) <= BOUNDARY_MARGIN);
+
+  return { level, forceHumanReview: level === "긴급" || nearBoundary };
 }
 
 // ---------------------------------------------------------------------------

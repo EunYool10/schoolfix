@@ -444,7 +444,7 @@ app.post("/api/ai/summary", async (req, res) => {
   }));
 
   try {
-    const summary = await generateAiSummary(aiInput, stats, apiKey);
+    const summary = await generateAiSummary(aiInput, apiKey);
     summaryCache = { key: cacheKey, result: summary };
     return res.json({ ok: true, cached: false, stats, summary });
   } catch (err) {
