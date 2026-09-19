@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+﻿import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   FileText,
   RotateCw,
@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { SchoolReport, AIAnalysisReportData } from "../types";
 import { PDFReportModal } from "./PDFReportModal";
-import { generateFallbackAnalysis } from "../utils/aiAnalysisHelper";
+import { createEmptyAnalysis } from "../utils/aiAnalysisHelper";
 
 interface AIAnalysisReportPanelProps {
   reports: SchoolReport[];
@@ -32,37 +32,12 @@ export function AIAnalysisReportPanel({
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
 
   // Guaranteed populated data with fallback
-  const reportData = useMemo(() => {
-    const fallback = generateFallbackAnalysis(reports);
-    if (!serverAnalysisData) return fallback;
-    return {
-      ...fallback,
-      ...serverAnalysisData,
-      safetyTrends: serverAnalysisData.safetyTrends || fallback.safetyTrends,
-      locationSummaries:
-        serverAnalysisData.locationSummaries && serverAnalysisData.locationSummaries.length > 0
-          ? serverAnalysisData.locationSummaries
-          : fallback.locationSummaries,
-      categorySummaries:
-        serverAnalysisData.categorySummaries && serverAnalysisData.categorySummaries.length > 0
-          ? serverAnalysisData.categorySummaries
-          : fallback.categorySummaries,
-      priorityItems:
-        serverAnalysisData.priorityItems && serverAnalysisData.priorityItems.length > 0
-          ? serverAnalysisData.priorityItems
-          : fallback.priorityItems,
-      priorityStats: serverAnalysisData.priorityStats || fallback.priorityStats,
-      recurringIssues:
-        serverAnalysisData.recurringIssues && serverAnalysisData.recurringIssues.length > 0
-          ? serverAnalysisData.recurringIssues
-          : fallback.recurringIssues,
-      recommendations:
-        serverAnalysisData.recommendations && serverAnalysisData.recommendations.length > 0
-          ? serverAnalysisData.recommendations
-          : fallback.recommendations,
-      overallSummary: serverAnalysisData.overallSummary || fallback.overallSummary,
-    };
-  }, [serverAnalysisData, reports]);
+  // 서버(POST /api/ai/analyze)가 DB의 저장된 위험도 분석을 집계해 내려준 값을 그대로 쓴다.
+  // 빈 항목을 클라이언트가 만들어 채우지 않는다 — 화면 숫자는 모두 실제 DB 집계값이어야 한다.
+  const reportData = useMemo(
+    () => serverAnalysisData ?? createEmptyAnalysis(reports),
+    [serverAnalysisData, reports]
+  );
 
   // Extract concise primary categories (1-line)
   const primaryCategories = useMemo(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+﻿import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   Search,
   CheckCircle,
@@ -30,7 +30,7 @@ import {
 import { AIAnalysisReportPanel } from "./AIAnalysisReportPanel";
 import { AISafetyReportSection } from "./AISafetyReportSection";
 import { ReportDetailModal } from "./ReportDetailModal";
-import { generateFallbackAnalysis } from "../utils/aiAnalysisHelper";
+import { createEmptyAnalysis } from "../utils/aiAnalysisHelper";
 
 interface AdminReportViewProps {
   reports: SchoolReport[];
@@ -62,6 +62,8 @@ interface AdminReportViewProps {
     }
   ) => Promise<void>;
   onDeleteReport?: (reportId: string) => Promise<void>;
+  /** 위험도 재분석 (관리자 전용) */
+  onReanalyzeRisk?: (reportId: string) => Promise<void>;
   /** AI 분석은 관리자 전용 엔드포인트이므로 세션 토큰이 필요하다. */
   authToken?: string | null;
 }
@@ -128,6 +130,7 @@ export function AdminReportView({
   onProcessReport,
   onUpdateReport,
   onDeleteReport,
+  onReanalyzeRisk,
   authToken,
 }: AdminReportViewProps) {
   const [adminTab, setAdminTab] = useState<"REPORTS" | "AI_SAFETY_REPORT">("REPORTS");
@@ -137,6 +140,7 @@ export function AdminReportView({
   const [locationFilter, setLocationFilter] = useState<string>("ALL");
   const [sortOrder, setSortOrder] = useState<"latest" | "oldest" | "priority">("latest");
   const [selectedReport, setSelectedReport] = useState<SchoolReport | null>(null);
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
 
   // AI Analysis State
   const [analysisData, setAnalysisData] = useState<AIAnalysisReportData | null>(null);
@@ -212,7 +216,7 @@ export function AdminReportView({
   // Active safety summary info
   const safetyInfo = useMemo(() => {
     if (analysisData?.safetyTrends) return analysisData.safetyTrends;
-    return generateFallbackAnalysis(reports).safetyTrends;
+    return createEmptyAnalysis(reports).safetyTrends;
   }, [analysisData, reports]);
 
   // Filtered actual reports
@@ -897,6 +901,22 @@ export function AdminReportView({
             setSelectedReport((prev) => (prev ? { ...prev, ...data } : null));
           }
         }}
+        onReanalyzeRisk={
+          onReanalyzeRisk
+            ? async (reportId) => {
+                setReanalyzingId(reportId);
+                try {
+                  await onReanalyzeRisk(reportId);
+                  // 서버가 저장한 최신 분석 결과를 모달에도 반영한다.
+                  const fresh = reports.find((r) => r.id === reportId);
+                  if (fresh) setSelectedReport(fresh);
+                } finally {
+                  setReanalyzingId(null);
+                }
+              }
+            : undefined
+        }
+        isReanalyzingRisk={reanalyzingId === selectedReport?.id}
         onUpdateReport={async (reportId, data) => {
           if (onUpdateReport) {
             await onUpdateReport(reportId, data);

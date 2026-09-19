@@ -23,6 +23,78 @@ export interface UserProfile {
   last_login_at?: string;
 }
 
+// ==========================================
+// 위험도 분석 (서버 riskAnalysis.ts 가 유일한 산출 주체)
+// 클라이언트는 이 값을 표시만 하고 다시 계산하지 않는다.
+// ==========================================
+export type RiskLevel = "긴급" | "높음" | "중간" | "낮음";
+
+export interface RiskFactors {
+  immediacy: number;
+  accident_probability: number;
+  severity: number;
+  affected_people: number;
+  persistence: number;
+}
+
+export const RISK_FACTOR_LABELS: Record<keyof RiskFactors, string> = {
+  immediacy: "즉시성",
+  accident_probability: "사고 가능성",
+  severity: "피해 정도",
+  affected_people: "영향 범위",
+  persistence: "지속성",
+};
+
+export interface RiskAnalysis {
+  risk_level: RiskLevel;
+  risk_score: number;
+  base_risk_score: number;
+  repeat_report_bonus: number;
+  reason: string;
+  risk_factors: RiskFactors;
+  repeat_report_score: number;
+  emergency_override: boolean;
+  needs_more_info: boolean;
+  needs_human_review: boolean;
+  follow_up_question: string | null;
+  analyzed_at: string;
+  model: string;
+}
+
+export interface RiskLevelBadgeConfig {
+  label: RiskLevel;
+  badgeClass: string;
+  dotClass: string;
+  textColor: string;
+}
+
+export const RISK_LEVEL_MAP: Record<RiskLevel, RiskLevelBadgeConfig> = {
+  긴급: {
+    label: "긴급",
+    badgeClass: "bg-rose-50 text-rose-700 border-rose-200 font-bold",
+    dotClass: "bg-rose-500",
+    textColor: "text-rose-700",
+  },
+  높음: {
+    label: "높음",
+    badgeClass: "bg-orange-50 text-orange-700 border-orange-200 font-bold",
+    dotClass: "bg-orange-500",
+    textColor: "text-orange-700",
+  },
+  중간: {
+    label: "중간",
+    badgeClass: "bg-amber-50 text-amber-800 border-amber-200 font-medium",
+    dotClass: "bg-amber-500",
+    textColor: "text-amber-800",
+  },
+  낮음: {
+    label: "낮음",
+    badgeClass: "bg-slate-100 text-slate-700 border-slate-200 font-medium",
+    dotClass: "bg-slate-400",
+    textColor: "text-slate-600",
+  },
+};
+
 export interface SchoolReport {
   id: string;
   user_id?: string | null; // 작성자의 SchoolFix 내부 user_id
@@ -40,6 +112,11 @@ export interface SchoolReport {
   status: ReportStatus;
   priority?: ReportPriority;
   adminNote?: string;
+  /** 관리자 응답에만 포함된다. 학생/공개 응답에서는 서버가 제거한다. */
+  riskAnalysis?: RiskAnalysis | null;
+  riskAnalysisError?: string | null;
+  /** 학생 응답에 포함되는 최소 정보 — 담당자 확인이 필요한 건인지 여부 */
+  needsHumanReview?: boolean;
   assignee?: string | null;
   resolutionNote?: string | null;
   reviewedAt?: string | null;
@@ -176,7 +253,8 @@ export const PRIORITY_MAP: Record<ReportPriority, PriorityBadgeConfig> = {
 // ==========================================
 // AI 신고 분석 리포트 타입 정의
 // ==========================================
-export type AIPriorityLevel = "긴급" | "높음" | "보통" | "낮음";
+/** 위험도 등급은 RiskLevel 하나만 쓴다. 별도 등급 체계를 만들지 않는다(§2). */
+export type AIPriorityLevel = RiskLevel;
 
 export interface AIPriorityItem {
   reportId: string;
@@ -186,6 +264,12 @@ export interface AIPriorityItem {
   currentStatus: string;
   priority: AIPriorityLevel;
   rationale: string;
+  /** 서버가 산출한 0~100 위험 점수 */
+  riskScore?: number;
+  riskFactors?: RiskFactors;
+  emergencyOverride?: boolean;
+  needsMoreInfo?: boolean;
+  needsHumanReview?: boolean;
 }
 
 export interface AILocationSummary {
@@ -218,6 +302,15 @@ export interface AISafetyTrend {
 export interface AIAnalysisReportData {
   analyzedAt: string;
   targetCount: number;
+  /** 위험도 분석이 완료된 신고 수 */
+  analyzedCount?: number;
+  /** 아직 분석되지 않은 신고 수 (재분석 필요) */
+  unanalyzedCount?: number;
+  flagStats?: {
+    emergencyOverride: number;
+    needsMoreInfo: number;
+    needsHumanReview: number;
+  };
   stats: {
     total: number;
     pending: number;

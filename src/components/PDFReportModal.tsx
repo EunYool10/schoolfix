@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   X,
   Printer,
@@ -7,7 +7,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { AIAnalysisReportData, SchoolReport } from "../types";
-import { generateFallbackAnalysis } from "../utils/aiAnalysisHelper";
+import { createEmptyAnalysis } from "../utils/aiAnalysisHelper";
 import { PDFReportDocument } from "./PDFReportDocument";
 
 interface PDFReportModalProps {
@@ -26,37 +26,12 @@ export function PDFReportModal({
   const [downloadSuccess, setDownloadSuccess] = useState(false);
 
   // Guarantee that reportData is 100% filled and never has empty sections
-  const reportData = useMemo(() => {
-    const fallback = generateFallbackAnalysis(rawReports);
-    return {
-      ...fallback,
-      ...initialReportData,
-      safetyTrends: initialReportData.safetyTrends || fallback.safetyTrends,
-      locationSummaries:
-        initialReportData.locationSummaries && initialReportData.locationSummaries.length > 0
-          ? initialReportData.locationSummaries
-          : fallback.locationSummaries,
-      categorySummaries:
-        initialReportData.categorySummaries && initialReportData.categorySummaries.length > 0
-          ? initialReportData.categorySummaries
-          : fallback.categorySummaries,
-      priorityItems:
-        initialReportData.priorityItems && initialReportData.priorityItems.length > 0
-          ? initialReportData.priorityItems
-          : fallback.priorityItems,
-      priorityStats:
-        initialReportData.priorityStats || fallback.priorityStats,
-      recurringIssues:
-        initialReportData.recurringIssues && initialReportData.recurringIssues.length > 0
-          ? initialReportData.recurringIssues
-          : fallback.recurringIssues,
-      recommendations:
-        initialReportData.recommendations && initialReportData.recommendations.length > 0
-          ? initialReportData.recommendations
-          : fallback.recommendations,
-      overallSummary: initialReportData.overallSummary || fallback.overallSummary,
-    };
-  }, [initialReportData, rawReports]);
+  // 서버(POST /api/ai/analyze)가 DB의 저장된 위험도 분석을 집계해 내려준 값을 그대로 쓴다.
+  // 빈 항목을 클라이언트가 만들어 채우지 않는다 — 화면 숫자는 모두 실제 DB 집계값이어야 한다.
+  const reportData = useMemo(
+    () => initialReportData ?? createEmptyAnalysis(rawReports),
+    [initialReportData, rawReports]
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

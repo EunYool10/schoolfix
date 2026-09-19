@@ -1,9 +1,15 @@
-import express from "express";
+﻿import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import {
+  analyzeReportRisk,
+  type RiskAnalysis,
+  type RiskAnalysisInput,
+  type RiskLevel,
+} from "./riskAnalysis";
 
 // 인자 없는 dotenv.config()는 .env만 읽기 때문에 README가 안내하는 .env.local이 무시된다.
 // .env.local을 우선 적용하고 .env를 보조로 읽는다(앞선 파일의 값이 우선).
@@ -66,6 +72,14 @@ interface StoredReport {
   attachmentSize?: number | null;
   status: "pending" | "reviewing" | "in_progress" | "completed";
   priority?: "urgent" | "medium" | "low";
+  /**
+   * 중앙화된 위험도 분석 결과 (riskAnalysis.ts).
+   * 관리자 전용 정보이므로 학생/공개 응답에서는 제거한다(§25).
+   * 분석에 실패했거나 API 키가 없으면 null 이며, 신고 저장 자체는 영향받지 않는다.
+   */
+  riskAnalysis?: RiskAnalysis | null;
+  /** 분석이 실패한 경우 관리자에게 보여줄 사유 */
+  riskAnalysisError?: string | null;
   adminNote?: string;
   assignee?: string | null;
   resolutionNote?: string | null;
@@ -196,6 +210,86 @@ function isReportOwner(report: StoredReport, user: StoredUser): boolean {
   if (report.google_sub && report.google_sub === user.google_sub) return true;
   if (report.userEmail && report.userEmail.toLowerCase() === user.email.toLowerCase()) return true;
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// 위험도 분석 연동 (riskAnalysis.ts 가 유일한 계산 출처)
+// ---------------------------------------------------------------------------
+
+/** risk_level 을 기존 운영 우선순위로 매핑한다. 관리자가 이후 수동 변경할 수 있다. */
+function riskLevelToPriority(level: RiskLevel): "urgent" | "medium" | "low" {
+  if (level === "긴급" || level === "높음") return "urgent";
+  if (level === "중간") return "medium";
+  return "low";
+}
+
+/**
+ * 실제 DB에서 동일 위치·유형의 이전 신고를 집계한다.
+ * AI에게는 여기서 나온 값만 전달하며, 없는 횟수를 만들어내지 않는다(§21).
+ */
+function buildRepeatContext(
+  reports: StoredReport[],
+  location: string,
+  category: string,
+  excludeId?: string
+): { count: number; previous: string[] } {
+  const matches = reports.filter(
+    (r) =>
+      r.id !== excludeId &&
+      r.location === location &&
+      r.category === category &&
+      r.status !== "completed"
+  );
+
+  return {
+    count: matches.length,
+    previous: matches.slice(0, 3).map((r) => r.description),
+  };
+}
+
+/**
+ * 신고 1건을 분석한다. 실패해도 예외를 던지지 않고 사유만 돌려준다.
+ * 신고 접수 자체가 AI 장애로 실패해서는 안 되기 때문이다.
+ */
+async function runRiskAnalysis(
+  description: string,
+  location: string,
+  category: string,
+  repeat: { count: number; previous: string[] }
+): Promise<{ analysis: RiskAnalysis | null; error: string | null }> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { analysis: null, error: "OPENAI_API_KEY가 설정되지 않아 위험도 분석을 건너뛰었습니다." };
+  }
+
+  const input: RiskAnalysisInput = {
+    report_text: description,
+    location,
+    category,
+    repeat_report_count: repeat.count,
+    previous_reports: repeat.previous,
+  };
+
+  try {
+    return { analysis: await analyzeReportRisk(input, apiKey), error: null };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.error("[risk] 분석 실패:", msg);
+    return { analysis: null, error: "위험도 분석에 실패했습니다. 관리자 재분석이 필요합니다." };
+  }
+}
+
+/**
+ * 작성자 본인에게 돌려주는 형태.
+ * 본인 신고이므로 본인 정보는 유지하되, 관리자 전용 정보(AI 위험도 분석, 관리자 메모)는 제거한다(§25).
+ */
+function toOwnerReport(r: StoredReport) {
+  const { riskAnalysis, riskAnalysisError, adminNote, ...rest } = r;
+  return {
+    ...rest,
+    // 학생에게는 "담당자 확인이 필요한 건인지" 정도만 노출한다.
+    needsHumanReview: riskAnalysis?.needs_human_review ?? false,
+  };
 }
 
 // 개인정보(신고자 이름/이메일/계정 식별자/관리자 메모/첨부 이미지)를 제거한 공개용 형태로 변환
@@ -565,7 +659,8 @@ app.get("/api/reports/my", (req, res) => {
       inProgress,
       completed,
     },
-    data: myReports,
+    // 본인 신고라도 관리자 전용 분석 결과는 제외한다(§25).
+    data: myReports.map(toOwnerReport),
   });
 });
 
@@ -580,7 +675,7 @@ app.get("/api/reports", (req, res) => {
   }
 
   const data = reports.map((r) =>
-    user && isReportOwner(r, user) ? r : toPublicReport(r)
+    user && isReportOwner(r, user) ? toOwnerReport(r) : toPublicReport(r)
   );
 
   return res.json({ ok: true, scope: user ? "user" : "public", data });
@@ -596,15 +691,18 @@ app.get("/api/reports/:id", (req, res) => {
     return res.status(404).json({ ok: false, error: "해당 신고를 찾을 수 없습니다." });
   }
 
-  if (isAdminUser(user) || (user && isReportOwner(report, user))) {
+  if (isAdminUser(user)) {
     return res.json({ ok: true, data: report });
+  }
+  if (user && isReportOwner(report, user)) {
+    return res.json({ ok: true, data: toOwnerReport(report) });
   }
 
   return res.json({ ok: true, data: toPublicReport(report) });
 });
 
 // API: Submit a genuine report into DB
-app.post("/api/reports", (req, res) => {
+app.post("/api/reports", async (req, res) => {
   const user = getUserFromRequest(req);
   const {
     title,
@@ -653,13 +751,26 @@ app.post("/api/reports", (req, res) => {
     const finalEmail = user ? user.email : (userEmail ? String(userEmail).trim() : null);
     const finalName = user ? user.name : (userName ? String(userName).trim() : null);
 
+    const finalLocation = String(location).trim();
+    const finalCategory = String(category).trim();
+
+    // 위험도 분석 (§30 흐름: 검증 -> 분석 -> 스키마 검증 -> DB 저장)
+    // 클라이언트가 보낸 priority 는 신뢰하지 않는다. 위험도는 서버에서만 산출한다(§28).
+    const repeat = buildRepeatContext(reports, finalLocation, finalCategory);
+    const { analysis, error: riskError } = await runRiskAnalysis(
+      trimmedDesc,
+      finalLocation,
+      finalCategory,
+      repeat
+    );
+
     const newReport: StoredReport = {
       id: reportId,
       user_id: user ? user.id : null,
       google_sub: user ? user.google_sub : null,
       title: generatedTitle,
-      location: String(location).trim(),
-      category: String(category).trim(),
+      location: finalLocation,
+      category: finalCategory,
       description: trimmedDesc,
       isAnonymous: Boolean(isAnonymous),
       userEmail: finalEmail,
@@ -668,7 +779,9 @@ app.post("/api/reports", (req, res) => {
       attachmentName: attachmentName ? String(attachmentName) : null,
       attachmentSize: typeof attachmentSize === "number" ? attachmentSize : null,
       status: "pending",
-      priority: req.body.priority === "urgent" || req.body.priority === "low" ? req.body.priority : "medium",
+      priority: analysis ? riskLevelToPriority(analysis.risk_level) : "medium",
+      riskAnalysis: analysis,
+      riskAnalysisError: riskError,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -676,9 +789,10 @@ app.post("/api/reports", (req, res) => {
     reports.unshift(newReport);
     saveReports(reports);
 
+    // 접수 응답에는 관리자 전용 분석 결과를 포함하지 않는다(§25).
     return res.status(201).json({
       ok: true,
-      data: newReport,
+      data: toOwnerReport(newReport),
     });
   } catch (err) {
     console.error("Failed to save report to database:", err);
@@ -788,6 +902,40 @@ app.patch("/api/reports/:id/process", (req, res) => {
   return res.json({ ok: true, data: existing });
 });
 
+// API: 위험도 재분석 (관리자 전용)
+// 분석이 실패했거나, 신고 내용이 수정되어 다시 평가해야 할 때 사용한다.
+app.post("/api/reports/:id/analyze-risk", async (req, res) => {
+  if (!verifyAdminAuth(req, res)) return;
+  const { id } = req.params;
+
+  const reports = loadReports();
+  const idx = reports.findIndex((r) => r.id === id);
+  if (idx === -1) {
+    return res.status(404).json({ ok: false, error: "해당 신고를 찾을 수 없습니다." });
+  }
+
+  const target = reports[idx];
+  const repeat = buildRepeatContext(reports, target.location, target.category, target.id);
+  const { analysis, error } = await runRiskAnalysis(
+    target.description,
+    target.location,
+    target.category,
+    repeat
+  );
+
+  if (!analysis) {
+    return res.status(502).json({ ok: false, error: error || "위험도 분석에 실패했습니다." });
+  }
+
+  target.riskAnalysis = analysis;
+  target.riskAnalysisError = null;
+  target.priority = riskLevelToPriority(analysis.risk_level);
+  target.updatedAt = new Date().toISOString();
+  saveReports(reports);
+
+  return res.json({ ok: true, data: target });
+});
+
 // API: Dedicated quick priority update
 app.patch("/api/reports/:id/priority", (req, res) => {
   if (!verifyAdminAuth(req, res)) return;
@@ -886,34 +1034,24 @@ app.delete("/api/reports/:id", (req, res) => {
   });
 });
 
-// API: AI Report Analysis (Read-only, strictly uses real DB reports)
-app.post("/api/ai/analyze", async (req, res) => {
-  // 전체 신고 본문을 반환하고 외부 AI 비용을 발생시키는 엔드포인트이므로 관리자 전용으로 제한한다.
+// API: 교내 시설 안전 종합 리포트 (관리자 전용)
+//
+// 중요: 이 엔드포인트는 위험도를 "다시 판단하지 않는다".
+// 각 신고의 위험도는 접수 시점에 riskAnalysis.ts 가 이미 산출해 DB에 저장했다.
+// 여기서는 저장된 값을 집계만 한다. 따라서
+//   - 위험도 계산식이 한 곳에만 존재하고 (§28)
+//   - 화면에 표시되는 모든 숫자가 실제 DB에서 계산되며 (§25)
+//   - AI 호출이 없으므로 환각이 발생할 여지가 없다.
+app.post("/api/ai/analyze", (req, res) => {
   if (!verifyAdminAuth(req, res)) return;
 
   try {
     const reports = loadReports();
 
     if (!reports || reports.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        error: "분석할 신고 데이터가 없습니다.",
-      });
+      return res.status(400).json({ ok: false, error: "분석할 신고 데이터가 없습니다." });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({
-        ok: false,
-        error: "OPENAI_API_KEY가 설정되지 않았습니다. 관리자 환경 설정(.env.local)을 확인해주세요.",
-      });
-    }
-
-    // Lazy initialization of the OpenAI client to ensure safe server startup
-    const { default: OpenAI } = await import("openai");
-    const ai = new OpenAI({ apiKey });
-
-    // Compute actual real stats from DB
     const total = reports.length;
     const pending = reports.filter((r) => r.status === "pending").length;
     const inProgress = reports.filter(
@@ -921,254 +1059,219 @@ app.post("/api/ai/analyze", async (req, res) => {
     ).length;
     const completed = reports.filter((r) => r.status === "completed").length;
 
-    // Provide strict input of real reports only
-    const inputReports = reports.map((r) => ({
-      id: r.id,
-      location: r.location,
-      category: r.category,
-      description: r.description,
-      status:
-        r.status === "completed"
-          ? "처리 완료"
-          : r.status === "pending"
-          ? "미처리"
-          : "처리 중",
-      createdAt: r.createdAt,
+    const analyzed = reports.filter(
+      (r): r is StoredReport & { riskAnalysis: RiskAnalysis } => Boolean(r.riskAnalysis)
+    );
+    const unanalyzedCount = total - analyzed.length;
+
+    // --- 신고별 위험도 항목 (저장된 값 그대로) ---
+    const priorityItems = analyzed
+      .map((r) => ({
+        reportId: r.id,
+        location: r.location,
+        category: r.category,
+        contentSummary:
+          r.description.length > 70 ? `${r.description.slice(0, 67)}…` : r.description,
+        currentStatus:
+          r.status === "completed"
+            ? "처리 완료"
+            : r.status === "pending"
+            ? "접수 대기"
+            : "처리 중",
+        priority: r.riskAnalysis.risk_level,
+        riskScore: r.riskAnalysis.risk_score,
+        riskFactors: r.riskAnalysis.risk_factors,
+        emergencyOverride: r.riskAnalysis.emergency_override,
+        needsMoreInfo: r.riskAnalysis.needs_more_info,
+        needsHumanReview: r.riskAnalysis.needs_human_review,
+        rationale: r.riskAnalysis.reason,
+      }))
+      .sort((a, b) => b.riskScore - a.riskScore);
+
+    const countLevel = (level: RiskLevel) =>
+      analyzed.filter((r) => r.riskAnalysis.risk_level === level).length;
+
+    const priorityStats = {
+      urgent: countLevel("긴급"),
+      high: countLevel("높음"),
+      medium: countLevel("중간"),
+      low: countLevel("낮음"),
+    };
+
+    const emergencyCount = analyzed.filter((r) => r.riskAnalysis.emergency_override).length;
+    const needsMoreInfoCount = analyzed.filter((r) => r.riskAnalysis.needs_more_info).length;
+    const needsHumanReviewCount = analyzed.filter(
+      (r) => r.riskAnalysis.needs_human_review
+    ).length;
+
+    // --- 위치별 / 유형별 집계 ---
+    function groupBy(keyOf: (r: StoredReport) => string) {
+      const map = new Map<string, { count: number; urgentish: number; maxScore: number }>();
+      for (const r of reports) {
+        const key = keyOf(r) || "기타";
+        const cur = map.get(key) || { count: 0, urgentish: 0, maxScore: 0 };
+        cur.count += 1;
+        const ra = r.riskAnalysis;
+        if (ra) {
+          if (ra.risk_level === "긴급" || ra.risk_level === "높음") cur.urgentish += 1;
+          if (ra.risk_score > cur.maxScore) cur.maxScore = ra.risk_score;
+        }
+        map.set(key, cur);
+      }
+      return Array.from(map.entries())
+        .map(([name, v]) => ({ name, ...v }))
+        .sort((a, b) => b.urgentish - a.urgentish || b.count - a.count);
+    }
+
+    const byLocation = groupBy((r) => r.location);
+    const byCategory = groupBy((r) => r.category);
+
+    const locationSummaries = byLocation.map((l) => ({
+      location: l.name,
+      count: l.count,
+      summary:
+        l.urgentish > 0
+          ? `신고 ${l.count}건 중 긴급·높음 ${l.urgentish}건이 확인되었습니다. (최고 위험점수 ${l.maxScore})`
+          : `신고 ${l.count}건이 접수되었으며 긴급·높음으로 분류된 건은 없습니다.`,
     }));
 
-    const prompt = `당신은 학교 행정 및 시설 안전 관리자를 위한 "AI 시설 안전 분석 및 트렌드 리포트" 분석 시스템입니다.
-아래에 전달된 [실제 접수된 학교 신고 데이터 목록]만을 분석하여 JSON 형식으로 결과를 출력하십시오.
+    const categorySummaries = byCategory.map((c) => ({
+      category: c.name,
+      count: c.count,
+      summary:
+        c.urgentish > 0
+          ? `신고 ${c.count}건 중 긴급·높음 ${c.urgentish}건이 확인되었습니다. (최고 위험점수 ${c.maxScore})`
+          : `신고 ${c.count}건이 접수되었습니다.`,
+    }));
 
-[중요 제약 조건 및 원칙]:
-1. 전달된 실제 신고 데이터에 없는 가상의 신고나 없는 ID를 절대로 지어내지 마십시오.
-2. 분석 대상 신고 목록의 'id'는 반드시 전달된 id와 정확히 일치해야 합니다.
-3. 위치별 분석(locationSummaries)에는 실제 신고 데이터에 존재하는 위치만 포함하십시오.
-4. 문제 종류별 분석(categorySummaries)에는 실제 신고 데이터에 존재하는 문제 종류만 포함하십시오.
-5. 시설 안전 트렌드(safetyTrends): 등록된 신고 내용을 종합하여 학교 시설 안전의 주요 트렌드, 위험 구역(hotspots), 빈발 위험 유형(frequentRisks), 종합 위험 수준(overallRiskLevel: 'safe'|'caution'|'warning'|'dangerous')을 도출하십시오.
-6. 각 신고에 대해 AI 처리 우선순위를 '긴급', '높음', '보통', '낮음' 중 하나로 판정하고, 'rationale'에 해당 신고 내용의 구체적 근거(예: 학생 부상 위험, 감전, 누수, 미끄러짐 등 학생 안전과의 직결성)를 1~2문장으로 명확히 서술하십시오.
-7. 반복 문제 분석(recurringIssues)은 전달된 데이터에서 실제로 2건 이상 유사한 패턴이나 같은 장소/유형의 문제가 관찰될 때만 서술하십시오. 데이터가 적거나 패턴이 없다면 빈 배열([])로 두십시오.
-8. 한국어로 명확하고 전문적인 학교 행정 보고서 문체로 작성하십시오.
-
-[실제 접수된 학교 신고 데이터 목록 (${inputReports.length}건)]:
-${JSON.stringify(inputReports, null, 2)}
-
-반드시 다음 JSON 스키마를 엄격히 준수하여 응답하십시오:
-{
-  "overallSummary": "전체 신고 내용 요약 (2~4문장)",
-  "safetyTrends": {
-    "overallRiskLevel": "safe" 또는 "caution" 또는 "warning" 또는 "dangerous",
-    "overallRiskLevelLabel": "양호(안전)" 또는 "관찰 필요(주의)" 또는 "위험 경고(경고)" 또는 "즉시 조치 필요(위험)",
-    "trendHeadline": "시설 안전 주요 트렌드 핵심 한 줄 요약",
-    "trendSummary": "교내 시설 전반의 안전 현황 및 발생 추이 분석 (2~3문장)",
-    "hotspots": [
-      {
-        "location": "취약 구역 위치명",
-        "reason": "해당 구역의 안전 위험 집중 원인 요약",
-        "riskLevel": "긴급/높음/보통"
-      }
-    ],
-    "frequentRisks": [
-      {
-        "category": "빈발 문제 종류",
-        "description": "반복되는 위험 현상 및 영향 요약",
-        "riskLevel": "긴급/높음/보통"
-      }
-    ],
-    "urgentActionNeeded": true 또는 false
-  },
-  "locationSummaries": [
-    {
-      "location": "실제 신고에 있는 위치명",
-      "count": 해당 위치 실제 신고 수(숫자),
-      "summary": "해당 위치의 주요 문제 요약"
+    // --- 종합 위험 수준 (저장된 등급 분포에서 결정) ---
+    let overallRiskLevel: "safe" | "caution" | "warning" | "dangerous" = "safe";
+    let overallRiskLevelLabel = "양호(안전)";
+    if (priorityStats.urgent > 0) {
+      overallRiskLevel = "dangerous";
+      overallRiskLevelLabel = "즉시 조치 필요(위험)";
+    } else if (priorityStats.high >= 2) {
+      overallRiskLevel = "warning";
+      overallRiskLevelLabel = "위험 경고(경고)";
+    } else if (priorityStats.high >= 1 || priorityStats.medium > 1) {
+      overallRiskLevel = "caution";
+      overallRiskLevelLabel = "관찰 필요(주의)";
     }
-  ],
-  "categorySummaries": [
-    {
-      "category": "실제 신고에 있는 문제 종류명",
-      "count": 해당 종류 실제 신고 수(숫자),
-      "summary": "해당 문제 종류의 요약"
-    }
-  ],
-  "priorityStats": {
-    "urgent": 긴급 건수(숫자),
-    "high": 높음 건수(숫자),
-    "medium": 보통 건수(숫자),
-    "low": 낮음 건수(숫자)
-  },
-  "priorityItems": [
-    {
-      "reportId": "실제 신고 id (예: REP-...)",
-      "location": "해당 신고 위치",
-      "category": "해당 신고 문제 종류",
-      "contentSummary": "신고 내용 핵심 요약 (1~2문장)",
-      "currentStatus": "미처리/처리 중/처리 완료",
-      "priority": "긴급",
-      "rationale": "신고 내용에 근거한 구체적인 우선순위 판단 사유"
-    }
-  ],
-  "recurringIssues": [
-    {
-      "issue": "반복 확인된 문제 제목",
-      "evidence": "실제 신고 데이터에 근거한 패턴 설명"
-    }
-  ],
-  "recommendations": [
-    "학교 시설 안전 관리를 위한 관리자 참고사항 및 우선 조치 권고사항 (2~4개)"
-  ]
-}`;
 
-    // 1순위는 균형형, 실패 시 저비용 모델로 폴백한다.
-    const modelsToTry = [
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-    ];
-    let responseText = "";
-    let lastError: any = null;
+    const hotspots = byLocation
+      .filter((l) => l.urgentish > 0)
+      .slice(0, 3)
+      .map((l) => ({
+        location: l.name,
+        reason: `긴급·높음 ${l.urgentish}건이 집중되어 있습니다.`,
+        riskLevel: l.urgentish >= 2 ? "긴급" : "높음",
+      }));
 
-    for (const model of modelsToTry) {
-      try {
-        const completion = await ai.chat.completions.create({
-          model,
-          messages: [
-            {
-              role: "system",
-              content:
-                "당신은 학교 시설 안전 데이터를 분석하는 시스템입니다. 반드시 유효한 JSON 객체 하나만 출력하고, 코드 블록이나 설명 문구를 덧붙이지 마십시오.",
-            },
-            { role: "user", content: prompt },
-          ],
-          response_format: { type: "json_object" },
+    const frequentRisks = byCategory
+      .filter((c) => c.count >= 2)
+      .slice(0, 3)
+      .map((c) => ({
+        category: c.name,
+        description: `${c.count}건 접수 (긴급·높음 ${c.urgentish}건)`,
+        riskLevel: c.urgentish >= 2 ? "긴급" : c.urgentish === 1 ? "높음" : "중간",
+      }));
+
+    // --- 반복 문제: 실제로 2건 이상 누적된 경우만 ---
+    const recurringIssues: { issue: string; evidence: string }[] = [];
+    for (const l of byLocation.filter((x) => x.count >= 2)) {
+      recurringIssues.push({
+        issue: `${l.name} 반복 신고`,
+        evidence: `동일 위치에서 ${l.count}건이 접수되었습니다.`,
+      });
+    }
+    for (const c of byCategory.filter((x) => x.count >= 2)) {
+      if (!recurringIssues.some((ri) => ri.issue.includes(c.name))) {
+        recurringIssues.push({
+          issue: `${c.name} 반복 발생`,
+          evidence: `동일 유형으로 ${c.count}건이 접수되었습니다.`,
         });
-        responseText = completion.choices[0]?.message?.content?.trim() || "";
-        if (responseText) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = err;
-        // Clean log without printing raw 503 JSON stack to avoid triggering log monitors
-        console.log(`[AI Analysis] Model ${model} is currently busy, switching to alternate model...`);
-        // Brief pause before trying next candidate
-        await new Promise((resolve) => setTimeout(resolve, 600));
       }
     }
 
-    if (!responseText) {
-      throw lastError || new Error("AI 분석 응답이 비어 있습니다.");
+    // --- 요약·권고: 실제 집계값만 사용 ---
+    const topLocations = byLocation.slice(0, 3).map((l) => l.name).join(", ");
+
+    const overallSummary =
+      `전체 ${total}건(미처리 ${pending}건, 처리 중 ${inProgress}건, 완료 ${completed}건) 중 ` +
+      `${analyzed.length}건에 대한 위험도 분석이 완료되었습니다. ` +
+      `긴급 ${priorityStats.urgent}건, 높음 ${priorityStats.high}건, 중간 ${priorityStats.medium}건, 낮음 ${priorityStats.low}건으로 분류되었습니다.` +
+      (unanalyzedCount > 0 ? ` 미분석 ${unanalyzedCount}건은 재분석이 필요합니다.` : "");
+
+    const recommendations: string[] = [];
+    if (emergencyCount > 0) {
+      recommendations.push(
+        `즉각 위험으로 판정된 ${emergencyCount}건은 현장 접근을 통제하고 우선 조치하십시오.`
+      );
     }
-
-    let parsedResult: any;
-    try {
-      parsedResult = JSON.parse(responseText);
-    } catch (e) {
-      throw new Error("AI 응답 형식이 올바르지 않습니다.");
+    if (priorityStats.urgent > 0) {
+      recommendations.push(`긴급 ${priorityStats.urgent}건을 최우선으로 현장 확인하십시오.`);
     }
-
-    // Sanitize and ensure priorityItems only reference real report IDs
-    const validReportIdSet = new Set(reports.map((r) => r.id));
-    const sanitizedPriorityItems = Array.isArray(parsedResult.priorityItems)
-      ? parsedResult.priorityItems
-          .filter((item: any) => validReportIdSet.has(item.reportId))
-          .map((item: any) => {
-            const original = reports.find((r) => r.id === item.reportId)!;
-            const validPriority: "긴급" | "높음" | "보통" | "낮음" = [
-              "긴급",
-              "높음",
-              "보통",
-              "낮음",
-            ].includes(item.priority)
-              ? item.priority
-              : "보통";
-            return {
-              reportId: original.id,
-              location: original.location,
-              category: original.category,
-              contentSummary: item.contentSummary || original.description.slice(0, 80),
-              currentStatus:
-                original.status === "completed"
-                  ? "처리 완료"
-                  : original.status === "pending"
-                  ? "미처리"
-                  : "처리 중",
-              priority: validPriority,
-              rationale: item.rationale || "접수된 신고 내용을 종합하여 우선순위를 검토함.",
-            };
-          })
-      : [];
-
-    // Recalculate priorityStats strictly based on sanitized priority items
-    const priorityStats = {
-      urgent: sanitizedPriorityItems.filter((i: any) => i.priority === "긴급").length,
-      high: sanitizedPriorityItems.filter((i: any) => i.priority === "높음").length,
-      medium: sanitizedPriorityItems.filter((i: any) => i.priority === "보통").length,
-      low: sanitizedPriorityItems.filter((i: any) => i.priority === "낮음").length,
-    };
-
-    const finalReport = {
-      analyzedAt: new Date().toISOString(),
-      targetCount: reports.length,
-      stats: {
-        total,
-        pending,
-        inProgress,
-        completed,
-      },
-      overallSummary: parsedResult.overallSummary || "전체 신고 요약이 완료되었습니다.",
-      safetyTrends: parsedResult.safetyTrends && typeof parsedResult.safetyTrends === "object"
-        ? {
-            overallRiskLevel: ["safe", "caution", "warning", "dangerous"].includes(parsedResult.safetyTrends.overallRiskLevel)
-              ? parsedResult.safetyTrends.overallRiskLevel
-              : "caution",
-            overallRiskLevelLabel: parsedResult.safetyTrends.overallRiskLevelLabel || "관찰 필요(주의)",
-            trendHeadline: parsedResult.safetyTrends.trendHeadline || "학교 시설 안전 점검 및 예방 관리 진행 필요",
-            trendSummary: parsedResult.safetyTrends.trendSummary || parsedResult.overallSummary || "등록된 신고에 대한 시설 안전 트렌드 점검이 필요합니다.",
-            hotspots: Array.isArray(parsedResult.safetyTrends.hotspots) ? parsedResult.safetyTrends.hotspots : [],
-            frequentRisks: Array.isArray(parsedResult.safetyTrends.frequentRisks) ? parsedResult.safetyTrends.frequentRisks : [],
-            urgentActionNeeded: Boolean(parsedResult.safetyTrends.urgentActionNeeded),
-          }
-        : undefined,
-      locationSummaries: Array.isArray(parsedResult.locationSummaries)
-        ? parsedResult.locationSummaries
-        : [],
-      categorySummaries: Array.isArray(parsedResult.categorySummaries)
-        ? parsedResult.categorySummaries
-        : [],
-      priorityStats,
-      priorityItems: sanitizedPriorityItems,
-      recurringIssues: Array.isArray(parsedResult.recurringIssues)
-        ? parsedResult.recurringIssues
-        : [],
-      recommendations: Array.isArray(parsedResult.recommendations)
-        ? parsedResult.recommendations
-        : [],
-    };
+    if (hotspots.length > 0) {
+      recommendations.push(`${topLocations} 구역에 대한 집중 점검을 실시하십시오.`);
+    }
+    if (needsHumanReviewCount > 0) {
+      recommendations.push(
+        `담당자 확인이 필요한 ${needsHumanReviewCount}건은 사진 또는 현장 확인으로 위험도를 재검토하십시오.`
+      );
+    }
+    if (needsMoreInfoCount > 0) {
+      recommendations.push(
+        `정보가 부족한 ${needsMoreInfoCount}건은 신고자에게 추가 정보를 요청하십시오.`
+      );
+    }
+    if (recommendations.length === 0) {
+      recommendations.push("현재 긴급 위험은 확인되지 않았습니다. 정기 점검을 유지하십시오.");
+    }
 
     return res.json({
       ok: true,
-      data: finalReport,
+      data: {
+        analyzedAt: new Date().toISOString(),
+        targetCount: total,
+        analyzedCount: analyzed.length,
+        unanalyzedCount,
+        stats: { total, pending, inProgress, completed },
+        overallSummary,
+        safetyTrends: {
+          overallRiskLevel,
+          overallRiskLevelLabel,
+          trendHeadline:
+            priorityStats.urgent > 0
+              ? `긴급 ${priorityStats.urgent}건 — 즉시 조치가 필요합니다.`
+              : priorityStats.high > 0
+              ? `높음 ${priorityStats.high}건 — 우선 점검이 필요합니다.`
+              : "긴급·높음으로 분류된 신고가 없습니다.",
+          trendSummary: overallSummary,
+          hotspots,
+          frequentRisks,
+          urgentActionNeeded: priorityStats.urgent > 0 || emergencyCount > 0,
+        },
+        locationSummaries,
+        categorySummaries,
+        priorityStats,
+        priorityItems,
+        flagStats: {
+          emergencyOverride: emergencyCount,
+          needsMoreInfo: needsMoreInfoCount,
+          needsHumanReview: needsHumanReviewCount,
+        },
+        recurringIssues,
+        recommendations,
+      },
     });
   } catch (err: any) {
-    let userFriendlyMsg = "AI 신고 분석 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
-    const rawMsg = err?.message || String(err);
-    if (rawMsg.includes("429") || rawMsg.includes("rate limit") || rawMsg.includes("quota")) {
-      userFriendlyMsg = "AI 요청 한도에 도달했습니다. 잠시 후 다시 분석을 시도하거나 OpenAI 사용량을 확인해주세요.";
-    } else if (rawMsg.includes("503") || rawMsg.includes("overloaded") || rawMsg.includes("UNAVAILABLE")) {
-      userFriendlyMsg = "현재 AI 모델 처리량이 많아 일시적으로 지연되고 있습니다. 잠시 후 다시 분석을 시도해주세요.";
-    } else if (rawMsg.includes("401") || rawMsg.includes("API key") || rawMsg.includes("Incorrect API key")) {
-      userFriendlyMsg = "OPENAI_API_KEY 설정이 올바르지 않거나 확인되지 않습니다.";
-    } else if (rawMsg.includes("model_not_found") || rawMsg.includes("does not exist")) {
-      userFriendlyMsg = "요청한 AI 모델을 사용할 수 없습니다. 계정의 모델 접근 권한을 확인해주세요.";
-    } else if (rawMsg && !rawMsg.startsWith("{") && !rawMsg.includes("error")) {
-      userFriendlyMsg = rawMsg;
-    }
-
+    console.error("[analyze] 집계 실패:", err?.message || err);
     return res.status(500).json({
       ok: false,
-      error: userFriendlyMsg,
+      error: "리포트 집계 중 오류가 발생했습니다.",
     });
   }
 });
-
 
 async function startServer() {
   const isProduction =

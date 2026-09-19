@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+﻿import React, { useState, useMemo } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { SchoolReport, AIAnalysisReportData, AIPriorityLevel } from "../types";
 import { PDFReportModal } from "./PDFReportModal";
-import { generateFallbackAnalysis } from "../utils/aiAnalysisHelper";
+import { createEmptyAnalysis } from "../utils/aiAnalysisHelper";
 
 interface AISafetyReportSectionProps {
   reports: SchoolReport[];
@@ -41,37 +41,12 @@ export function AISafetyReportSection({
   const [priorityFilter, setPriorityFilter] = useState<string>("ALL");
 
   // Guaranteed populated data with real-data fallback
-  const reportData = useMemo(() => {
-    const fallback = generateFallbackAnalysis(reports);
-    if (!rawAnalysisData) return fallback;
-    return {
-      ...fallback,
-      ...rawAnalysisData,
-      safetyTrends: rawAnalysisData.safetyTrends || fallback.safetyTrends,
-      locationSummaries:
-        rawAnalysisData.locationSummaries && rawAnalysisData.locationSummaries.length > 0
-          ? rawAnalysisData.locationSummaries
-          : fallback.locationSummaries,
-      categorySummaries:
-        rawAnalysisData.categorySummaries && rawAnalysisData.categorySummaries.length > 0
-          ? rawAnalysisData.categorySummaries
-          : fallback.categorySummaries,
-      priorityItems:
-        rawAnalysisData.priorityItems && rawAnalysisData.priorityItems.length > 0
-          ? rawAnalysisData.priorityItems
-          : fallback.priorityItems,
-      priorityStats: rawAnalysisData.priorityStats || fallback.priorityStats,
-      recurringIssues:
-        rawAnalysisData.recurringIssues && rawAnalysisData.recurringIssues.length > 0
-          ? rawAnalysisData.recurringIssues
-          : fallback.recurringIssues,
-      recommendations:
-        rawAnalysisData.recommendations && rawAnalysisData.recommendations.length > 0
-          ? rawAnalysisData.recommendations
-          : fallback.recommendations,
-      overallSummary: rawAnalysisData.overallSummary || fallback.overallSummary,
-    };
-  }, [rawAnalysisData, reports]);
+  // 서버(POST /api/ai/analyze)가 DB의 저장된 위험도 분석을 집계해 내려준 값을 그대로 쓴다.
+  // 빈 항목을 클라이언트가 만들어 채우지 않는다 — 화면 숫자는 모두 실제 DB 집계값이어야 한다.
+  const reportData = useMemo(
+    () => rawAnalysisData ?? createEmptyAnalysis(reports),
+    [rawAnalysisData, reports]
+  );
 
   const safety = reportData.safetyTrends;
 

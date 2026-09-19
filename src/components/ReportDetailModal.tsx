@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Modal } from "./common/Modal";
 import { ConfirmDialog } from "./common/ConfirmDialog";
 import { ReportEditModal } from "./ReportEditModal";
+import { RiskAnalysisPanel } from "./RiskAnalysisPanel";
 import { ReportTimeline } from "./ReportTimeline";
 import { ImageLightboxModal } from "./ImageLightboxModal";
 import {
@@ -58,6 +59,9 @@ interface ReportDetailModalProps {
     }
   ) => Promise<void>;
   onDeleteReport?: (reportId: string) => Promise<void>;
+  /** 관리자 전용 — 위험도 재분석 트리거 */
+  onReanalyzeRisk?: (reportId: string) => Promise<void>;
+  isReanalyzingRisk?: boolean;
 }
 
 export function ReportDetailModal({
@@ -69,6 +73,8 @@ export function ReportDetailModal({
   onProcessReport,
   onUpdateReport,
   onDeleteReport,
+  onReanalyzeRisk,
+  isReanalyzingRisk = false,
 }: ReportDetailModalProps) {
   const [activeTab, setActiveTab] = useState<"DETAILS" | "PROCESS">("DETAILS");
 
@@ -332,6 +338,17 @@ export function ReportDetailModal({
                   {report.description}
                 </div>
               </div>
+
+              {/* AI 위험도 분석 — 관리자에게만 노출한다(§25).
+                  학생 응답에는 서버가 riskAnalysis 를 애초에 내려주지 않는다. */}
+              {isAdmin && (
+                <RiskAnalysisPanel
+                  analysis={report.riskAnalysis}
+                  analysisError={report.riskAnalysisError}
+                  onReanalyze={onReanalyzeRisk ? () => onReanalyzeRisk(report.id) : undefined}
+                  isReanalyzing={isReanalyzingRisk}
+                />
+              )}
 
               {/* Attachment preview */}
               {report.attachmentUrl && (

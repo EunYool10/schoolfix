@@ -521,6 +521,39 @@ export default function App() {
     }
   };
 
+  // 위험도 재분석 (관리자 전용). 서버가 재계산 후 저장한 결과로 목록을 갱신한다.
+  const handleReanalyzeRisk = async (reportId: string) => {
+    setUpdatingReportId(reportId);
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      const res = await fetch(
+        `/api/reports/${encodeURIComponent(reportId)}/analyze-risk`,
+        { method: "POST", headers }
+      );
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "위험도 분석에 실패했습니다.");
+      }
+
+      const updatedReport: SchoolReport = json.data;
+      setReports((prev) => prev.map((r) => (r.id === reportId ? updatedReport : r)));
+      showToast(
+        "success",
+        `[${reportId}] 위험도: ${updatedReport.riskAnalysis?.risk_level ?? "-"} (${updatedReport.riskAnalysis?.risk_score ?? "-"}점)`
+      );
+    } catch (err: any) {
+      console.error("Risk reanalysis error:", err);
+      showToast("error", err.message || "위험도 분석에 실패했습니다.");
+    } finally {
+      setUpdatingReportId(null);
+    }
+  };
+
   const handleRequestChangeView = (newView: "STUDENT" | "ADMIN") => {
     if (currentView === newView) return;
     if (currentView === "STUDENT" && studentTab === "NEW_REPORT" && isFormDirty) {
@@ -617,6 +650,7 @@ export default function App() {
                   onProcessReport={handleProcessReport}
                   onUpdateReport={handleUpdateReport}
                   onDeleteReport={handleDeleteReport}
+                  onReanalyzeRisk={handleReanalyzeRisk}
                   authToken={authToken}
                 />
               </section>
@@ -827,6 +861,8 @@ export default function App() {
           onProcessReport={handleProcessReport}
           onUpdateReport={handleUpdateReport}
           onDeleteReport={handleDeleteReport}
+          onReanalyzeRisk={isAdminAuthorized ? handleReanalyzeRisk : undefined}
+          isReanalyzingRisk={updatingReportId === detailModalReport.id}
         />
       )}
 
