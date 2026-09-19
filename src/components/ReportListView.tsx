@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   Search,
   Sparkles,
@@ -25,7 +24,7 @@ import {
   DateRange,
 } from "../hooks/useReportFilters";
 import { AiSummaryModal } from "./AiSummaryModal";
-import { ReportPdfDocument } from "./ReportPdfDocument";
+import { buildReportHtml } from "../utils/reportDocument";
 
 export type ReportTab = "MINE" | "ALL";
 
@@ -69,6 +68,7 @@ export function ReportListView({
   const [summaryData, setSummaryData] = useState<AiSummaryResponse | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   /**
    * PDF·인쇄에 넣을 통계는 실제로 내보내는 목록(filtered)에서 계산한다.
@@ -129,12 +129,48 @@ export function ReportListView({
     }
   };
 
-  const handlePrint = () => window.print();
+  /**
+   * 보고서만 담은 새 창을 열어 인쇄한다.
+   *
+   * 메인 페이지를 인쇄하면서 CSS 로 나머지를 숨기는 방식은
+   * 브라우저의 :has() 지원, 숨긴 요소가 차지하는 공간, 유틸리티 우선순위에
+   * 전부 의존해서 출력이 비거나 빈 페이지가 붙기 쉬웠다.
+   * 새 창에는 보고서 외에 아무것도 없으므로 그런 변수가 사라진다.
+   *
+   * 별도 PDF 라이브러리는 쓰지 않는다. 한글 폰트를 embed 해야 해서
+   * 번들이 몇 MB 늘어나는데, 브라우저 인쇄의 "PDF로 저장"이 한글을 정확히 처리한다.
+   */
+  const openReportWindow = () => {
+    const scopeParts = [tab === "MINE" ? "내 신고" : "전체 신고"];
+    if (filters.category !== "ALL") scopeParts.push(`유형 ${filters.category}`);
+    if (filters.risk !== "ALL") scopeParts.push(`위험도 ${filters.risk}`);
+    if (filters.status !== "ALL") scopeParts.push(`상태 ${STATUS_MAP[filters.status as ReportStatus]?.label ?? filters.status}`);
+    if (filters.dateRange !== "ALL") scopeParts.push(DATE_RANGE_LABELS[filters.dateRange]);
+    if (filters.search.trim()) scopeParts.push(`검색 "${filters.search.trim()}"`);
 
-  const handleSavePdf = () => {
-    // 브라우저 인쇄 대화상자의 "PDF로 저장"을 사용한다.
-    // 별도 PDF 라이브러리를 번들에 추가하지 않아 용량과 폰트 문제를 피할 수 있다.
-    window.print();
+    const html = buildReportHtml({
+      reports: filtered,
+      stats: exportStats,
+      summary: summaryData?.summary ?? null,
+      scopeLabel: scopeParts.join(" · "),
+    });
+
+    const win = window.open("", "_blank", "width=900,height=1000");
+    if (!win) {
+      setExportError("팝업이 차단되어 보고서를 열 수 없습니다. 브라우저의 팝업 차단을 해제한 뒤 다시 시도해주세요.");
+      return;
+    }
+
+    setExportError(null);
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+
+    // 문서가 다 그려진 뒤 인쇄 대화상자를 띄운다.
+    win.onload = () => {
+      win.focus();
+      win.print();
+    };
   };
 
   const tabButton = (value: ReportTab, label: string, count: number) => {
@@ -187,7 +223,7 @@ export function ReportListView({
           </button>
           <button
             type="button"
-            onClick={handleSavePdf}
+            onClick={openReportWindow}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
           >
             <FileDown className="h-3.5 w-3.5" />
@@ -195,7 +231,7 @@ export function ReportListView({
           </button>
           <button
             type="button"
-            onClick={handlePrint}
+            onClick={openReportWindow}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
           >
             <Printer className="h-3.5 w-3.5" />
@@ -293,6 +329,12 @@ export function ReportListView({
         )}
       </div>
 
+      {exportError && (
+        <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 print:hidden">
+          {exportError}
+        </p>
+      )}
+
       {/* 목록 */}
       <div className="print:hidden">
         {isLoading ? (
@@ -351,22 +393,6 @@ export function ReportListView({
         error={summaryError}
       />
 
-      {/*
-        인쇄 / PDF 전용 문서.
-        document.body 직계로 렌더링해야 @media print 에서
-        나머지 UI 만 display:none 으로 끌 수 있다(빈 페이지 방지).
-        현재 필터가 적용된 목록과 그 목록에서 계산한 통계를 그대로 내보낸다.
-      */}
-      {createPortal(
-        <div id="schoolfix-print-document" className="hidden print:block">
-          <ReportPdfDocument
-            reports={filtered}
-            stats={exportStats}
-            summary={summaryData?.summary ?? null}
-          />
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

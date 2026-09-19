@@ -7,28 +7,10 @@ body.modal-open {
 }
 
 /*
- * 인쇄 / PDF 저장
+ * 인쇄 / PDF 저장은 메인 페이지를 인쇄하지 않는다.
+ * 보고서만 담은 새 창을 열어 그 창을 인쇄한다 (src/utils/reportDocument.ts).
  *
- * 인쇄 문서는 createPortal 로 document.body 바로 아래에 렌더링된다.
- * 덕분에 "body 의 직계 자식 중 인쇄 문서가 아닌 것"만 display:none 으로 끄면 된다.
- *
- * 이전에는 body * { visibility: hidden } 으로 모든 요소를 숨겼는데,
- * visibility 로 숨긴 요소는 자리를 그대로 차지하기 때문에
- * 보고서 뒤에 빈 페이지가 여러 장 딸려 나왔다.
+ * 이전에는 여기서 body 전체를 숨기고 보고서만 다시 보이게 했는데,
+ * :has() 지원 여부·숨긴 요소가 차지하는 공간·유틸리티 우선순위에 의존해
+ * 출력이 비거나 빈 페이지가 따라붙었다. 그 CSS 는 더 이상 필요하지 않다.
  */
-@media print {
-  body:has(#schoolfix-print-document) > *:not(#schoolfix-print-document) {
-    display: none !important;
-  }
-
-  #schoolfix-print-document {
-    display: block !important;
-    background: #ffffff;
-    color: #0f172a;
-  }
-
-  @page {
-    size: A4 portrait;
-    margin: 12mm 10mm;
-  }
-}

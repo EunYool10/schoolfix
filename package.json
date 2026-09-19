@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:risk": "tsx riskAnalysis.test.ts",
-    "test:filter": "tsx src/security/profanityFilter.test.ts"
+    "test:filter": "tsx src/security/profanityFilter.test.ts",
+    "test:report": "tsx src/utils/reportDocument.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

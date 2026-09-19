@@ -231,6 +231,71 @@ async function runRiskAnalysis(
 }
 
 // ---------------------------------------------------------------------------
+// 미분석 신고 자동 채점
+//
+// 위험도는 접수 시점에 매겨진다. 하지만 그때 API 키가 없었거나 호출이 실패했거나,
+// 시드로 주입된 신고처럼 애초에 접수 과정을 거치지 않은 건은 등급이 비어 있다.
+// 관리자 화면을 없앴기 때문에 사람이 수동으로 다시 돌릴 방법도 없다.
+//
+// 그래서 서버가 뜬 뒤 백그라운드로 미분석 건을 하나씩 채점한다.
+//  - 기동을 막지 않도록 비동기로 돌린다
+//  - 건당 간격을 두어 API 를 몰아치지 않는다
+//  - 실패하면 사유만 남기고 넘어가며, 다음 기동 때 다시 시도한다
+// ---------------------------------------------------------------------------
+
+const BACKFILL_DELAY_MS = 1500;
+const BACKFILL_MAX_PER_RUN = 20;
+
+async function backfillMissingRiskAnalysis() {
+  if (!process.env.OPENAI_API_KEY) return;
+
+  const pending = loadReports().filter((r) => !r.riskAnalysis);
+  if (pending.length === 0) return;
+
+  const targets = pending.slice(0, BACKFILL_MAX_PER_RUN);
+  console.log(
+    `[risk] 미분석 신고 ${pending.length}건 확인, ${targets.length}건 채점을 시작합니다.`
+  );
+
+  let done = 0;
+  for (const target of targets) {
+    const repeat = buildRepeatContext(
+      loadReports(),
+      target.location,
+      target.category,
+      target.id
+    );
+    const { analysis, error } = await runRiskAnalysis(
+      target.description,
+      target.location,
+      target.category,
+      repeat
+    );
+
+    // 채점 중 다른 요청이 DB 를 바꿨을 수 있으므로 매번 다시 읽고 해당 건만 갱신한다.
+    const all = loadAllReports();
+    const idx = all.findIndex((r) => r.id === target.id);
+    if (idx === -1) continue;
+
+    if (analysis) {
+      all[idx].riskAnalysis = analysis;
+      all[idx].riskAnalysisError = null;
+      done += 1;
+    } else {
+      all[idx].riskAnalysisError = error;
+    }
+    saveReports(all);
+
+    // 집합이 바뀌었으니 요약 캐시를 버린다.
+    summaryCache = null;
+
+    await new Promise((resolve) => setTimeout(resolve, BACKFILL_DELAY_MS));
+  }
+
+  console.log(`[risk] 자동 채점 완료: ${done}/${targets.length}건`);
+}
+
+// ---------------------------------------------------------------------------
 // 통계 — 반드시 실제 DB 에서 계산한다 (§20)
 // ---------------------------------------------------------------------------
 
@@ -555,6 +620,11 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+
+    // 기동을 막지 않도록 응답을 기다리지 않고 백그라운드로 돌린다.
+    backfillMissingRiskAnalysis().catch((err) => {
+      console.error("[risk] 자동 채점 실패:", err instanceof Error ? err.message : err);
+    });
   });
 }
 
