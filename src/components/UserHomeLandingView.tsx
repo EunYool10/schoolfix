@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { SchoolReport, UserProfile } from "../types";
+﻿import React, { useState } from "react";
+import { SchoolReport } from "../types";
 import {
   AlertTriangle,
   ClipboardList,
@@ -12,27 +12,20 @@ import {
   Camera,
   Eye,
   Plus,
-  Lock,
 } from "lucide-react";
 
 interface UserHomeLandingViewProps {
   reports: SchoolReport[];
-  currentUser: UserProfile | null;
   onNavigateNewReport: () => void;
-  onNavigateMyReports: () => void;
-  onNavigateOverallProgress?: () => void;
+  onNavigateReports: () => void;
   onOpenReportDetail: (report: SchoolReport) => void;
-  onOpenAuthModal: () => void;
 }
 
 export function UserHomeLandingView({
   reports,
-  currentUser,
   onNavigateNewReport,
-  onNavigateMyReports,
-  onNavigateOverallProgress,
+  onNavigateReports,
   onOpenReportDetail,
-  onOpenAuthModal,
 }: UserHomeLandingViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -42,13 +35,6 @@ export function UserHomeLandingView({
     (r) => r.status === "in_progress" || r.status === "reviewing"
   ).length;
 
-  const myReportsCount = currentUser
-    ? reports.filter(
-        (r) =>
-          r.userEmail?.toLowerCase() === currentUser.email.toLowerCase() ||
-          (!r.userEmail && !r.isAnonymous && r.userName === currentUser.name)
-      ).length
-    : 0;
 
   // Filter reports matching search query (by ID, title, location, category)
   const filteredSearchReports = searchQuery.trim()
@@ -106,22 +92,17 @@ export function UserHomeLandingView({
 
             <button
               type="button"
-              onClick={onNavigateMyReports}
+              onClick={onNavigateReports}
               className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs sm:text-sm font-semibold active:scale-[0.98] transition cursor-pointer"
             >
               <ClipboardList className="h-4 w-4 text-blue-300" />
-              <span>내 진행상황 조회</span>
-              {myReportsCount > 0 && (
-                <span className="ml-1 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[11px] font-mono font-bold">
-                  {myReportsCount}
-                </span>
-              )}
+              <span>신고 목록 보기</span>
             </button>
 
-            {onNavigateOverallProgress && (
+            {onNavigateReports && (
               <button
                 type="button"
-                onClick={onNavigateOverallProgress}
+                onClick={onNavigateReports}
                 className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-100 text-xs sm:text-sm font-semibold active:scale-[0.98] transition cursor-pointer"
               >
                 <Eye className="h-4 w-4 text-indigo-300" />
@@ -279,7 +260,7 @@ export function UserHomeLandingView({
 
         {/* Card 2: My Reports (내 진행상황) */}
         <div
-          onClick={onNavigateMyReports}
+          onClick={onNavigateReports}
           className="p-5 sm:p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-400 transition cursor-pointer shadow-xs group space-y-4"
         >
           <div className="flex items-center justify-between">
@@ -301,23 +282,16 @@ export function UserHomeLandingView({
           </div>
 
           <div className="pt-2 flex items-center justify-between text-xs">
-            {currentUser ? (
-              <span className="text-blue-700 font-semibold flex items-center gap-1 text-[11px]">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {currentUser.name} ({myReportsCount}건)
-              </span>
-            ) : (
-              <span className="text-slate-400 flex items-center gap-1 text-[11px]">
-                <Lock className="h-3.5 w-3.5" />
-                Google 계정 연동
-              </span>
-            )}
+            <span className="text-slate-400 flex items-center gap-1 text-[11px]">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              로그인 없이 이 브라우저에서 확인
+            </span>
           </div>
         </div>
 
         {/* Card 3: Overall Progress (전체 진행상황) */}
         <div
-          onClick={onNavigateOverallProgress}
+          onClick={onNavigateReports}
           className="p-5 sm:p-6 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/50 to-white hover:border-indigo-400 transition cursor-pointer shadow-xs group space-y-4"
         >
           <div className="flex items-center justify-between">

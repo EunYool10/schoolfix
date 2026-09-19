@@ -1,26 +1,33 @@
-export type ReportStatus = "pending" | "reviewing" | "in_progress" | "completed";
+﻿export type ReportStatus = "pending" | "reviewing" | "in_progress" | "completed";
 export type ReportPriority = "urgent" | "medium" | "low";
 
-export const ADMIN_EMAIL = "eunyool100208@gmail.com";
-export const ADMIN_EMAILS = ["eunyool100208@gmail.com", "studioteamdeer@gmail.com"];
-
-export function isUserAdmin(email?: string | null): boolean {
-  if (!email) return false;
-  const normalized = email.trim().toLowerCase();
-  return ADMIN_EMAILS.some((a) => a.toLowerCase() === normalized);
+/**
+ * 서버가 실제 DB 에서 계산한 통계 (§20).
+ * 클라이언트는 이 값을 표시만 하고 다시 계산하거나 만들어내지 않는다.
+ */
+export interface ReportStatsResponse {
+  total: number;
+  byRisk: Record<string, number>;
+  byCategory: Record<string, number>;
+  byStatus: Record<string, number>;
+  byLocation: Record<string, number>;
+  unanalyzed: number;
 }
 
-export interface UserProfile {
-  id: string; // SchoolFix 내부 user_id (예: usr_...)
-  google_sub: string; // Google 계정 고유 식별자 (sub)
-  email: string;
-  name: string;
-  profile_image?: string;
-  picture?: string;
-  avatar?: string;
-  role: "USER" | "ADMIN";
-  created_at?: string;
-  last_login_at?: string;
+/** POST /api/ai/summary 응답 */
+export interface AiSummaryResponse {
+  ok: boolean;
+  empty?: boolean;
+  cached?: boolean;
+  message?: string;
+  stats: ReportStatsResponse;
+  summary: {
+    headline: string;
+    keyIssues: string[];
+    recommendation: string;
+    generatedAt: string;
+    model: string;
+  } | null;
 }
 
 // ==========================================
@@ -95,28 +102,26 @@ export const RISK_LEVEL_MAP: Record<RiskLevel, RiskLevelBadgeConfig> = {
   },
 };
 
+/**
+ * 화면에서 다루는 신고 객체.
+ * 서버의 공개 DTO(toPublicReport)와 1:1로 대응하며, 개인정보 필드는 존재하지 않는다.
+ * 로그인을 제거했으므로 신고자 이름·이메일·계정 식별자는 수집하지도, 전달하지도 않는다.
+ */
 export interface SchoolReport {
+  /** 접수번호 (예: REP-20260919-0001). 내부 DB 식별자가 아니라 사용자에게 안내되는 번호다. */
   id: string;
-  user_id?: string | null; // 작성자의 SchoolFix 내부 user_id
-  google_sub?: string | null;
   title?: string;
   location: string;
   category: string;
   description: string;
-  isAnonymous: boolean;
-  userEmail?: string | null;
-  userName?: string | null;
   attachmentUrl?: string | null;
-  attachmentName?: string | null;
-  attachmentSize?: number | null;
   status: ReportStatus;
-  priority?: ReportPriority;
-  adminNote?: string;
-  /** 관리자 응답에만 포함된다. 학생/공개 응답에서는 서버가 제거한다. */
+  /** 서버가 산출한 위험도 등급 — 분석 전이면 null */
+  riskLevel?: RiskLevel | null;
+  riskScore?: number | null;
   riskAnalysis?: RiskAnalysis | null;
-  riskAnalysisError?: string | null;
-  /** 학생 응답에 포함되는 최소 정보 — 담당자 확인이 필요한 건인지 여부 */
-  needsHumanReview?: boolean;
+  /** 본인이 등록한 신고인지 (익명 소유 토큰으로 판별) */
+  isMine?: boolean;
   assignee?: string | null;
   resolutionNote?: string | null;
   reviewedAt?: string | null;

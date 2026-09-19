@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+﻿import React, { useState, useRef, useEffect } from "react";
 import {
   Camera,
   X,
@@ -14,7 +14,6 @@ import {
   SchoolReport,
   SCHOOL_LOCATIONS,
   ISSUE_CATEGORIES,
-  UserProfile,
 } from "../types";
 import {
   FORM_EXAMPLE_LIST,
@@ -22,6 +21,7 @@ import {
   getRandomFormExamples,
 } from "../data/formExamples";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
+import { checkProfanity, PROFANITY_MESSAGE } from "../security/profanityFilter";
 
 interface StudentReportViewProps {
   onSubmitReport: (data: {
@@ -29,18 +29,13 @@ interface StudentReportViewProps {
     location: string;
     category: string;
     description: string;
-    isAnonymous: boolean;
-    userEmail?: string | null;
-    userName?: string | null;
     attachmentUrl?: string | null;
     attachmentName?: string | null;
     attachmentSize?: number | null;
   }) => Promise<{ success: boolean; report?: SchoolReport; error?: string }>;
   isSubmitting: boolean;
-  currentUser?: UserProfile | null;
   onSuccessNavToMyReports?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
-  onOpenAuthModal?: () => void;
 }
 
 interface FieldErrors {
@@ -54,17 +49,14 @@ interface FieldErrors {
 export function StudentReportView({
   onSubmitReport,
   isSubmitting,
-  currentUser,
   onSuccessNavToMyReports,
   onDirtyChange,
-  onOpenAuthModal,
 }: StudentReportViewProps) {
   // Problem fields
   const [title, setTitle] = useState<string>("");
   const [location, setLocation] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState<string>("");
-  const [isAnonymous, setIsAnonymous] = useState<boolean>(true);
 
   // Attachment state
   const [attachmentName, setAttachmentName] = useState<string | null>(null);
@@ -194,7 +186,6 @@ export function StudentReportView({
     setLocation("");
     setCategory("");
     setDescription("");
-    setIsAnonymous(true);
     handleRemoveFile();
     setFieldErrors({});
     setGlobalError(null);
@@ -213,7 +204,6 @@ export function StudentReportView({
     setLocation(example.location);
     setCategory(example.category);
     setDescription(example.description);
-    setIsAnonymous(example.isAnonymous);
     setSelectedExampleKey(example.key);
     clearFieldError("title");
     clearFieldError("location");
@@ -274,14 +264,23 @@ export function StudentReportView({
       return;
     }
 
+    // 욕설/유해 표현 사전 검사 (§20).
+    // 서버 요청을 보내기 전에 안내만 하며, 최종 차단 판단은 서버가 한다(§21).
+    // 어떤 표현이 걸렸는지는 화면에 노출하지 않는다.
+    const profanity = checkProfanity(
+      [title, location, category, description].filter(Boolean).join(" ")
+    );
+    if (profanity.blocked) {
+      setSubmitError(PROFANITY_MESSAGE);
+      descriptionRef.current?.focus();
+      return;
+    }
+
     const res = await onSubmitReport({
       title: title.trim() || undefined,
       location: location.trim(),
       category: category.trim(),
       description: description.trim(),
-      isAnonymous,
-      userEmail: currentUser?.email || null,
-      userName: currentUser?.name || null,
       attachmentUrl: previewUrl || null,
       attachmentName: attachmentName || null,
       attachmentSize: attachmentSize || null,
@@ -437,50 +436,19 @@ export function StudentReportView({
           </div>
         </div>
 
-        {/* Account Status Banner */}
-        <div className="mb-6 p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          {currentUser ? (
-            <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-[11px] shrink-0">
-                {currentUser.name ? currentUser.name.charAt(0) : "U"}
-              </div>
-              <div>
-                <p className="font-bold text-slate-900">
-                  {currentUser.name}{" "}
-                  <span className="font-normal text-slate-500 font-mono">
-                    ({currentUser.email})
-                  </span>
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  접수 후 '내 신고 목록'에서 실시간 처리 상태를 추적할 수 있습니다.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center shrink-0">
-                <Lock className="h-3.5 w-3.5" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-800">
-                  현재 비로그인 상태로 작성 중입니다.
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Google 로그인 시 모든 신고 내역이 계정에 자동 연동되어 안전하게 보관됩니다.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {!currentUser && onOpenAuthModal && (
-            <button
-              type="button"
-              onClick={onOpenAuthModal}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 font-bold text-slate-700 text-xs transition cursor-pointer shrink-0"
-            >
-              Google 로그인
-            </button>
-          )}
+        {/* 접수 안내 — 로그인이 없으므로 신고자 개인정보를 수집하지 않는다(§32) */}
+        <div className="mb-6 p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center gap-2.5 text-xs">
+          <div className="h-7 w-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <Lock className="h-3.5 w-3.5" />
+          </div>
+          <div>
+            <p className="font-semibold text-slate-800">
+              로그인 없이 접수되며, 이름·학번·연락처를 수집하지 않습니다.
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              접수한 신고는 이 브라우저의 [내 신고] 탭에서 처리 상태를 확인할 수 있습니다.
+            </p>
+          </div>
         </div>
 
         {/* Auto-fill Info Notice (Disappears when user edits or resets) */}
@@ -776,33 +744,11 @@ export function StudentReportView({
             )}
           </div>
 
-          {/* 5. Anonymous option */}
-          <div className="pt-2">
-            <label
-              htmlFor="field-anonymous"
-              className="flex items-start gap-3 p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition cursor-pointer select-none"
-            >
-              <input
-                id="field-anonymous"
-                type="checkbox"
-                checked={isAnonymous}
-                onChange={(e) => {
-                  setIsAnonymous(e.target.checked);
-                  setAutoFillNotice(false);
-                }}
-                className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600 mt-0.5 cursor-pointer"
-              />
-              <div>
-                <span className="text-sm font-semibold text-slate-900 flex items-center gap-1.5">
-                  <Lock className="h-3.5 w-3.5 text-slate-600" />
-                  익명으로 신고하기
-                </span>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  익명으로 신고하면 이름, 학번 등의 개인정보를 신고 내용과 함께 저장하지 않습니다.
-                </p>
-              </div>
-            </label>
-          </div>
+          {/*
+            익명 선택 체크박스는 제거했다.
+            로그인이 없어 신고자 신원을 수집하지 않으므로 모든 신고가 익명이며,
+            사용자에게 선택지를 주면 실제와 다른 인상을 줄 수 있다(§32).
+          */}
 
           {/* 6. Action Buttons */}
           <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
