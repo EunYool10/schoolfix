@@ -513,6 +513,14 @@ app.delete("/api/reports/:id", (req, res) => {
   return res.json({ ok: true, message: `신고 [${id}]가 삭제되었습니다.` });
 });
 
+// 정의되지 않은 API 경로는 여기서 끝낸다.
+// 이 핸들러가 없으면 프로덕션의 SPA fallback(app.get("*"))이 /api/* 요청까지 받아
+// 존재하지 않는 엔드포인트가 200과 함께 index.html 을 돌려준다.
+// 제거된 구 인증 API가 살아 있는 것처럼 보이고, 클라이언트는 JSON 대신 HTML 을 받게 된다.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ ok: false, error: "요청한 API를 찾을 수 없습니다." });
+});
+
 // ---------------------------------------------------------------------------
 
 async function startServer() {
