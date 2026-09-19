@@ -134,9 +134,22 @@ export function StudentReportView({
     }
   };
 
+  // 서버가 허용하는 형식과 반드시 일치해야 한다(serverSecurity.validateReportInput).
+  // 목록이 어긋나면 사용자는 첨부가 된 줄 알았는데 조용히 사라지거나 400 을 받는다.
+  const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        attachment: "사진은 PNG, JPG, GIF, WEBP 형식만 첨부할 수 있습니다.",
+      }));
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
 
     if (file.size > 8 * 1024 * 1024) {
       setFieldErrors((prev) => ({
@@ -153,15 +166,11 @@ export function StudentReportView({
     setAttachmentSize(file.size);
     clearFieldError("attachment");
 
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setPreviewUrl(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setPreviewUrl(null);
-    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setPreviewUrl(event.target?.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveFile = () => {
@@ -685,7 +694,7 @@ export function StudentReportView({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.pdf,.doc,.docx"
+              accept="image/png,image/jpeg,image/gif,image/webp"
               onChange={handleFileSelect}
               className="hidden"
             />

@@ -17,7 +17,7 @@ import {
 interface UserHomeLandingViewProps {
   reports: SchoolReport[];
   onNavigateNewReport: () => void;
-  onNavigateReports: () => void;
+  onNavigateReports: (tab?: "MINE" | "ALL") => void;
   onOpenReportDetail: (report: SchoolReport) => void;
 }
 
@@ -92,23 +92,13 @@ export function UserHomeLandingView({
 
             <button
               type="button"
-              onClick={onNavigateReports}
+              onClick={() => onNavigateReports("ALL")}
               className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20 text-white text-xs sm:text-sm font-semibold active:scale-[0.98] transition cursor-pointer"
             >
               <ClipboardList className="h-4 w-4 text-blue-300" />
               <span>신고 목록 보기</span>
             </button>
 
-            {onNavigateReports && (
-              <button
-                type="button"
-                onClick={onNavigateReports}
-                className="inline-flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-100 text-xs sm:text-sm font-semibold active:scale-[0.98] transition cursor-pointer"
-              >
-                <Eye className="h-4 w-4 text-indigo-300" />
-                <span>전체 진행상황 보기</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -260,7 +250,7 @@ export function UserHomeLandingView({
 
         {/* Card 2: My Reports (내 진행상황) */}
         <div
-          onClick={onNavigateReports}
+          onClick={() => onNavigateReports("MINE")}
           className="p-5 sm:p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-400 transition cursor-pointer shadow-xs group space-y-4"
         >
           <div className="flex items-center justify-between">
@@ -291,7 +281,7 @@ export function UserHomeLandingView({
 
         {/* Card 3: Overall Progress (전체 진행상황) */}
         <div
-          onClick={onNavigateReports}
+          onClick={() => onNavigateReports("ALL")}
           className="p-5 sm:p-6 rounded-2xl border border-indigo-200 bg-gradient-to-b from-indigo-50/50 to-white hover:border-indigo-400 transition cursor-pointer shadow-xs group space-y-4"
         >
           <div className="flex items-center justify-between">

@@ -107,11 +107,11 @@ export function rateLimit(scope: string, rule: RateLimitRule) {
 // 실제 적용 규칙 --------------------------------------------------------------
 
 export const LIMITS = {
-  /** 신고 등록: 정상 사용자를 막지 않는 선에서 스팸만 차단 (§23) */
+  /** 신고 등록 (§23). 학교는 NAT 뒤에서 전교생이 한 IP 를 공유하므로, 한도를 낮게 잡으면 정상 사용자가 통째로 차단된다. 스크립트 대량 등록만 막을 수준으로 둔다. */
   submitReport: {
     windowMs: 10 * 60 * 1000,
-    max: 10,
-    blockMs: 10 * 60 * 1000,
+    max: 60,
+    blockMs: 5 * 60 * 1000,
     message: "짧은 시간에 너무 많은 신고가 등록되었습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
 
@@ -127,7 +127,7 @@ export const LIMITS = {
   adminVerify: {
     windowMs: 15 * 60 * 1000,
     max: 5,
-    blockMs: 15 * 60 * 1000,
+    blockMs: 10 * 60 * 1000,
     message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
 };

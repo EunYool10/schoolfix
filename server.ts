@@ -33,6 +33,7 @@ import {
 } from "./aiSummary";
 import {
   rateLimit,
+  checkRateLimit,
   LIMITS,
   verifyAdminPassword,
   isAdminPasswordConfigured,
@@ -398,7 +399,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
 let summaryCache: { key: string; result: AiSummaryResult } | null = null;
 
-app.post("/api/ai/summary", rateLimit("summary", LIMITS.aiSummary), async (req, res) => {
+app.post("/api/ai/summary", async (req, res) => {
   const reports = loadReports();
   const stats = computeStatistics(reports);
 
@@ -422,6 +423,15 @@ app.post("/api/ai/summary", rateLimit("summary", LIMITS.aiSummary), async (req, 
   const cacheKey = `${reports.length}:${reports.map((r) => `${r.id}@${r.updatedAt}`).join("|")}`;
   if (summaryCache && summaryCache.key === cacheKey) {
     return res.json({ ok: true, cached: true, stats, summary: summaryCache.result });
+  }
+
+  // Rate Limit 은 실제로 OpenAI 를 호출할 때만 소모한다.
+  // 미들웨어로 걸면 캐시 적중(비용 0)도 한도를 깎아,
+  // 같은 학교 IP 에서 몇 번만 눌러도 전체 사용자가 막힌다.
+  const limit = checkRateLimit("summary", req, LIMITS.aiSummary);
+  if (!limit.allowed) {
+    res.setHeader("Retry-After", String(limit.retryAfterSec));
+    return res.status(429).json({ ok: false, error: LIMITS.aiSummary.message });
   }
 
   const aiInput: AiReportInput[] = reports.map((r) => ({

@@ -55,6 +55,7 @@ interface ToastState {
 
 export default function App() {
   const [view, setView] = useState<View>("HOME");
+  const [reportsTab, setReportsTab] = useState<"MINE" | "ALL">("ALL");
 
   const [reports, setReports] = useState<SchoolReport[]>([]);
   const [myReports, setMyReports] = useState<SchoolReport[]>([]);
@@ -254,7 +255,7 @@ export default function App() {
               <UserHomeLandingView
                 reports={allReportsMarked}
                 onNavigateNewReport={() => setView("NEW_REPORT")}
-                onNavigateReports={() => setView("REPORTS")}
+                onNavigateReports={(tab) => { setReportsTab(tab ?? "ALL"); setView("REPORTS"); }}
                 onOpenReportDetail={(r) => setDetailReport(r)}
               />
             )}
@@ -293,12 +294,12 @@ export default function App() {
               <ReportListView
                 allReports={allReportsMarked}
                 myReports={myReports}
-                stats={stats}
                 isLoading={isLoading}
                 onRefresh={refreshAll}
                 isRefreshing={isRefreshing}
                 onOpenReport={(r) => setDetailReport(r)}
                 onNavigateNewReport={() => setView("NEW_REPORT")}
+                initialTab={reportsTab}
               />
             )}
           </div>

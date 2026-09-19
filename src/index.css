@@ -47,8 +47,12 @@ body.modal-open {
 
 /* Dedicated Print Stylesheet for SchoolFix PDF Report Document */
 @media print {
-  /* Hide all regular UI including navigation, modals backdrop, buttons */
-  body * {
+  /*
+   * 인쇄 문서가 화면에 있을 때만 나머지 UI 를 숨긴다.
+   * :has() 가드가 없으면 신고 목록이 아닌 화면(홈, 신고 작성)에서 Ctrl+P 를 눌렀을 때
+   * #schoolfix-print-document 가 없는데 body 전체가 숨겨져 완전히 빈 페이지가 인쇄된다.
+   */
+  body:has(#schoolfix-print-document) * {
     visibility: hidden !important;
   }
 

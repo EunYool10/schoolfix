@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Sparkles,
@@ -11,13 +11,11 @@ import {
 } from "lucide-react";
 import {
   SchoolReport,
-  ReportStatsResponse,
   AiSummaryResponse,
   STATUS_MAP,
   RISK_LEVEL_MAP,
   RiskLevel,
   ReportStatus,
-  SCHOOL_LOCATIONS,
   ISSUE_CATEGORIES,
 } from "../types";
 import {
@@ -33,12 +31,13 @@ export type ReportTab = "MINE" | "ALL";
 interface ReportListViewProps {
   allReports: SchoolReport[];
   myReports: SchoolReport[];
-  stats: ReportStatsResponse | null;
   isLoading: boolean;
   onRefresh: () => void;
   isRefreshing: boolean;
   onOpenReport: (report: SchoolReport) => void;
   onNavigateNewReport: () => void;
+  /** 홈 카드에서 특정 탭으로 바로 들어올 때 사용 */
+  initialTab?: ReportTab;
 }
 
 const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
@@ -47,14 +46,19 @@ const STATUS_OPTIONS: ReportStatus[] = ["pending", "reviewing", "in_progress", "
 export function ReportListView({
   allReports,
   myReports,
-  stats,
   isLoading,
   onRefresh,
   isRefreshing,
   onOpenReport,
   onNavigateNewReport,
+  initialTab = "ALL",
 }: ReportListViewProps) {
-  const [tab, setTab] = useState<ReportTab>("ALL");
+  const [tab, setTab] = useState<ReportTab>(initialTab);
+
+  // 홈에서 다른 카드를 눌러 다시 들어오면 그 탭으로 맞춰 준다.
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   // 탭은 필터보다 상위 개념이다. 탭으로 목록을 고른 뒤 그 결과에 필터를 적용한다.
   const source = tab === "MINE" ? myReports : allReports;
@@ -64,6 +68,29 @@ export function ReportListView({
   const [summaryData, setSummaryData] = useState<AiSummaryResponse | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  /**
+   * PDF·인쇄에 넣을 통계는 실제로 내보내는 목록(filtered)에서 계산한다.
+   * 서버가 준 전체 통계를 그대로 쓰면 필터를 건 상태에서
+   * "전체 신고 8건" 이라고 적힌 문서에 1건만 나열되는 모순이 생긴다.
+   */
+  const exportStats = useMemo(() => {
+    const byRisk: Record<string, number> = {};
+    const byCategory: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    const byLocation: Record<string, number> = {};
+    let unanalyzed = 0;
+
+    for (const r of filtered) {
+      if (r.riskLevel) byRisk[r.riskLevel] = (byRisk[r.riskLevel] || 0) + 1;
+      else unanalyzed += 1;
+      byCategory[r.category] = (byCategory[r.category] || 0) + 1;
+      byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+      byLocation[r.location] = (byLocation[r.location] || 0) + 1;
+    }
+
+    return { total: filtered.length, byRisk, byCategory, byStatus, byLocation, unanalyzed };
+  }, [filtered]);
 
   // 실제 데이터에 존재하는 값만 필터 옵션으로 노출한다.
   const availableCategories = useMemo(
@@ -318,13 +345,11 @@ export function ReportListView({
       {/* 인쇄 / PDF 전용 문서 — 화면에서는 숨기고 @media print 에서만 표시한다.
           현재 필터가 적용된 목록을 그대로 내보낸다. */}
       <div id="schoolfix-print-document" className="hidden print:block">
-        {stats && (
-          <ReportPdfDocument
-            reports={filtered}
-            stats={stats}
-            summary={summaryData?.summary ?? null}
-          />
-        )}
+        <ReportPdfDocument
+          reports={filtered}
+          stats={exportStats}
+          summary={summaryData?.summary ?? null}
+        />
       </div>
     </div>
   );
