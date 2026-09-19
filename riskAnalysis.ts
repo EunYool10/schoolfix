@@ -43,6 +43,11 @@ export interface RawRiskVerdict {
   needs_more_info: boolean;
   needs_human_review: boolean;
   follow_up_question: string | null;
+  /**
+   * 신고 내용에 포함된 욕설·성적 표현 중, 규칙 기반 필터가 놓친 것.
+   * 서버가 이 문자열을 찾아 #### 로 가린다.
+   */
+  offensive_terms: string[];
 }
 
 /** DB에 저장되는 최종 분석 결과 (서버 검증·재계산 완료) */
@@ -249,6 +254,10 @@ export function validateAndNormalize(
     needs_more_info: needsMoreInfo,
     needs_human_review: needsHumanReview,
     follow_up_question: followUp,
+    // AI 가 찾아낸 표현 목록. 실제 치환은 서버(server.ts)가 수행한다.
+    offensive_terms: Array.isArray(r.offensive_terms)
+      ? r.offensive_terms.filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 1).slice(0, 20)
+      : [],
     analyzed_at: new Date().toISOString(),
     model,
   };
@@ -288,6 +297,7 @@ export const RISK_JSON_SCHEMA = {
     needs_more_info: { type: "boolean" },
     needs_human_review: { type: "boolean" },
     follow_up_question: { type: ["string", "null"] },
+    offensive_terms: { type: "array", items: { type: "string" } },
   },
   required: [
     "risk_level",
@@ -299,6 +309,7 @@ export const RISK_JSON_SCHEMA = {
     "needs_more_info",
     "needs_human_review",
     "follow_up_question",
+    "offensive_terms",
   ],
 } as const;
 
@@ -400,6 +411,17 @@ persistence (문제 지속성)
  학생 수, 위치, 피해자 수, 사고·부상 발생 여부, 시설 상태, 지속 기간,
  신고 횟수, 시설 이용 인원, 위험 원인을 임의로 만들어내지 않는다.
  예) "복도 바닥이 미끄러워요" 에 대해 "매일 300명이 이용하는 복도이므로" 라고 쓰면 안 된다.
+
+[부적절 표현 탐지 — offensive_terms]
+ 신고 내용에 욕설, 성적 비속어, 패드립, 심한 모욕 표현이 있으면
+ 그 표현을 신고 내용에 나온 문자열 그대로 offensive_terms 배열에 담는다.
+ 규칙 기반 필터가 이미 #### 로 가린 부분은 다시 넣지 않는다.
+ 다음은 담지 않는다:
+  - 단순한 불만·짜증 표현 (예: "미친 듯이 덥다", "진짜 짜증나요", "최악이에요")
+  - 시설 상태를 설명하는 표현
+  - 문장 전체나 긴 구절 (표현 자체만 짧게 담는다)
+ 해당 표현이 없으면 빈 배열([])로 둔다.
+ 신고 내용을 고쳐 쓰지 않는다. 찾아낸 표현만 알려주면 치환은 서버가 한다.
 
 [출력]
  risk_score 와 risk_level 도 스키마상 채워야 하지만, 최종 값은 서버가 공식으로 재계산한다.

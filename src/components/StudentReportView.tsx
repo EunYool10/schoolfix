@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from "react";
+﻿import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Camera,
   X,
@@ -21,7 +21,7 @@ import {
   getRandomFormExamples,
 } from "../data/formExamples";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
-import { checkProfanity, PROFANITY_MESSAGE } from "../security/profanityFilter";
+import { maskProfanity } from "../security/profanityFilter";
 
 interface StudentReportViewProps {
   onSubmitReport: (data: {
@@ -71,6 +71,14 @@ export function StudentReportView({
 
   // Unsaved changes dialog state
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
+
+  // 작성 중인 내용에 가려질 표현이 있는지 미리 알려 준다.
+  // 차단이 아니라 안내이므로 제출은 그대로 가능하다.
+  const profanityPreview = useMemo(() => {
+    const t = maskProfanity(title);
+    const d = maskProfanity(description);
+    return { willMask: t.masked || d.masked, preview: d.masked ? d.text : null };
+  }, [title, description]);
 
   // Example auto-fill notice banner state
   const [autoFillNotice, setAutoFillNotice] = useState<boolean>(false);
@@ -270,18 +278,6 @@ export function StudentReportView({
     // Run detailed client-side field validation before sending to backend
     const isValid = validateForm();
     if (!isValid) {
-      return;
-    }
-
-    // 욕설/유해 표현 사전 검사 (§20).
-    // 서버 요청을 보내기 전에 안내만 하며, 최종 차단 판단은 서버가 한다(§21).
-    // 어떤 표현이 걸렸는지는 화면에 노출하지 않는다.
-    const profanity = checkProfanity(
-      [title, location, category, description].filter(Boolean).join(" ")
-    );
-    if (profanity.blocked) {
-      setSubmitError(PROFANITY_MESSAGE);
-      descriptionRef.current?.focus();
       return;
     }
 
@@ -496,6 +492,30 @@ export function StudentReportView({
             <div>
               <p className="font-bold text-rose-900">입력하신 정보에 확인이 필요한 항목이 있습니다.</p>
               <p className="mt-0.5 text-rose-700">{globalError}</p>
+            </div>
+          </div>
+        )}
+
+        {/*
+          작성 중 안내 — 제출을 막지 않는다.
+          부적절한 표현은 접수 시 서버가 자동으로 가리며,
+          사용자가 미리 알고 고칠 수 있도록 여기서 알려 준다.
+        */}
+        {profanityPreview.willMask && (
+          <div
+            role="status"
+            className="mb-6 flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs sm:text-sm text-amber-900"
+          >
+            <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="font-semibold">
+                사용할 수 없는 표현이 포함되어 있어 접수 시 ####로 가려집니다.
+              </p>
+              {profanityPreview.preview && (
+                <p className="mt-1 text-[11px] text-amber-800 break-keep leading-relaxed">
+                  이렇게 저장됩니다: {profanityPreview.preview}
+                </p>
+              )}
             </div>
           </div>
         )}

@@ -157,6 +157,13 @@ export default function App() {
       if (json.ownerToken) saveOwnerToken(json.ownerToken);
 
       showToast("success", `신고가 접수되었습니다 (접수번호: ${json.data.id})`);
+      if (json.masked) {
+        // 사용자가 모르게 내용이 바뀌면 안 되므로 반드시 알린다.
+        showToast(
+          "info",
+          `부적절한 표현 ${json.maskedCount}곳이 자동으로 가려졌습니다.`
+        );
+      }
       refreshAll();
       return { success: true as const, report: json.data as SchoolReport };
     } catch (err: any) {

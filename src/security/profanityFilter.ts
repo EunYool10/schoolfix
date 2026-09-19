@@ -203,6 +203,92 @@ export function checkReportFields(fields: {
   return { blocked: categories.size > 0, categories: Array.from(categories) };
 }
 
+/** 마스킹에 쓰는 대체 문자열 */
+export const MASK_TOKEN = "####";
+
+export interface MaskResult {
+  /** 마스킹이 끝난 텍스트 */
+  text: string;
+  /** 한 군데라도 바뀌었는지 */
+  masked: boolean;
+  /** 몇 군데를 가렸는지 */
+  count: number;
+  categories: ProfanityCategory[];
+}
+
+/**
+ * 부적절한 표현을 찾아 #### 로 바꾼다.
+ *
+ * 검사(checkProfanity)와 달리 원문 위에서 직접 치환하므로,
+ * 정규화된 문자열이 아니라 사용자가 입력한 원본을 대상으로 한다.
+ * 그래야 나머지 문장이 그대로 보존된다.
+ *
+ * 모호한 표현(보지/자지/새끼 등)은 예외 패턴에 걸리면 건드리지 않는다.
+ * "칠판이 잘 보지 못해요" 가 "칠판이 잘 #### 못해요" 가 되면 안 되기 때문이다.
+ */
+export function maskProfanity(input: string | null | undefined): MaskResult {
+  if (!input || typeof input !== "string") {
+    return { text: input ?? "", masked: false, count: 0, categories: [] };
+  }
+
+  let text = input;
+  let count = 0;
+  const categories = new Set<ProfanityCategory>();
+
+  for (const entry of COMPILED) {
+    // 모호한 표현이 정상 문맥으로 쓰였으면 통째로 건너뛴다.
+    if (entry.ambiguous && entry.exceptions?.some((ex) => ex.test(text))) continue;
+
+    entry.regex.lastIndex = 0;
+    text = text.replace(entry.regex, () => {
+      count += 1;
+      categories.add(entry.category);
+      return MASK_TOKEN;
+    });
+  }
+
+  for (const j of JAMO_PATTERNS) {
+    const re = new RegExp(j.pattern.source, "g");
+    text = text.replace(re, () => {
+      count += 1;
+      categories.add(j.category);
+      return MASK_TOKEN;
+    });
+  }
+
+  return { text, masked: count > 0, count, categories: Array.from(categories) };
+}
+
+/**
+ * AI 가 추가로 찾아낸 표현을 마스킹한다.
+ *
+ * 규칙 기반 목록에 없는 신조어나 변형은 AI 가 잡아내고,
+ * 실제 치환은 여기서 서버가 수행한다.
+ * AI 에게 치환된 문장을 그대로 받아 쓰지 않는 이유는,
+ * 모델이 원문을 임의로 바꿔 쓸 수 있어 신고 내용이 훼손될 수 있기 때문이다.
+ */
+export function maskTerms(input: string, terms: string[]): MaskResult {
+  if (!input || terms.length === 0) return { text: input ?? "", masked: false, count: 0, categories: [] };
+
+  let text = input;
+  let count = 0;
+
+  // 긴 표현부터 치환해야 짧은 표현이 먼저 잘려 어긋나지 않는다.
+  for (const term of [...terms].sort((a, b) => b.length - a.length)) {
+    const t = term.trim();
+    if (t.length < 2 || t.length > 40) continue; // 너무 짧거나 문장 전체를 지우려는 경우 무시
+    if (t === MASK_TOKEN) continue;
+
+    const re = new RegExp(escapeRegExp(t), "gi");
+    text = text.replace(re, () => {
+      count += 1;
+      return MASK_TOKEN;
+    });
+  }
+
+  return { text, masked: count > 0, count, categories: count > 0 ? ["severe_profanity"] : [] };
+}
+
 /** 사용자에게 보여줄 안내 문구 (어떤 단어가 걸렸는지는 알려주지 않는다) */
 export const PROFANITY_MESSAGE =
-  "신고 내용에 사용할 수 없는 표현이 포함되어 있습니다. 해당 표현을 수정한 뒤 다시 등록해주세요.";
+  "신고 내용에 사용할 수 없는 표현이 포함되어 자동으로 가려졌습니다.";

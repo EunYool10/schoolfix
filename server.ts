@@ -46,7 +46,7 @@ import {
   corsPolicy,
   safeError,
 } from "./serverSecurity";
-import { checkReportFields, PROFANITY_MESSAGE } from "./src/security/profanityFilter";
+import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { SCHOOL_LOCATIONS, ISSUE_CATEGORIES } from "./src/types";
 
 const app = express();
@@ -375,20 +375,17 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
   }
 
-  // 2) 욕설/유해 표현 검사 — 서버가 최종 판단한다 (§21)
-  const profanity = checkReportFields({
-    title: req.body.title,
-    description: req.body.description,
-    location: req.body.location,
-    category: req.body.category,
-  });
-  if (profanity.blocked) {
-    return res.status(400).json({
-      ok: false,
-      error: PROFANITY_MESSAGE,
-      code: "PROFANITY_BLOCKED",
-    });
-  }
+  // 2) 욕설/유해 표현 자동 마스킹
+  //
+  //    접수를 거부하지 않고 해당 표현만 #### 로 가린다.
+  //    학생이 흥분한 상태로 쓴 신고도 시설 문제 자체는 유효한 정보이므로,
+  //    표현만 걸러내고 내용은 살리는 편이 낫다.
+  //
+  //    1차: 규칙 기반 (즉시·무료·결정론적)
+  //    2차: AI 가 찾아낸 표현 (아래 위험도 분석 응답에서 함께 받는다)
+  const maskedTitle = maskProfanity(req.body.title);
+  const maskedDescription = maskProfanity(req.body.description);
+
 
   try {
     const reports = loadAllReports();
@@ -404,12 +401,13 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     }, 0);
     const reportId = `${prefix}${String(lastSerial + 1).padStart(4, "0")}`;
 
-    const description = String(req.body.description).trim();
+    // 1차 마스킹이 적용된 텍스트를 기준으로 삼는다.
+    let description = maskedDescription.text.trim();
     const location = String(req.body.location).trim();
     const category = String(req.body.category).trim();
-    const title =
-      req.body.title && String(req.body.title).trim()
-        ? String(req.body.title).trim()
+    let title =
+      maskedTitle.text && maskedTitle.text.trim()
+        ? maskedTitle.text.trim()
         : `${location} ${category} 불편 신고`;
 
     // 3) 위험도 분석 (실패해도 접수 자체는 성공시킨다)
@@ -421,6 +419,20 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       category,
       repeat
     );
+
+    // 3-2) AI 가 추가로 찾아낸 표현을 2차 마스킹한다.
+    //      치환은 서버가 수행한다. AI 가 고쳐 쓴 문장을 그대로 받으면
+    //      신고 내용 자체가 바뀔 수 있기 때문이다.
+    let aiMaskCount = 0;
+    if (analysis && analysis.offensive_terms.length > 0) {
+      const d = maskTerms(description, analysis.offensive_terms);
+      const ti = maskTerms(title, analysis.offensive_terms);
+      description = d.text;
+      title = ti.text;
+      aiMaskCount = d.count + ti.count;
+    }
+
+    const maskedCount = maskedTitle.count + maskedDescription.count + aiMaskCount;
 
     // 4) 익명 소유 토큰 — 원본은 응답으로 1회만 전달하고 DB 에는 해시만 남긴다
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
@@ -452,6 +464,9 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       data: toMyReport(newReport),
       // 브라우저가 저장해야 "내 신고" 에서 다시 찾을 수 있다.
       ownerToken,
+      // 부적절한 표현이 가려졌다면 사용자에게 알린다.
+      masked: maskedCount > 0,
+      maskedCount,
     });
   } catch (err) {
     return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);
