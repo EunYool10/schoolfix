@@ -166,11 +166,30 @@ export function ReportListView({
     win.document.write(html);
     win.document.close();
 
-    // 문서가 다 그려진 뒤 인쇄 대화상자를 띄운다.
-    win.onload = () => {
-      win.focus();
-      win.print();
+    /*
+     * 인쇄 대화상자를 띄운다.
+     *
+     * document.close() 이후 load 이벤트가 이미 끝났을 수 있다.
+     * 그 상태에서 onload 만 걸어 두면 콜백이 영영 불리지 않아
+     * 창만 열리고 인쇄창이 뜨지 않는다 — PDF 가 안 나오는 것처럼 보이는 원인이다.
+     * 그래서 readyState 를 먼저 확인하고, 아직이면 load 를 기다린다.
+     */
+    const startPrint = () => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        // 사용자가 창을 먼저 닫은 경우 등 — 조용히 넘어간다.
+      }
     };
+
+    if (win.document.readyState === "complete") {
+      startPrint();
+    } else {
+      win.addEventListener("load", startPrint, { once: true });
+      // load 가 끝내 오지 않는 브라우저를 대비한 보정.
+      win.setTimeout(startPrint, 800);
+    }
   };
 
   const tabButton = (value: ReportTab, label: string, count: number) => {

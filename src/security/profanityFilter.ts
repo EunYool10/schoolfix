@@ -183,26 +183,6 @@ export function checkProfanity(input: string | null | undefined): ProfanityResul
   return { blocked: found.size > 0, categories: Array.from(found) };
 }
 
-/**
- * 신고의 자유 입력 필드를 한 번에 검사한다.
- * 제목/내용/위치 등 사용자가 직접 타이핑하는 모든 필드가 대상이다.
- */
-export function checkReportFields(fields: {
-  title?: string | null;
-  description?: string | null;
-  location?: string | null;
-  category?: string | null;
-}): ProfanityResult {
-  const categories = new Set<ProfanityCategory>();
-
-  for (const value of [fields.title, fields.description, fields.location, fields.category]) {
-    const r = checkProfanity(value);
-    r.categories.forEach((c) => categories.add(c));
-  }
-
-  return { blocked: categories.size > 0, categories: Array.from(categories) };
-}
-
 /** 마스킹에 쓰는 대체 문자열 */
 export const MASK_TOKEN = "####";
 
@@ -260,6 +240,15 @@ export function maskProfanity(input: string | null | undefined): MaskResult {
 }
 
 /**
+ * AI 오탐 방어 목록.
+ * 학교 신고에서 정상적으로 쓰이는 강조·불만 표현이라 절대 가리지 않는다.
+ */
+const BENIGN_TERMS = [
+  "미친", "미쳤", "짜증", "최악", "진짜", "너무", "엄청", "정말",
+  "더러", "심각", "불편", "고장", "위험", "무섭", "답답", "끔찍",
+];
+
+/**
  * AI 가 추가로 찾아낸 표현을 마스킹한다.
  *
  * 규칙 기반 목록에 없는 신조어나 변형은 AI 가 잡아내고,
@@ -279,6 +268,11 @@ export function maskTerms(input: string, terms: string[]): MaskResult {
     if (t.length < 2 || t.length > 40) continue; // 너무 짧거나 문장 전체를 지우려는 경우 무시
     if (t === MASK_TOKEN) continue;
 
+    // AI 가 일반 표현을 부적절하다고 잘못 짚는 경우가 있다.
+    // "미친 듯이 덥다" 의 "미친" 이 가려지면 신고 내용이 훼손되므로,
+    // 정상적으로 쓰이는 강조·감정 표현은 서버에서 한 번 더 거른다.
+    if (BENIGN_TERMS.some((b) => t === b || b.includes(t))) continue;
+
     const re = new RegExp(escapeRegExp(t), "gi");
     text = text.replace(re, () => {
       count += 1;
@@ -288,7 +282,3 @@ export function maskTerms(input: string, terms: string[]): MaskResult {
 
   return { text, masked: count > 0, count, categories: count > 0 ? ["severe_profanity"] : [] };
 }
-
-/** 사용자에게 보여줄 안내 문구 (어떤 단어가 걸렸는지는 알려주지 않는다) */
-export const PROFANITY_MESSAGE =
-  "신고 내용에 사용할 수 없는 표현이 포함되어 자동으로 가려졌습니다.";

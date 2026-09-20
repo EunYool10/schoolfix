@@ -11,7 +11,7 @@ import { ReportListView } from "./components/ReportListView";
 import { ReportDetailModal } from "./components/ReportDetailModal";
 import { DeleteReportModal } from "./components/DeleteReportModal";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
-import { SchoolReport, ReportStatsResponse } from "./types";
+import { SchoolReport } from "./types";
 import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter } from "lucide-react";
 
 /**
@@ -59,7 +59,6 @@ export default function App() {
 
   const [reports, setReports] = useState<SchoolReport[]>([]);
   const [myReports, setMyReports] = useState<SchoolReport[]>([]);
-  const [stats, setStats] = useState<ReportStatsResponse | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -89,7 +88,6 @@ export default function App() {
       const json = await res.json();
       if (json.ok) {
         setReports(json.data || []);
-        setStats(json.stats || null);
       }
     } catch (err) {
       console.error(err);
