@@ -1,4 +1,11 @@
-import { SchoolReport, ReportStatsResponse, AiSummaryResponse, STATUS_MAP, ReportStatus } from "../types";
+import {
+  SchoolReport,
+  ReportStatsResponse,
+  AiSummaryResponse,
+  LocationStatistic,
+  STATUS_MAP,
+  ReportStatus,
+} from "../types";
 
 /**
  * 인쇄 / PDF 저장용 독립 HTML 문서를 만든다.
@@ -20,6 +27,11 @@ export interface ReportDocumentInput {
   summary: AiSummaryResponse["summary"];
   /** 어떤 조건으로 추린 목록인지 (예: "전체 신고 · 위험도 긴급") */
   scopeLabel?: string;
+  /**
+   * 서버가 집계한 위치별 통계. 같은 필터 조건으로 계산된 값만 넘긴다.
+   * 없으면 해당 섹션을 "집계된 위치 데이터가 없습니다" 로 표시한다 — 만들어 채우지 않는다.
+   */
+  locations?: LocationStatistic[] | null;
 }
 
 /** HTML 특수문자를 무력화한다. 신고 내용은 사용자 입력이므로 반드시 거친다. */
@@ -46,6 +58,7 @@ export function buildReportHtml({
   stats,
   summary,
   scopeLabel,
+  locations,
 }: ReportDocumentInput): string {
   const now = new Date().toLocaleString("ko-KR");
 
@@ -68,6 +81,37 @@ export function buildReportHtml({
       (summary.recommendation ? `<p>${escapeHtml(summary.recommendation)}</p>` : "") +
       `<p class="note">실제 신고 데이터를 기반으로 생성된 참고용 요약입니다.</p>`
     : `<p class="empty">AI 요약이 생성되지 않았습니다. [AI 요약]을 실행한 뒤 다시 저장하세요.</p>`;
+
+  /**
+   * 위치별 현황.
+   * 서버가 집계한 값만 쓴다. 넘어오지 않았으면 빈 안내를 남기고 아무것도 추정하지 않는다.
+   */
+  const locationBlock =
+    !locations || locations.length === 0
+      ? `<p class="empty">집계된 위치 데이터가 없습니다.</p>`
+      : `<table class="list">
+          <thead>
+            <tr><th>순위</th><th>장소</th><th>신고</th><th>주요 문제</th><th>높음 이상</th><th>최근 신고</th></tr>
+          </thead>
+          <tbody>
+            ${locations
+              .map(
+                (loc, i) => `<tr>
+                  <td class="num">${i + 1}</td>
+                  <td>${escapeHtml(loc.name)}</td>
+                  <td class="num">${loc.reportCount}건</td>
+                  <td>${escapeHtml(loc.mainCategory ?? "-")}</td>
+                  <td class="num">${loc.highRiskCount}건</td>
+                  <td>${escapeHtml(
+                    loc.latestReportAt
+                      ? new Date(loc.latestReportAt).toLocaleDateString("ko-KR")
+                      : "-"
+                  )}</td>
+                </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>`;
 
   const listBlock =
     reports.length === 0
@@ -141,8 +185,9 @@ export function buildReportHtml({
 <section><h2>2. 위험도별 현황</h2>${rows(riskRows, "위험도가 분석된 신고가 없습니다.")}</section>
 <section><h2>3. 카테고리별 현황</h2>${rows(categoryRows, "등록된 신고가 없습니다.")}</section>
 <section><h2>4. 처리 상태</h2>${rows(statusRows, "등록된 신고가 없습니다.")}</section>
-<section><h2>5. AI 요약</h2>${summaryBlock}</section>
-<section><h2>6. 신고 목록 (${reports.length}건)</h2>${listBlock}</section>
+<section><h2>5. 위치별 신고 현황</h2>${locationBlock}</section>
+<section><h2>6. AI 요약</h2>${summaryBlock}</section>
+<section><h2>7. 신고 목록 (${reports.length}건)</h2>${listBlock}</section>
 
 <footer>SchoolFix AI · 이 리포트에는 신고자 개인정보가 포함되지 않습니다.</footer>
 </body>

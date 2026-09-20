@@ -42,12 +42,30 @@ import {
   issueOwnerToken,
   hashOwnerToken,
   validateReportInput,
+  validateClarifyInput,
+  FIELD_LIMITS,
   securityHeaders,
   corsPolicy,
   safeError,
 } from "./serverSecurity";
+import {
+  aggregateLocationStats,
+  normalizeLocationText,
+  type LocationStatInput,
+} from "./locationStats";
+import {
+  analyzeClarity,
+  composeDescription,
+  createClarifySession,
+  getClarifySession,
+  dropClarifySession,
+  MAX_CLARIFY_QUESTIONS,
+  type ClarifySession,
+} from "./reportClarify";
 import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { SCHOOL_LOCATIONS, ISSUE_CATEGORIES } from "./src/types";
+import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
+import { RISK_LEVELS } from "./riskAnalysis";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.
@@ -68,6 +86,12 @@ interface StoredReport {
   id: string;
   title?: string;
   location: string;
+  /**
+   * 상세 위치 — 학생이 직접 적었거나, AI 사전 확인이 학생 문장에서 그대로 발췌한 값.
+   * 위치 통계는 location 과 이 값을 합쳐 집계한다. 없으면 null 이며 추측해서 채우지 않는다.
+   * 기존 신고에는 이 필드가 없으며, 없으면 location 만으로 집계된다.
+   */
+  locationDetail?: string | null;
   category: string;
   description: string;
   attachmentUrl?: string | null;
@@ -161,6 +185,7 @@ function toPublicReport(r: StoredReport) {
     id: r.id,
     title: r.title ?? "",
     location: r.location,
+    locationDetail: r.locationDetail ?? null,
     category: r.category,
     description: r.description,
     status: r.status,
@@ -337,6 +362,45 @@ app.get("/api/reports", (_req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// 위치별 통계
+//
+// "어느 장소에서 문제가 가장 많이 발생하는가" 를 실제 DB 에서 계산한다.
+// OpenAI 를 호출하지 않는다 — 통계는 결정론적이어야 하고 조회마다 비용이 들면 안 된다.
+//
+// 목록 화면과 **같은 필터 규칙**(src/utils/reportFilter.ts)을 쓴다.
+// 규칙이 두 벌이면 "최근 7일" 로 좁힌 목록과 그 아래 통계가 서로 다른 신고를 세게 된다.
+// ---------------------------------------------------------------------------
+
+const STATUS_VALUES = ["pending", "reviewing", "in_progress", "completed"];
+
+app.get("/api/reports/location-statistics", (req, res) => {
+  const filters = parseFilterQuery(
+    req.query as Record<string, unknown>,
+    ISSUE_CATEGORIES,
+    RISK_LEVELS,
+    STATUS_VALUES
+  );
+
+  // 공개 DTO 로 바꾼 뒤 거른다. 목록 화면이 받는 것과 정확히 같은 데이터를 세게 된다.
+  const scoped = filterReports(loadReports().map(toPublicReport), filters);
+
+  const input: LocationStatInput[] = scoped.map((r) => ({
+    location: r.location,
+    locationDetail: r.locationDetail,
+    category: r.category,
+    riskLevel: r.riskLevel,
+    createdAt: r.createdAt,
+  }));
+
+  res.json({
+    ok: true,
+    total: scoped.length,
+    locations: aggregateLocationStats(input),
+    appliedFilters: filters,
+  });
+});
+
 /** 신고 상세 — 목록과 동일한 공개 범위 (§56) */
 app.get("/api/reports/:id", (req, res) => {
   const report = loadReports().find((r) => r.id === req.params.id);
@@ -367,12 +431,109 @@ app.post("/api/reports/mine", (req, res) => {
   return res.json({ ok: true, data: mine.map(toMyReport) });
 });
 
+/**
+ * 접수 직전의 사전 확인 (§16).
+ *
+ * 프론트엔드가 이미 /api/reports/analyze 로 확인을 마쳤다면 그 세션을 그대로 쓴다 (추가 호출 없음).
+ * 세션 없이 곧바로 이 API 를 호출한 경우(개발자도구·외부 스크립트)에도
+ * 서버가 한 번 확인해서 애매한 신고가 그대로 저장되지 않게 한다.
+ *
+ * 확인 자체가 실패하면 접수를 막지 않는다. 위험도 분석과 같은 원칙이다 —
+ * 부가 기능의 장애가 신고 접수를 막아서는 안 된다.
+ */
+type ClarityGate =
+  | { proceed: true; description: string; locationDetail: string | null; session: ClarifySession | null }
+  | { proceed: false; sessionId: string; question: string; missingField: string | null };
+
+async function resolveClarityForSubmission(body: Record<string, any>): Promise<ClarityGate> {
+  const location = String(body.location).trim();
+  const category = String(body.category).trim();
+  const description = String(body.description).trim();
+
+  // 학생이 직접 적은 상세 위치가 최우선이다. AI 추출값보다 신뢰도가 높다.
+  const manualDetail =
+    typeof body.locationDetail === "string"
+      ? normalizeLocationText(body.locationDetail).slice(0, FIELD_LIMITS.locationDetail.max)
+      : "";
+
+  // 1) 프론트엔드가 마친 확인 세션 — 내용이 그대로여야 인정한다.
+  //    확인 후 본문을 고쳤다면 그 세션의 판단은 더 이상 이 신고에 대한 것이 아니다.
+  const session = getClarifySession(body.clarifySessionId);
+  if (
+    session &&
+    session.location === location &&
+    session.category === category &&
+    session.baseDescription.trim() === description
+  ) {
+    const settled =
+      session.verdict?.status === "ready" || session.turns.length >= MAX_CLARIFY_QUESTIONS;
+    if (settled) {
+      return {
+        proceed: true,
+        description: composeDescription(session),
+        locationDetail: manualDetail || session.verdict?.location_detail || null,
+        session,
+      };
+    }
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return { proceed: true, description, locationDetail: manualDetail || null, session: null };
+  }
+
+  // 2) 세션이 없으면 서버가 직접 한 번 확인한다.
+  try {
+    const verdict = await analyzeClarity({ location, category, description, turns: [] }, apiKey);
+
+    if (verdict.status === "needs_more_information" && verdict.question) {
+      const fresh = createClarifySession(location, category, description);
+      fresh.verdict = verdict;
+      return {
+        proceed: false,
+        sessionId: fresh.id,
+        question: verdict.question,
+        missingField: verdict.missing_field,
+      };
+    }
+
+    return {
+      proceed: true,
+      description,
+      locationDetail: manualDetail || verdict.location_detail || null,
+      session: null,
+    };
+  } catch (err) {
+    console.error("[clarify] 접수 전 확인 실패:", err instanceof Error ? err.message : err);
+    return { proceed: true, description, locationDetail: manualDetail || null, session: null };
+  }
+}
+
 /** 신고 등록 */
 app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, res) => {
   // 1) 입력값 검증 — 프론트엔드 검증을 신뢰하지 않는다 (§21, §29)
   const validation = validateReportInput(req.body || {}, SCHOOL_LOCATIONS, ISSUE_CATEGORIES);
   if (!validation.ok) {
     return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
+  }
+
+  // 1-2) 사전 확인 — 충분히 명확해지기 전에는 DB 에 저장하지 않는다 (§16)
+  let clarity: ClarityGate;
+  try {
+    clarity = await resolveClarityForSubmission(req.body);
+  } catch (err) {
+    return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);
+  }
+
+  if (!clarity.proceed) {
+    return res.status(422).json({
+      ok: false,
+      status: "needs_more_information",
+      question: clarity.question,
+      missingField: clarity.missingField,
+      sessionId: clarity.sessionId,
+      error: "신고 내용을 조금만 더 알려주세요.",
+    });
   }
 
   // 2) 욕설/유해 표현 자동 마스킹
@@ -383,8 +544,10 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
   //
   //    1차: 규칙 기반 (즉시·무료·결정론적)
   //    2차: AI 가 찾아낸 표현 (아래 위험도 분석 응답에서 함께 받는다)
+  //
+  //    대상은 추가 확인 답변까지 합쳐진 본문이다. 답변에 들어간 표현도 걸러야 한다.
   const maskedTitle = maskProfanity(req.body.title);
-  const maskedDescription = maskProfanity(req.body.description);
+  const maskedDescription = maskProfanity(clarity.description);
 
 
   try {
@@ -441,6 +604,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       id: reportId,
       title,
       location,
+      locationDetail: clarity.locationDetail,
       category,
       description,
       attachmentUrl: req.body.attachmentUrl ? String(req.body.attachmentUrl) : null,
@@ -459,6 +623,9 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     reports.unshift(newReport);
     saveReports(reports);
 
+    // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
+    if (clarity.session) dropClarifySession(clarity.session.id);
+
     return res.status(201).json({
       ok: true,
       data: toMyReport(newReport),
@@ -470,6 +637,121 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     });
   } catch (err) {
     return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// AI 사전 확인 — 애매한 신고에 질문 1개를 되묻는다 (§8 ~ §15)
+//
+// 이 라우트는 DB 에 아무것도 쓰지 않는다. 대화 상태는 메모리 세션에만 있고,
+// 최종 저장은 POST /api/reports 가 담당한다 (§16).
+// ---------------------------------------------------------------------------
+
+/** 세션 상태를 그대로 응답 형태로 바꾼다. 응답 조립이 한 곳에만 있도록 모아 둔다. */
+function clarifyResponse(session: ClarifySession, extra: Record<string, unknown> = {}) {
+  const verdict = session.verdict;
+  return {
+    ok: true,
+    status: verdict?.status ?? "ready",
+    question: verdict?.status === "needs_more_information" ? verdict.question : null,
+    missingField: verdict?.status === "needs_more_information" ? verdict.missing_field : null,
+    sessionId: session.id,
+    turns: session.turns,
+    locationDetail: verdict?.location_detail ?? null,
+    ...extra,
+  };
+}
+
+app.post("/api/reports/analyze", rateLimit("clarify", LIMITS.clarify), async (req, res) => {
+  // 1) 입력 검증 — 신고 등록과 같은 기준 (§22)
+  const validation = validateClarifyInput(req.body || {}, SCHOOL_LOCATIONS, ISSUE_CATEGORIES);
+  if (!validation.ok || !validation.value) {
+    return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
+  }
+  const input = validation.value;
+
+  // 2) 세션 확보 — 이어가기면 기존 대화를, 최초면 새로 만든다 (§15)
+  let session: ClarifySession;
+
+  if (input.sessionId) {
+    const existing = getClarifySession(input.sessionId);
+    if (!existing) {
+      // 만료된 세션으로 계속 시도하면 답변이 허공으로 사라진다. 다시 시작하도록 알린다.
+      return safeError(res, 410, "확인 과정이 만료되었습니다. 신고 내용을 다시 제출해주세요.");
+    }
+    session = existing;
+
+    const pendingQuestion = session.verdict?.question;
+    if (!pendingQuestion) {
+      // 이미 충분하다고 판단이 끝난 세션이다. 답변이 한 번 더 도착해도(더블 클릭 등)
+      // 오류로 돌려주면 답변이 실패한 것처럼 보이므로, 현재 상태를 그대로 다시 알려준다.
+      if (session.verdict?.status === "ready") {
+        return res.json(clarifyResponse(session, { cached: true }));
+      }
+      return safeError(res, 409, "답변할 질문이 없습니다. 신고 내용을 다시 제출해주세요.");
+    }
+
+    // 같은 답변을 다시 보낸 경우 — 직전 판정을 그대로 돌려주고 OpenAI 를 호출하지 않는다 (§21).
+    const lastTurn = session.turns[session.turns.length - 1];
+    if (lastTurn && lastTurn.answer === input.answer && lastTurn.question === pendingQuestion) {
+      return res.json(clarifyResponse(session, { cached: true }));
+    }
+
+    session.turns.push({ question: pendingQuestion, answer: input.answer });
+  } else {
+    session = createClarifySession(input.location, input.category, input.description);
+  }
+
+  // 3) 질문 한도 — 무한 반복으로 접수를 막지 않는다 (§12)
+  if (session.turns.length >= MAX_CLARIFY_QUESTIONS) {
+    session.verdict = {
+      status: "ready",
+      question: null,
+      missing_field: null,
+      location_detail: session.verdict?.location_detail ?? null,
+      problem: session.verdict?.problem ?? null,
+      model: session.verdict?.model ?? "none",
+    };
+    return res.json(clarifyResponse(session, { maxTurnsReached: true }));
+  }
+
+  // 4) AI 확인. 키가 없거나 호출이 실패하면 접수를 막지 않는다.
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    session.verdict = {
+      status: "ready",
+      question: null,
+      missing_field: null,
+      location_detail: null,
+      problem: null,
+      model: "none",
+    };
+    return res.json(clarifyResponse(session, { skipped: true }));
+  }
+
+  try {
+    session.verdict = await analyzeClarity(
+      {
+        location: session.location,
+        category: session.category,
+        description: session.baseDescription,
+        turns: session.turns,
+      },
+      apiKey
+    );
+    return res.json(clarifyResponse(session));
+  } catch (err) {
+    // 내부 오류·API Key 관련 정보를 사용자에게 노출하지 않는다 (§20).
+    console.error("[clarify] 확인 실패:", err instanceof Error ? err.message : err);
+    session.verdict = {
+      status: "ready",
+      question: null,
+      missing_field: null,
+      location_detail: null,
+      problem: null,
+      model: "none",
+    };
+    return res.json(clarifyResponse(session, { skipped: true }));
   }
 });
 

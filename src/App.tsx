@@ -6,7 +6,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Header } from "./components/Header";
 import { UserHomeLandingView } from "./components/UserHomeLandingView";
-import { StudentReportView } from "./components/StudentReportView";
+import {
+  StudentReportView,
+  type SubmitReportPayload,
+  type SubmitReportResult,
+} from "./components/StudentReportView";
 import { ReportListView } from "./components/ReportListView";
 import { ReportDetailModal } from "./components/ReportDetailModal";
 import { DeleteReportModal } from "./components/DeleteReportModal";
@@ -154,15 +158,7 @@ export default function App() {
   }, [fetchReports, fetchMyReports]);
 
   /** 신고 등록 */
-  const handleSubmitReport = async (data: {
-    title?: string;
-    location: string;
-    category: string;
-    description: string;
-    attachmentUrl?: string | null;
-    attachmentName?: string | null;
-    attachmentSize?: number | null;
-  }) => {
+  const handleSubmitReport = async (data: SubmitReportPayload): Promise<SubmitReportResult> => {
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/reports", {
@@ -173,6 +169,19 @@ export default function App() {
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
+        /*
+         * 서버가 "조금 더 알려달라"고 답한 경우(422).
+         * 오류가 아니라 대화의 한 단계이므로 토스트로 실패를 알리지 않고
+         * 질문을 그대로 신고 폼에 돌려준다 (§8, §19).
+         */
+        if (res.status === 422 && json.status === "needs_more_information" && json.question) {
+          return {
+            success: false as const,
+            needsMoreInfo: true as const,
+            question: json.question as string,
+            sessionId: json.sessionId as string,
+          };
+        }
         return { success: false as const, error: json.error || "신고를 저장하지 못했습니다." };
       }
 

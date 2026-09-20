@@ -13,6 +13,58 @@ export interface ReportStatsResponse {
   unanalyzed: number;
 }
 
+/**
+ * 위치 1곳의 집계 결과.
+ * 모든 값은 서버가 실제 DB 의 신고에서 계산한다. 클라이언트는 표시만 한다 (§23).
+ */
+export interface LocationStatistic {
+  name: string;
+  baseLocation: string;
+  reportCount: number;
+  mainCategory: string | null;
+  mainCategoryCount: number;
+  highRiskCount: number;
+  urgentCount: number;
+  latestReportAt: string;
+  /** 하나로 묶인 원본 표기들 (표기가 하나뿐이면 길이 1) */
+  mergedFrom: string[];
+}
+
+/** GET /api/reports/location-statistics 응답 */
+export interface LocationStatsResponse {
+  ok: boolean;
+  /** 필터를 적용한 뒤 집계 대상이 된 신고 수 */
+  total: number;
+  locations: LocationStatistic[];
+  /** 서버가 실제로 적용한 필터 (화면이 보낸 값이 그대로 반영됐는지 확인용) */
+  appliedFilters: {
+    search: string;
+    category: string;
+    risk: string;
+    status: string;
+    dateRange: string;
+  };
+}
+
+/** POST /api/reports/analyze 응답 — AI 사전 확인 (§13, §14) */
+export interface ClarifyResponse {
+  ok: boolean;
+  status: "ready" | "needs_more_information";
+  /** 추가 정보가 필요할 때만 값이 있다. 항상 질문 1개 (§12) */
+  question: string | null;
+  missingField: "location" | "problem" | "situation" | null;
+  /** 대화 상태를 잇는 서버 세션 id (§15) */
+  sessionId: string;
+  /** 지금까지 주고받은 추가 확인 */
+  turns: { question: string; answer: string }[];
+  /** 학생 문장에서 실제로 확인된 상세 위치. 없으면 null (§17 — 지어내지 않는다) */
+  locationDetail: string | null;
+  /** 질문 한도에 도달해 추가 확인 없이 접수로 넘어가는 경우 true */
+  maxTurnsReached?: boolean;
+  /** AI 확인을 사용할 수 없어 그대로 접수하는 경우 true */
+  skipped?: boolean;
+}
+
 /** POST /api/ai/summary 응답 */
 export interface AiSummaryResponse {
   ok: boolean;
@@ -111,6 +163,11 @@ export interface SchoolReport {
   id: string;
   title?: string;
   location: string;
+  /**
+   * 상세 위치 — 학생이 직접 적었거나 AI 사전 확인이 학생 문장에서 그대로 발췌한 값.
+   * 위치 통계는 location 과 이 값을 합쳐 집계한다. 없으면 null 이며 만들어내지 않는다.
+   */
+  locationDetail?: string | null;
   category: string;
   description: string;
   attachmentUrl?: string | null;

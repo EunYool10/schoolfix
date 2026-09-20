@@ -25,6 +25,8 @@ import {
   DateRange,
 } from "../hooks/useReportFilters";
 import { AiSummaryModal } from "./AiSummaryModal";
+import { LocationStatsPanel } from "./LocationStatsPanel";
+import { useLocationStats } from "../hooks/useLocationStats";
 import { buildReportHtml } from "../utils/reportDocument";
 
 export type ReportTab = "MINE" | "ALL";
@@ -64,6 +66,13 @@ export function ReportListView({
   // 탭은 필터보다 상위 개념이다. 탭으로 목록을 고른 뒤 그 결과에 필터를 적용한다.
   const source = tab === "MINE" ? myReports : allReports;
   const { filters, setField, reset, filtered, activeCount } = useReportFilters(source);
+
+  /**
+   * 위치별 통계는 서버가 전체 신고를 대상으로 집계한다 (§5).
+   * "내 신고" 탭에서 학교 전체 통계를 보여주면 내 신고 건수처럼 읽히므로,
+   * 전체 신고 탭에서만 조회한다.
+   */
+  const locationStats = useLocationStats(filters, tab === "ALL", allReports.length);
 
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [summaryData, setSummaryData] = useState<AiSummaryResponse | null>(null);
@@ -170,6 +179,9 @@ export function ReportListView({
       stats: exportStats,
       summary: summaryData?.summary ?? null,
       scopeLabel: scopeParts.join(" · "),
+      // 위치 통계는 전체 신고를 대상으로 집계된 값이다.
+      // "내 신고" 를 내보내면서 학교 전체 통계를 붙이면 문서 안에서 숫자가 어긋난다.
+      locations: tab === "ALL" ? locationStats.locations : null,
     });
 
     const win = window.open("", "_blank", "width=900,height=1000");
@@ -403,6 +415,15 @@ export function ReportListView({
             </span>
           )}
         </div>
+      )}
+
+      {/* 위치별 신고 현황 — 위의 필터가 그대로 반영된다 (§6) */}
+      {tab === "ALL" && (
+        <LocationStatsPanel
+          stats={locationStats}
+          hasFilters={activeCount > 0}
+          rangeLabel={DATE_RANGE_LABELS[filters.dateRange]}
+        />
       )}
 
       {exportError && (

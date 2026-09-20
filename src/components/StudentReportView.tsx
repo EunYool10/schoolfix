@@ -23,19 +23,42 @@ import {
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 
+export interface SubmitReportPayload {
+  title?: string;
+  location: string;
+  /** 상세 위치 (선택). 위치 통계는 이 값을 함께 써서 장소를 구분한다. */
+  locationDetail?: string | null;
+  category: string;
+  description: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  attachmentSize?: number | null;
+  /** AI 사전 확인을 마친 세션 id. 있으면 서버가 확인을 다시 하지 않는다. */
+  clarifySessionId?: string | null;
+}
+
+export interface SubmitReportResult {
+  success: boolean;
+  report?: SchoolReport;
+  error?: string;
+  /** 서버가 추가 확인이 필요하다고 판단한 경우 */
+  needsMoreInfo?: boolean;
+  question?: string | null;
+  sessionId?: string | null;
+}
+
 interface StudentReportViewProps {
-  onSubmitReport: (data: {
-    title?: string;
-    location: string;
-    category: string;
-    description: string;
-    attachmentUrl?: string | null;
-    attachmentName?: string | null;
-    attachmentSize?: number | null;
-  }) => Promise<{ success: boolean; report?: SchoolReport; error?: string }>;
+  onSubmitReport: (data: SubmitReportPayload) => Promise<SubmitReportResult>;
   isSubmitting: boolean;
   onSuccessNavToMyReports?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
+}
+
+/** AI 사전 확인 진행 상태 (§8, §19) */
+interface ClarifyState {
+  sessionId: string;
+  question: string;
+  turns: { question: string; answer: string }[];
 }
 
 interface FieldErrors {
@@ -55,8 +78,20 @@ export function StudentReportView({
   // Problem fields
   const [title, setTitle] = useState<string>("");
   const [location, setLocation] = useState<string>("");
+  const [locationDetail, setLocationDetail] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+
+  /**
+   * AI 사전 확인 (§8 ~ §19).
+   *
+   * 신고 내용이 애매하면 바로 접수하지 않고 가장 중요한 질문 하나를 받아 온다.
+   * 서버가 대화 상태를 들고 있으므로 화면은 세션 id 와 현재 질문만 알면 된다 (§15).
+   */
+  const [clarify, setClarify] = useState<ClarifyState | null>(null);
+  const [answer, setAnswer] = useState<string>("");
+  const [isChecking, setIsChecking] = useState<boolean>(false);
+  const [clarifyConfirmed, setClarifyConfirmed] = useState<boolean>(false);
 
   // Attachment state
   const [attachmentName, setAttachmentName] = useState<string | null>(null);
@@ -102,6 +137,7 @@ export function StudentReportView({
     !completedReport &&
       (title.trim().length > 0 ||
         location.length > 0 ||
+        locationDetail.trim().length > 0 ||
         category.length > 0 ||
         description.trim().length > 0 ||
         previewUrl !== null ||
@@ -128,6 +164,16 @@ export function StudentReportView({
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [isFormDirty]);
+
+  /**
+   * 신고 내용이 바뀌면 이전 확인 결과는 더 이상 이 신고에 대한 판단이 아니다.
+   * 서버도 같은 이유로 내용이 바뀐 세션을 인정하지 않으므로, 화면 상태도 함께 지운다.
+   */
+  const resetClarify = () => {
+    setClarify(null);
+    setAnswer("");
+    setClarifyConfirmed(false);
+  };
 
   const clearFieldError = (field: keyof FieldErrors) => {
     if (fieldErrors[field]) {
@@ -201,8 +247,10 @@ export function StudentReportView({
   const handleResetForm = () => {
     setTitle("");
     setLocation("");
+    setLocationDetail("");
     setCategory("");
     setDescription("");
+    resetClarify();
     handleRemoveFile();
     setFieldErrors({});
     setGlobalError(null);
@@ -222,6 +270,7 @@ export function StudentReportView({
     setCategory(example.category);
     setDescription(example.description);
     setSelectedExampleKey(example.key);
+    resetClarify();
     clearFieldError("title");
     clearFieldError("location");
     clearFieldError("category");
@@ -271,24 +320,18 @@ export function StudentReportView({
     return true;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitError(null);
-
-    // Run detailed client-side field validation before sending to backend
-    const isValid = validateForm();
-    if (!isValid) {
-      return;
-    }
-
+  /** 실제 접수. 사전 확인이 끝난 뒤에만 호출된다 (§16) */
+  const submitReport = async (sessionId: string | null) => {
     const res = await onSubmitReport({
       title: title.trim() || undefined,
       location: location.trim(),
+      locationDetail: locationDetail.trim() || null,
       category: category.trim(),
       description: description.trim(),
       attachmentUrl: previewUrl || null,
       attachmentName: attachmentName || null,
       attachmentSize: attachmentSize || null,
+      clarifySessionId: sessionId,
     });
 
     if (res.success && res.report) {
@@ -298,13 +341,116 @@ export function StudentReportView({
       setDescription("");
       setCategory("");
       setLocation("");
+      setLocationDetail("");
+      resetClarify();
       setFieldErrors({});
       setGlobalError(null);
       setAutoFillNotice(false);
-    } else {
-      setSubmitError(
-        res.error || "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요."
-      );
+      return;
+    }
+
+    // 서버가 한 번 더 확인이 필요하다고 판단한 경우 — 질문을 그대로 이어받는다.
+    if (res.needsMoreInfo && res.question && res.sessionId) {
+      setClarify({ sessionId: res.sessionId, question: res.question, turns: [] });
+      setAnswer("");
+      setClarifyConfirmed(false);
+      return;
+    }
+
+    setSubmitError(res.error || "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
+  };
+
+  /**
+   * AI 사전 확인 호출.
+   * 실패하더라도 접수를 막지 않는다 — 서버도 같은 원칙이며, 내부 오류를 사용자에게 노출하지 않는다 (§20).
+   */
+  const runClarify = async (
+    body: Record<string, unknown>
+  ): Promise<{ ready: boolean; sessionId: string | null }> => {
+    try {
+      const res = await fetch("/api/reports/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        // 세션 만료 등 — 확인 과정을 처음부터 다시 시작한다.
+        resetClarify();
+        setSubmitError(
+          json?.error || "신고 내용을 확인하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
+        );
+        return { ready: false, sessionId: null };
+      }
+
+      if (json.status === "needs_more_information" && json.question) {
+        setClarify({
+          sessionId: json.sessionId,
+          question: json.question,
+          turns: Array.isArray(json.turns) ? json.turns : [],
+        });
+        setAnswer("");
+        return { ready: false, sessionId: json.sessionId };
+      }
+
+      // 충분하다고 판단됨 — 바로 접수로 넘어간다.
+      setClarify(null);
+      setClarifyConfirmed(true);
+      return { ready: true, sessionId: json.sessionId ?? null };
+    } catch (err) {
+      console.error("[clarify]", err);
+      // 확인을 못 했다고 신고를 막지는 않는다. 서버가 접수 시 한 번 더 판단한다.
+      return { ready: true, sessionId: null };
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isChecking || isSubmitting) return; // 중복 제출 방지 (§20)
+    setSubmitError(null);
+
+    // Run detailed client-side field validation before sending to backend
+    const isValid = validateForm();
+    if (!isValid) {
+      return;
+    }
+
+    setIsChecking(true);
+    try {
+      const { ready, sessionId } = await runClarify({
+        location: location.trim(),
+        category: category.trim(),
+        description: description.trim(),
+      });
+      if (!ready) return;
+      await submitReport(sessionId);
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  /** 추가 질문에 답하고 다시 판단받는다 (§8) */
+  const handleAnswerSubmit = async () => {
+    if (!clarify || isChecking || isSubmitting) return;
+
+    const trimmed = answer.trim();
+    if (!trimmed) {
+      setSubmitError("답변을 입력해주세요.");
+      return;
+    }
+
+    setSubmitError(null);
+    setIsChecking(true);
+    try {
+      const { ready, sessionId } = await runClarify({
+        sessionId: clarify.sessionId,
+        answer: trimmed,
+      });
+      if (!ready) return;
+      await submitReport(sessionId ?? clarify.sessionId);
+    } finally {
+      setIsChecking(false);
     }
   };
 
@@ -577,6 +723,7 @@ export function StudentReportView({
                 clearFieldError("location");
                 setAutoFillNotice(false);
                 setSelectedExampleKey(null);
+                resetClarify();
                 if (newLoc) {
                   // 위치 선택 시 해당 장소와 연관된 예시를 우선 배치하는 스마트 추천
                   setDisplayedExamples(getRandomFormExamples(4, newLoc));
@@ -606,6 +753,36 @@ export function StudentReportView({
                 <span>{fieldErrors.location}</span>
               </p>
             )}
+
+            {/*
+              상세 위치 (선택).
+              같은 "화장실" 이라도 본관 3층인지 별관 2층인지에 따라 담당자가 가야 할 곳이 달라진다.
+              이 값은 위치별 신고 현황 집계에도 함께 쓰인다.
+            */}
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <label
+                  htmlFor="field-location-detail"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  상세 위치 <span className="font-normal text-slate-500">(선택)</span>
+                </label>
+                <span className="text-[11px] text-slate-400">{locationDetail.length}/50자</span>
+              </div>
+              <input
+                id="field-location-detail"
+                type="text"
+                maxLength={50}
+                value={locationDetail}
+                onChange={(e) => setLocationDetail(e.target.value)}
+                placeholder="예: 본관 3층, 별관 2층 서편, 운동장 농구 골대 앞"
+                className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+              />
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                건물·층까지 적어 주시면 담당자가 바로 찾아갈 수 있고, 같은 장소의 신고가 모여
+                현황으로 집계됩니다.
+              </p>
+            </div>
           </div>
 
           {/* 2. Problem Category */}
@@ -627,6 +804,7 @@ export function StudentReportView({
                 setCategory(e.target.value);
                 clearFieldError("category");
                 setAutoFillNotice(false);
+                resetClarify();
               }}
               aria-invalid={Boolean(fieldErrors.category)}
               aria-describedby={fieldErrors.category ? "category-error" : undefined}
@@ -679,6 +857,7 @@ export function StudentReportView({
                 setDescription(e.target.value);
                 clearFieldError("description");
                 setAutoFillNotice(false);
+                resetClarify();
               }}
               placeholder="예: 2학년 3반 앞 복도 천장 형광등이 깜빡거리며 소음이 발생합니다. 교체 부탁드립니다."
               aria-invalid={Boolean(fieldErrors.description)}
@@ -779,6 +958,88 @@ export function StudentReportView({
             사용자에게 선택지를 주면 실제와 다른 인상을 줄 수 있다(§32).
           */}
 
+          {/*
+            AI 추가 확인 (§19).
+
+            신고 내용이 애매하면 접수하지 않고 여기서 질문 하나를 보여 준다.
+            별도 채팅 화면을 만들지 않고 기존 신고 폼 안에서 이어서 답하도록 한다.
+          */}
+          {clarify && (
+            <div
+              role="status"
+              className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3"
+            >
+              <div className="flex items-start gap-2.5">
+                <div className="h-7 w-7 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                  <Info className="h-3.5 w-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-blue-900">
+                    신고를 접수하기 전에 한 가지만 더 알려주세요
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 break-keep leading-relaxed">
+                    {clarify.question}
+                  </p>
+                </div>
+              </div>
+
+              {/* 이전에 주고받은 확인 내역 — 답변이 사라지지 않았음을 보여 준다 (§15) */}
+              {clarify.turns.length > 0 && (
+                <ul className="space-y-1.5 border-l-2 border-blue-200 pl-3">
+                  {clarify.turns.map((turn, i) => (
+                    <li key={i} className="text-[11px] text-slate-600 leading-relaxed">
+                      <span className="text-slate-500">{turn.question}</span>
+                      <br />
+                      <span className="font-semibold text-slate-800">→ {turn.answer}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <textarea
+                rows={2}
+                maxLength={500}
+                value={answer}
+                onChange={(e) => setAnswer(e.target.value)}
+                disabled={isChecking || isSubmitting}
+                placeholder="여기에 답변을 적어주세요"
+                className="w-full rounded-lg border border-blue-300 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+              />
+
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAnswerSubmit}
+                  disabled={isChecking || isSubmitting || !answer.trim()}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 h-11 min-h-[44px] px-5 rounded-lg bg-blue-700 text-sm font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
+                >
+                  {isChecking ? (
+                    <>
+                      <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>신고 내용 확인 중…</span>
+                    </>
+                  ) : (
+                    <span>계속하기</span>
+                  )}
+                </button>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  답변을 더하면 신고가 접수됩니다. 위의 신고 내용을 직접 고쳐서 다시 제출해도 됩니다.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 확인이 끝난 뒤 접수가 진행 중일 때 (§19) */}
+          {clarifyConfirmed && !clarify && (isChecking || isSubmitting) && (
+            <div
+              role="status"
+              className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-900"
+            >
+              <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>신고 내용을 확인했습니다. 접수를 진행합니다.</span>
+            </div>
+          )}
+
           {/* 6. Action Buttons */}
           <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
             {isFormDirty && (
@@ -793,11 +1054,16 @@ export function StudentReportView({
             <button
               id="btn-submit-report"
               type="submit"
-              disabled={isSubmitting}
+              /* 확인 중·접수 중에는 중복 제출을 막는다 (§20) */
+              disabled={isSubmitting || isChecking || Boolean(clarify)}
               className="flex-1 w-full flex items-center justify-center h-12 min-h-[48px] rounded-lg bg-blue-700 text-sm sm:text-base font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
             >
-              {isSubmitting ? (
+              {isChecking ? (
+                <span>신고 내용 확인 중…</span>
+              ) : isSubmitting ? (
                 <span>신고를 접수하는 중입니다…</span>
+              ) : clarify ? (
+                <span>위 질문에 답변해주세요</span>
               ) : (
                 <span>신고하기</span>
               )}

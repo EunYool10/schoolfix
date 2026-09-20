@@ -71,6 +71,19 @@ const html = buildReportHtml({
     model: "gpt-5.6-terra",
   },
   scopeLabel: "전체 신고 · 위험도 긴급",
+  locations: [
+    {
+      name: "본관 2층 복도",
+      baseLocation: "복도",
+      reportCount: 2,
+      mainCategory: "시설 고장",
+      mainCategoryCount: 2,
+      highRiskCount: 1,
+      urgentCount: 0,
+      latestReportAt: "2026-09-19T03:00:00.000Z",
+      mergedFrom: ["본관 2층 복도", "2층 복도"],
+    },
+  ],
 });
 
 check("HTML 문서 형식", html.startsWith("<!DOCTYPE html>") && html.includes("</html>"));
@@ -78,14 +91,15 @@ check("문서가 비어 있지 않음", html.length > 1500, `${html.length}자`)
 check("제목 포함", html.includes("SchoolFix AI — 학교 신고 현황 리포트"));
 check("대상 범위 표시", html.includes("전체 신고 · 위험도 긴급"));
 
-console.log("\n  --- 6개 섹션 ---");
+console.log("\n  --- 7개 섹션 ---");
 for (const s of [
   "1. 신고 현황",
   "2. 위험도별 현황",
   "3. 카테고리별 현황",
   "4. 처리 상태",
-  "5. AI 요약",
-  "6. 신고 목록",
+  "5. 위치별 신고 현황",
+  "6. AI 요약",
+  "7. 신고 목록",
 ]) {
   check(`섹션 "${s}"`, html.includes(s));
 }
@@ -96,6 +110,7 @@ check("신고 내용", html.includes("본관 2층 복도 바닥 타일이 들떠
 check("위험도 등급", html.includes("긴급") && html.includes("높음"));
 check("상태 라벨(한글 변환)", html.includes("처리 완료") && html.includes("접수 대기"));
 check("AI 요약 반영", html.includes("계단과 복도의 낙상 위험"));
+check("위치별 통계 반영", html.includes("본관 2층 복도"));
 check("통계 수치", html.includes("전체 신고") && html.includes("2건"));
 
 console.log("\n=== 2) XSS — 신고 내용이 HTML 로 실행되지 않는가 ===\n");
@@ -128,6 +143,7 @@ const emptyHtml = buildReportHtml({
 check("빈 상태에서도 문서 생성", emptyHtml.startsWith("<!DOCTYPE html>"));
 check("빈 목록 안내 문구", emptyHtml.includes("표시할 신고가 없습니다."));
 check("AI 요약 없음 안내", emptyHtml.includes("AI 요약이 생성되지 않았습니다."));
+check("빈 위치 통계 안내", emptyHtml.includes("집계된 위치 데이터가 없습니다."));
 check("가짜 통계를 만들지 않음", !emptyHtml.includes("긴급 신고"));
 
 console.log("\n=== 4) 위험도 미분석 신고 처리 ===\n");

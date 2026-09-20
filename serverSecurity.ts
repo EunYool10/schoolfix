@@ -123,6 +123,18 @@ export const LIMITS = {
     message: "AI 요약 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
 
+  /**
+   * AI 사전 확인: 신고 1건당 최대 3~4회 호출되고 외부 API 비용이 발생한다.
+   * 다만 접수 직전 단계라 너무 조이면 신고 자체를 못 하게 되므로,
+   * 학교 공용 IP 를 고려해 여러 명이 연속으로 신고해도 걸리지 않을 선으로 둔다.
+   */
+  clarify: {
+    windowMs: 10 * 60 * 1000,
+    max: 40,
+    blockMs: 5 * 60 * 1000,
+    message: "신고 내용 확인 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
+
   /** 관리자 비밀번호 검증: 무차별 대입 방어 (§9) */
   adminVerify: {
     windowMs: 15 * 60 * 1000,
@@ -218,7 +230,10 @@ export const FIELD_LIMITS = {
   title: { min: 0, max: 100 },
   description: { min: 5, max: 2000 },
   location: { min: 1, max: 50 },
+  locationDetail: { min: 0, max: 50 },
   category: { min: 1, max: 30 },
+  /** AI 추가 질문에 대한 답변 */
+  answer: { min: 1, max: 500 },
 };
 
 export interface ValidationResult {
@@ -263,6 +278,17 @@ export function validateReportInput(
     return { ok: false, error: `제목은 ${FIELD_LIMITS.title.max}자를 넘을 수 없습니다.` };
   }
 
+  // 상세 위치는 선택 입력이다. 고정 목록이 없으므로 길이만 제한한다.
+  // 저장된 값은 React 가 escape 해서 렌더링하므로 별도 HTML 처리를 하지 않는다.
+  const locationDetail =
+    typeof body.locationDetail === "string" ? body.locationDetail.trim() : "";
+  if (locationDetail.length > FIELD_LIMITS.locationDetail.max) {
+    return {
+      ok: false,
+      error: `상세 위치는 ${FIELD_LIMITS.locationDetail.max}자를 넘을 수 없습니다.`,
+    };
+  }
+
   // 첨부는 data:image/* 만 허용한다. 외부 URL 을 넣으면 열람자 IP 가 새 나간다.
   const attachment = body.attachmentUrl;
   if (attachment !== null && attachment !== undefined) {
@@ -275,6 +301,63 @@ export function validateReportInput(
   }
 
   return { ok: true };
+}
+
+/**
+ * AI 사전 확인 요청 검증 (§22).
+ *
+ * 두 가지 형태를 받는다.
+ *  - 최초 확인   : location + category + description
+ *  - 답변 이어가기: sessionId + answer
+ * 어느 쪽이든 신뢰할 수 없는 입력이므로 길이·허용값·타입을 서버가 확인한다.
+ */
+export interface ClarifyRequest {
+  sessionId: string | null;
+  location: string;
+  category: string;
+  description: string;
+  answer: string;
+}
+
+export function validateClarifyInput(
+  body: Record<string, unknown>,
+  allowedLocations: readonly string[],
+  allowedCategories: readonly string[]
+): ValidationResult & { value?: ClarifyRequest } {
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+  const answer = typeof body.answer === "string" ? body.answer.trim() : "";
+
+  // 이어가기 요청 — 나머지 맥락은 서버 세션이 가지고 있다.
+  if (sessionId) {
+    if (sessionId.length > 100 || !/^[a-f0-9]+$/.test(sessionId)) {
+      return { ok: false, error: "요청이 올바르지 않습니다." };
+    }
+    if (answer.length < FIELD_LIMITS.answer.min) {
+      return { ok: false, error: "답변을 입력해주세요." };
+    }
+    if (answer.length > FIELD_LIMITS.answer.max) {
+      return {
+        ok: false,
+        error: `답변은 ${FIELD_LIMITS.answer.max}자를 넘을 수 없습니다.`,
+      };
+    }
+    return { ok: true, value: { sessionId, location: "", category: "", description: "", answer } };
+  }
+
+  // 최초 확인 — 신고 등록과 같은 기준으로 본다.
+  const base = validateReportInput(body, allowedLocations, allowedCategories);
+  if (!base.ok) return base;
+
+  return {
+    ok: true,
+    value: {
+      sessionId: null,
+      location: String(body.location).trim(),
+      category: String(body.category).trim(),
+      description: String(body.description).trim(),
+      answer: "",
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
