@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   X,
   MapPin,
@@ -6,7 +6,6 @@ import {
   Clock,
   Paperclip,
   Trash2,
-  MoreHorizontal,
   UserCog,
 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
@@ -35,9 +34,7 @@ export function ReportDetailModal({
   onClose,
   onRequestDelete,
 }: ReportDetailModalProps) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,23 +48,6 @@ export function ReportDetailModal({
       window.removeEventListener("keydown", onKey);
     };
   }, [isOpen, onClose]);
-
-  useEffect(() => {
-    setIsMenuOpen(false);
-  }, [report?.id]);
-
-  // 더보기 메뉴는 바깥을 클릭하면 닫혀야 한다.
-  // 이 처리가 없으면 메뉴가 열린 채로 남아 본문 위를 계속 가린다.
-  useEffect(() => {
-    if (!isMenuOpen) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, [isMenuOpen]);
 
   if (!isOpen || !report) return null;
 
@@ -105,40 +85,6 @@ export function ReportDetailModal({
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              {/* 삭제는 보조 액션이다. 더보기 메뉴 안에 두어 강조하지 않는다(§3, §31). */}
-              {onRequestDelete && (
-                <div className="relative" ref={menuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsMenuOpen((v) => !v)}
-                    aria-label="더보기"
-                    aria-expanded={isMenuOpen}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer"
-                  >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-
-                  {isMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-44 rounded-xl border border-slate-200 bg-white shadow-lg py-1 z-10">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsMenuOpen(false);
-                          onRequestDelete(report.id);
-                        }}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        <span>신고 삭제</span>
-                      </button>
-                      <p className="px-3 pt-1 pb-1.5 text-[10px] text-slate-400 leading-snug border-t border-slate-100 mt-1">
-                        <UserCog className="h-3 w-3 inline mr-1" />
-                        관리자 비밀번호 필요
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <button
                 type="button"
@@ -207,6 +153,28 @@ export function ReportDetailModal({
                 <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap">
                   {report.resolutionNote}
                 </div>
+              </div>
+            )}
+
+            {/*
+              삭제 — 관리자 비밀번호가 필요한 유일한 기능.
+              더보기 메뉴에 숨겨 두었더니 있는 줄도 모르는 상태여서 밖으로 꺼냈다.
+              다만 주요 동작은 아니므로 본문 맨 아래, 약한 스타일로 배치한다.
+            */}
+            {onRequestDelete && (
+              <div className="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-slate-400 inline-flex items-center gap-1.5">
+                  <UserCog className="h-3.5 w-3.5" />
+                  신고 삭제에는 관리자 비밀번호가 필요합니다.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onRequestDelete(report.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50 transition cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>삭제하기</span>
+                </button>
               </div>
             )}
           </div>
