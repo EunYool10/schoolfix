@@ -8,6 +8,7 @@ import {
   RefreshCw,
   X,
   Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import {
   SchoolReport,
@@ -92,6 +93,22 @@ export function ReportListView({
 
     return { total: filtered.length, byRisk, byCategory, byStatus, byLocation, unanalyzed };
   }, [filtered]);
+
+  /**
+   * 현재 탭 목록의 등급 분포.
+   * AI 가 매긴 등급을 목록 위에 요약해 보여 준다.
+   * 필터(filtered)가 아니라 탭 전체(source)를 기준으로 삼아야
+   * 위험도로 필터링한 뒤에도 전체 분포를 계속 볼 수 있다.
+   */
+  const riskCounts = useMemo(() => {
+    const counts: Record<string, number> = { 긴급: 0, 높음: 0, 중간: 0, 낮음: 0 };
+    let pending = 0;
+    for (const r of source) {
+      if (r.riskLevel) counts[r.riskLevel] = (counts[r.riskLevel] || 0) + 1;
+      else pending += 1;
+    }
+    return { counts, pending, graded: source.length - pending };
+  }, [source]);
 
   // 실제 데이터에 존재하는 값만 필터 옵션으로 노출한다.
   const availableCategories = useMemo(
@@ -348,6 +365,46 @@ export function ReportListView({
         )}
       </div>
 
+      {/* AI 위험도 등급 분포 — 누르면 해당 등급으로 필터링된다 */}
+      {source.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 mr-0.5">
+            <ShieldAlert className="h-3.5 w-3.5" />
+            AI 위험도
+          </span>
+
+          {RISK_OPTIONS.map((lvl) => {
+            const n = riskCounts.counts[lvl] ?? 0;
+            const active = filters.risk === lvl;
+            const c = RISK_LEVEL_MAP[lvl];
+            return (
+              <button
+                key={lvl}
+                type="button"
+                onClick={() => setField("risk", active ? "ALL" : lvl)}
+                aria-pressed={active}
+                disabled={n === 0}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+                  active ? c.badgeClass : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${c.dotClass}`} />
+                <span>{lvl}</span>
+                <span className="font-mono tabular-nums">{n}</span>
+              </button>
+            );
+          })}
+
+          {riskCounts.pending > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-[11px] text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>분석 중</span>
+              <span className="font-mono tabular-nums">{riskCounts.pending}</span>
+            </span>
+          )}
+        </div>
+      )}
+
       {exportError && (
         <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 print:hidden">
           {exportError}
@@ -376,7 +433,7 @@ export function ReportListView({
                 >
                   <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                     <StatusChip status={r.status} />
-                    {r.riskLevel && <RiskChip level={r.riskLevel} score={r.riskScore} />}
+                    <RiskChip level={r.riskLevel ?? null} score={r.riskScore} />
                     {r.isMine && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                         내 신고
@@ -428,7 +485,22 @@ function StatusChip({ status }: { status: ReportStatus }) {
   );
 }
 
-function RiskChip({ level, score }: { level: RiskLevel; score?: number | null }) {
+/**
+ * 위험도 칩.
+ *
+ * 등급이 아직 없을 때 아무것도 그리지 않으면 기능이 없는 것처럼 보인다.
+ * 접수 직후에는 AI 채점이 끝나지 않았을 수 있으므로 "분석 중" 을 명시한다.
+ */
+function RiskChip({ level, score }: { level: RiskLevel | null; score?: number | null }) {
+  if (!level) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 bg-slate-50 text-[10px] text-slate-500">
+        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+        위험도 분석 중
+      </span>
+    );
+  }
+
   const c = RISK_LEVEL_MAP[level];
   return (
     <span

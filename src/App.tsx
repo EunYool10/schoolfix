@@ -123,6 +123,31 @@ export default function App() {
     fetchMyReports();
   }, [fetchReports, fetchMyReports]);
 
+  /**
+   * 위험도 채점은 서버가 백그라운드로 돌린다.
+   * 접수 직후나 서버 재시작 직후에는 아직 등급이 없는 신고가 남아 있는데,
+   * 사용자가 새로고침을 눌러야만 등급이 나타나면 기능이 동작하지 않는 것처럼 보인다.
+   * 그래서 미채점 건이 있는 동안만 주기적으로 다시 받아온다.
+   * 무한히 돌지 않도록 시도 횟수를 제한한다.
+   */
+  useEffect(() => {
+    const pending = reports.filter((r) => !r.riskLevel).length;
+    if (pending === 0) return;
+
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (attempts > 10) {
+        clearInterval(timer);
+        return;
+      }
+      fetchReports(true);
+      fetchMyReports();
+    }, 6000);
+
+    return () => clearInterval(timer);
+  }, [reports, fetchReports, fetchMyReports]);
+
   const refreshAll = useCallback(() => {
     fetchReports(true);
     fetchMyReports();
