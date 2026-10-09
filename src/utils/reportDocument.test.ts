@@ -6,7 +6,7 @@
  */
 
 import { buildReportHtml, escapeHtml } from "./reportDocument";
-import { SchoolReport, ReportStatsResponse } from "../types";
+import type { SchoolReport, ReportStatsResponse } from "../types";
 
 let passed = 0;
 let failed = 0;
@@ -166,3 +166,4 @@ if (failures.length) {
 console.log("=".repeat(60));
 
 process.exit(failed > 0 ? 1 : 0);
+
