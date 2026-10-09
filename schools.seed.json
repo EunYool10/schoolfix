@@ -9,61 +9,306 @@
     "verifiedAt": "2026-10-09",
     "sourceUrl": "https://cem-h.goegm.kr/cem-h/cm/cntnts/cntntsView.do?cntntsId=2398&mi=3623",
     "departments": [
-      { "name": "인플루언서마케팅과", "classesByGrade": [1, 1, 1] },
-      { "name": "스포츠경영과", "classesByGrade": [1, 1, 1] },
-      { "name": "스마트회계과", "classesByGrade": [1, 1, 1] },
-      { "name": "스마트IT과", "classesByGrade": [1, 1, 1] },
-      { "name": "콘텐츠디자인과", "classesByGrade": [1, 1, 1] },
-      { "name": "관광경영과", "classesByGrade": [2, 2, 2] }
+      {
+        "name": "인플루언서마케팅과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "스포츠경영과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "스마트회계과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "스마트IT과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "콘텐츠디자인과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "관광경영과",
+        "classesByGrade": [
+          2,
+          2,
+          2
+        ]
+      }
     ],
     "locationTypes": [
-      { "type": "교실", "verificationStatus": "official" },
-      { "type": "복도", "verificationStatus": "needs_review" },
-      { "type": "화장실", "verificationStatus": "needs_review" },
-      { "type": "계단", "verificationStatus": "needs_review" },
-      { "type": "급식실", "verificationStatus": "official" },
-      { "type": "체육관", "verificationStatus": "needs_review" },
-      { "type": "운동장", "verificationStatus": "needs_review" },
-      { "type": "도서관", "verificationStatus": "official" },
-      { "type": "특별실", "verificationStatus": "official" },
-      { "type": "보건·상담", "verificationStatus": "official" },
-      { "type": "학습공간", "verificationStatus": "official" },
-      { "type": "공용공간", "verificationStatus": "official" },
-      { "type": "기타", "verificationStatus": "user_entered" }
+      {
+        "type": "교실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
     ],
     "locations": [
-      { "id": "general-classroom", "type": "교실", "name": "보통교실", "count": 23, "verificationStatus": "official" },
-      { "id": "special-classroom", "type": "특별실", "name": "특수학급교실", "count": 2, "verificationStatus": "official" },
-      { "id": "health-room", "type": "보건·상담", "name": "보건실", "verificationStatus": "official" },
-      { "id": "counseling-room", "type": "보건·상담", "name": "상담실", "verificationStatus": "official" },
-      { "id": "student-counseling", "type": "보건·상담", "name": "학생상담공간", "verificationStatus": "official" },
-      { "id": "broadcast-room", "type": "특별실", "name": "방송실", "verificationStatus": "official" },
-      { "id": "library", "type": "도서관", "name": "도서실", "verificationStatus": "official" },
-      { "id": "science-lab", "type": "특별실", "name": "과학실", "count": 1, "verificationStatus": "official" },
-      { "id": "visual-design", "type": "특별실", "name": "시각디자인실", "verificationStatus": "official" },
-      { "id": "character-making", "type": "특별실", "name": "캐릭터제작실", "verificationStatus": "official" },
-      { "id": "creative-management", "type": "특별실", "name": "창의경영실", "verificationStatus": "official" },
-      { "id": "accounting-info", "type": "특별실", "name": "회계정보실", "verificationStatus": "official" },
-      { "id": "it-apprentice", "type": "특별실", "name": "IT도제실", "verificationStatus": "official" },
-      { "id": "info-practice", "type": "특별실", "name": "정보실무실", "verificationStatus": "official" },
-      { "id": "erp", "type": "특별실", "name": "ERP실", "verificationStatus": "official" },
-      { "id": "tax-accounting", "type": "특별실", "name": "세무회계실", "verificationStatus": "official" },
-      { "id": "multimedia", "type": "특별실", "name": "멀티미디어실", "verificationStatus": "official" },
-      { "id": "project", "type": "특별실", "name": "프로젝트실", "verificationStatus": "official" },
-      { "id": "dining", "type": "급식실", "name": "학생식당", "count": 2, "verificationStatus": "official" },
-      { "id": "e-room-cafe", "type": "특별실", "name": "이룸카페·바리스타실", "verificationStatus": "official" },
-      { "id": "culinary-classroom", "type": "특별실", "name": "제과제빵·한식실", "verificationStatus": "official" },
-      { "id": "it-club", "type": "특별실", "name": "IT동아리실", "verificationStatus": "official" },
-      { "id": "tax-apprentice", "type": "특별실", "name": "세무도제역량강화실", "verificationStatus": "official" },
-      { "id": "it-sports", "type": "특별실", "name": "IT스포츠실", "verificationStatus": "official" },
-      { "id": "youtube-maker", "type": "특별실", "name": "유튜브메이커실", "verificationStatus": "official" },
-      { "id": "influencer-practice", "type": "특별실", "name": "인플루언서실습실", "verificationStatus": "official" },
-      { "id": "after-school", "type": "학습공간", "name": "방과후학습실", "verificationStatus": "official" },
-      { "id": "self-study", "type": "학습공간", "name": "자기주도학습실", "verificationStatus": "official" },
-      { "id": "career-guidance", "type": "학습공간", "name": "취업지도실", "verificationStatus": "official" },
-      { "id": "grade-records", "type": "특별실", "name": "성적처리실", "verificationStatus": "official" },
-      { "id": "hall", "type": "공용공간", "name": "비즈홀", "verificationStatus": "official" },
-      { "id": "dasom", "type": "공용공간", "name": "다솜관", "verificationStatus": "official" }
+      {
+        "id": "general-classroom",
+        "type": "교실",
+        "name": "보통교실",
+        "count": 23,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "special-classroom",
+        "type": "특별실",
+        "name": "특수학급교실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "health-room",
+        "type": "보건·상담",
+        "name": "보건실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "counseling-room",
+        "type": "보건·상담",
+        "name": "상담실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "student-counseling",
+        "type": "보건·상담",
+        "name": "학생상담공간",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "broadcast-room",
+        "type": "특별실",
+        "name": "방송실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "library",
+        "type": "도서관",
+        "name": "도서실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "science-lab",
+        "type": "특별실",
+        "name": "과학실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "visual-design",
+        "type": "특별실",
+        "name": "시각디자인실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "character-making",
+        "type": "특별실",
+        "name": "캐릭터제작실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "creative-management",
+        "type": "특별실",
+        "name": "창의경영실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "accounting-info",
+        "type": "특별실",
+        "name": "회계정보실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "it-apprentice",
+        "type": "특별실",
+        "name": "IT도제실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "info-practice",
+        "type": "특별실",
+        "name": "정보실무실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "erp",
+        "type": "특별실",
+        "name": "ERP실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "tax-accounting",
+        "type": "특별실",
+        "name": "세무회계실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "multimedia",
+        "type": "특별실",
+        "name": "멀티미디어실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "project",
+        "type": "특별실",
+        "name": "프로젝트실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "dining",
+        "type": "급식실",
+        "name": "학생식당",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "e-room-cafe",
+        "type": "특별실",
+        "name": "이룸카페·바리스타실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "culinary-classroom",
+        "type": "특별실",
+        "name": "제과제빵·한식실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "it-club",
+        "type": "특별실",
+        "name": "IT동아리실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "tax-apprentice",
+        "type": "특별실",
+        "name": "세무도제역량강화실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "it-sports",
+        "type": "특별실",
+        "name": "IT스포츠실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "youtube-maker",
+        "type": "특별실",
+        "name": "유튜브메이커실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "influencer-practice",
+        "type": "특별실",
+        "name": "인플루언서실습실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "after-school",
+        "type": "학습공간",
+        "name": "방과후학습실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "self-study",
+        "type": "학습공간",
+        "name": "자기주도학습실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "career-guidance",
+        "type": "학습공간",
+        "name": "취업지도실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "grade-records",
+        "type": "특별실",
+        "name": "성적처리실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "hall",
+        "type": "공용공간",
+        "name": "비즈홀",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "dasom",
+        "type": "공용공간",
+        "name": "다솜관",
+        "verificationStatus": "official"
+      }
     ]
   },
   {
@@ -76,52 +321,3251 @@
     "verifiedAt": "2026-10-09",
     "sourceUrl": "https://gahs-h.goegm.kr/gahs-h/cm/cntnts/cntntsView.do?cntntsId=2707&mi=5697",
     "departments": [
-      { "name": "항공전기전자과", "classesByGrade": [1, 1, 1] },
-      { "name": "항공영상미디어과", "classesByGrade": [1, 1, 1] },
-      { "name": "로봇자동화과", "classesByGrade": [1, 1, 1] },
-      { "name": "인테리어리모델링과", "classesByGrade": [1, 1, 1] }
+      {
+        "name": "항공전기전자과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "항공영상미디어과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "로봇자동화과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "name": "인테리어리모델링과",
+        "classesByGrade": [
+          1,
+          1,
+          1
+        ]
+      }
     ],
     "locationTypes": [
-      { "type": "교실", "verificationStatus": "official" },
-      { "type": "화장실", "verificationStatus": "official" },
-      { "type": "급식실", "verificationStatus": "official" },
-      { "type": "도서관", "verificationStatus": "official" },
-      { "type": "특별실", "verificationStatus": "official" },
-      { "type": "보건·상담", "verificationStatus": "official" },
-      { "type": "학습공간", "verificationStatus": "official" },
-      { "type": "공용공간", "verificationStatus": "official" },
-      { "type": "기타", "verificationStatus": "user_entered" }
+      {
+        "type": "교실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
     ],
     "locations": [
-      { "id": "regular-classrooms", "type": "교실", "name": "정규교실", "count": 12, "verificationStatus": "official" },
-      { "id": "staff-rooms", "type": "특별실", "name": "교무실", "count": 2, "verificationStatus": "official" },
-      { "id": "administration-office", "type": "특별실", "name": "행정실", "count": 1, "verificationStatus": "official" },
-      { "id": "principal-office", "type": "특별실", "name": "교장실", "count": 1, "verificationStatus": "official" },
-      { "id": "health-room", "type": "보건·상담", "name": "보건실", "count": 1, "verificationStatus": "official" },
-      { "id": "counseling-rooms", "type": "보건·상담", "name": "상담실", "count": 2, "verificationStatus": "official" },
-      { "id": "parent-room", "type": "공용공간", "name": "학부모 상주실", "count": 1, "verificationStatus": "official" },
-      { "id": "teacher-rest-rooms", "type": "공용공간", "name": "교사 휴게실", "count": 3, "verificationStatus": "official" },
-      { "id": "aircraft-maintenance", "type": "특별실", "name": "항공정비실", "count": 1, "verificationStatus": "official" },
-      { "id": "aircraft-electronics", "type": "특별실", "name": "항공전자실", "count": 1, "verificationStatus": "official" },
-      { "id": "parts-production", "type": "특별실", "name": "부품생산실", "count": 1, "verificationStatus": "official" },
-      { "id": "video-media", "type": "특별실", "name": "영상미디어실", "count": 1, "verificationStatus": "official" },
-      { "id": "drone-operations", "type": "특별실", "name": "드론운용실", "count": 1, "verificationStatus": "official" },
-      { "id": "multimedia", "type": "특별실", "name": "멀티미디어실", "count": 1, "verificationStatus": "official" },
-      { "id": "computer-application", "type": "특별실", "name": "컴퓨터응용실", "count": 2, "verificationStatus": "official" },
-      { "id": "design-practice", "type": "특별실", "name": "디자인실습실", "count": 2, "verificationStatus": "official" },
-      { "id": "woodcraft-practice", "type": "특별실", "name": "목공예실습실", "count": 1, "verificationStatus": "official" },
-      { "id": "kitchen", "type": "급식실", "name": "조리실", "count": 1, "verificationStatus": "official" },
-      { "id": "cafeteria", "type": "급식실", "name": "식당", "count": 2, "verificationStatus": "official" },
-      { "id": "computer-room", "type": "특별실", "name": "전산실", "count": 1, "verificationStatus": "official" },
-      { "id": "night-duty-room", "type": "특별실", "name": "숙직실", "count": 1, "verificationStatus": "official" },
-      { "id": "restrooms", "type": "화장실", "name": "화장실", "count": 6, "verificationStatus": "official" },
-      { "id": "interview-room", "type": "보건·상담", "name": "면담실", "count": 1, "verificationStatus": "official" },
-      { "id": "library", "type": "도서관", "name": "도서실", "count": 1, "verificationStatus": "official" },
-      { "id": "storage-rooms", "type": "특별실", "name": "창고", "count": 4, "verificationStatus": "official" },
-      { "id": "digital-classroom", "type": "학습공간", "name": "디지털교실", "count": 1, "verificationStatus": "official" },
-      { "id": "auditorium", "type": "공용공간", "name": "강당", "count": 1, "verificationStatus": "official" },
-      { "id": "study-cafe", "type": "학습공간", "name": "스터디카페", "count": 1, "verificationStatus": "official" },
-      { "id": "science-room", "type": "특별실", "name": "과학실", "count": 1, "verificationStatus": "official" }
+      {
+        "id": "regular-classrooms",
+        "type": "교실",
+        "name": "정규교실",
+        "count": 12,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "staff-rooms",
+        "type": "특별실",
+        "name": "교무실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "administration-office",
+        "type": "특별실",
+        "name": "행정실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "principal-office",
+        "type": "특별실",
+        "name": "교장실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "health-room",
+        "type": "보건·상담",
+        "name": "보건실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "counseling-rooms",
+        "type": "보건·상담",
+        "name": "상담실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "parent-room",
+        "type": "공용공간",
+        "name": "학부모 상주실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "teacher-rest-rooms",
+        "type": "공용공간",
+        "name": "교사 휴게실",
+        "count": 3,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "aircraft-maintenance",
+        "type": "특별실",
+        "name": "항공정비실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "aircraft-electronics",
+        "type": "특별실",
+        "name": "항공전자실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "parts-production",
+        "type": "특별실",
+        "name": "부품생산실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "video-media",
+        "type": "특별실",
+        "name": "영상미디어실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "drone-operations",
+        "type": "특별실",
+        "name": "드론운용실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "multimedia",
+        "type": "특별실",
+        "name": "멀티미디어실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "computer-application",
+        "type": "특별실",
+        "name": "컴퓨터응용실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "design-practice",
+        "type": "특별실",
+        "name": "디자인실습실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "woodcraft-practice",
+        "type": "특별실",
+        "name": "목공예실습실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "kitchen",
+        "type": "급식실",
+        "name": "조리실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "cafeteria",
+        "type": "급식실",
+        "name": "식당",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "computer-room",
+        "type": "특별실",
+        "name": "전산실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "night-duty-room",
+        "type": "특별실",
+        "name": "숙직실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "restrooms",
+        "type": "화장실",
+        "name": "화장실",
+        "count": 6,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "interview-room",
+        "type": "보건·상담",
+        "name": "면담실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "library",
+        "type": "도서관",
+        "name": "도서실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "storage-rooms",
+        "type": "특별실",
+        "name": "창고",
+        "count": 4,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "digital-classroom",
+        "type": "학습공간",
+        "name": "디지털교실",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "auditorium",
+        "type": "공용공간",
+        "name": "강당",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "study-cafe",
+        "type": "학습공간",
+        "name": "스터디카페",
+        "count": 1,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "science-room",
+        "type": "특별실",
+        "name": "과학실",
+        "count": 1,
+        "verificationStatus": "official"
+      }
     ]
+  },
+  {
+    "id": "karim-e",
+    "schoolName": "가림초등학교",
+    "officialWebsite": "https://karim-e.goegm.kr/karim-e/main.do",
+    "address": "경기도 광명시 금당로 11-7",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmgd-e",
+    "schoolName": "광명광덕초등학교",
+    "officialWebsite": "https://gmgd-e.goegm.kr/gmgd-e/main.do",
+    "address": "경기도 광명시 오리로841번길 9",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kwangsung-e",
+    "schoolName": "광명광성초등학교",
+    "officialWebsite": "https://kwangsung-e.goegm.kr/kwangsung-e/main.do",
+    "address": "경기도 광명시 철산로 59",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmnam-e",
+    "schoolName": "광명남초등학교",
+    "officialWebsite": "https://gmnam-e.goegm.kr/gmnam-e/main.do",
+    "address": "경기도 광명시 광명로 866-9",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kmd-e",
+    "schoolName": "광명동초등학교",
+    "officialWebsite": "https://kmd-e.goegm.kr/kmd-e/main.do",
+    "address": "경기도 광명시 연서일로 25",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kmb-e",
+    "schoolName": "광명북초등학교",
+    "officialWebsite": "https://kmb-e.goegm.kr/kmb-e/main.do",
+    "address": "경기도 광명시 시청로138번길 8",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmseo-e",
+    "schoolName": "광명서초등학교",
+    "officialWebsite": "https://gmseo-e.goegm.kr/gmseo-e/main.do",
+    "address": "경기도 광명시 너부대로 5",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gm-e",
+    "schoolName": "광명초등학교",
+    "officialWebsite": "https://gm-e.goegm.kr/gm-e/main.do",
+    "address": "경기도 광명시 광이로 21",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kmoon-e",
+    "schoolName": "광문초등학교",
+    "officialWebsite": "https://kmoon-e.goegm.kr/kmoon-e/main.do",
+    "address": "경기도 광명시 덕단이로 29",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kwangil-e",
+    "schoolName": "광일초등학교",
+    "officialWebsite": "https://kwangil-e.goegm.kr/kwangil-e/main.do",
+    "address": "경기도 광명시 목감로 34-6",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "grs-e",
+    "schoolName": "구름산초등학교",
+    "officialWebsite": "https://grs-e.goegm.kr/grs-e/main.do",
+    "address": "경기도 광명시 한내일로 5",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "dodeok-e",
+    "schoolName": "도덕초등학교",
+    "officialWebsite": "https://dodeok-e.goegm.kr/dodeok-e/main.do",
+    "address": "경기도 광명시 가마산로 28",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "bitgaon-e",
+    "schoolName": "빛가온초등학교",
+    "officialWebsite": "https://bitgaon-e.goegm.kr/bitgaon-e/main.do",
+    "address": "경기도 광명시 양달로10번길 8",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "seomyun-e",
+    "schoolName": "서면초등학교",
+    "officialWebsite": "https://seomyun-e.goegm.kr/seomyun-e/main.do",
+    "address": "경기도 광명시 오리로 402",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "soha-e",
+    "schoolName": "소하초등학교",
+    "officialWebsite": "https://soha-e.goegm.kr/soha-e/main.do",
+    "address": "경기도 광명시 소하일로 45",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "as-e",
+    "schoolName": "안서초등학교",
+    "officialWebsite": "https://as-e.goegm.kr/as-e/main.do",
+    "address": "경기도 광명시 가학로 247-55",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "anhyun-e",
+    "schoolName": "안현초등학교",
+    "officialWebsite": "https://anhyun-e.goegm.kr/anhyun-e/main.do",
+    "address": "경기도 광명시 도덕공원로 5",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "yonseo-e",
+    "schoolName": "연서초등학교",
+    "officialWebsite": "https://yonseo-e.goegm.kr/yonseo-e/main.do",
+    "address": "경기도 광명시 안현로 80-2",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "onshin-e",
+    "schoolName": "온신초등학교",
+    "officialWebsite": "https://onshin-e.goegm.kr/onshin-e/main.do",
+    "address": "경기도 광명시 범안로 657",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "woonsan-e",
+    "schoolName": "운산초등학교",
+    "officialWebsite": "https://woonsan-e.goehs.kr/woonsan-e/main.do",
+    "address": "경기도 오산시 운암로 72",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://woonsan-e.goehs.kr/woonsan-e/cm/cntnts/cntntsView.do?cntntsId=740&mi=6075",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "cheolsan-e",
+    "schoolName": "철산초등학교",
+    "officialWebsite": "https://cheolsan-e.goegm.kr/cheolsan-e/main.do",
+    "address": "경기도 광명시 하안로 392",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "haannam-e",
+    "schoolName": "하안남초등학교",
+    "officialWebsite": "https://haannam-e.goegm.kr/haannam-e/main.do",
+    "address": "경기도 광명시 금당로 71",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "haanbuk-e",
+    "schoolName": "하안북초",
+    "officialWebsite": "https://haanbuk-e.goegm.kr/haanbuk-e/main.do",
+    "address": "경기도 광명시 가림로 18",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "haan-e",
+    "schoolName": "하안초등학교",
+    "officialWebsite": "https://haan-e.goegm.kr/haan-e/main.do",
+    "address": "경기도 광명시 안현로 16",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmhs-m",
+    "schoolName": "광명고등학교",
+    "officialWebsite": "https://gmhs-m.goegm.kr/gmhs-m/main.do",
+    "address": "경기도 광명시 오리로876번길 17",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmbh-h",
+    "schoolName": "광명북고등학교",
+    "officialWebsite": "https://gmbh-h.goegm.kr/gmbh-h/main.do",
+    "address": "경기도 광명시 시청로 127",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "kmoon-h",
+    "schoolName": "광문고등학교",
+    "officialWebsite": "https://kmoon-h.goegm.kr/kmoon-h/main.do",
+    "address": "경기도 광명시 원광명안로 39",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gwanghwi-h",
+    "schoolName": "광휘고등학교",
+    "officialWebsite": "https://gwanghwi-h.goegm.kr/gwanghwi-h/main.do",
+    "address": "경기도 광명시 서원로 41",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "mm-h",
+    "schoolName": "명문고등학교",
+    "officialWebsite": "https://mm-h.goegm.kr/mm-h/main.do",
+    "address": "경기도 광명시 광명로812번길 16",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "soha-h",
+    "schoolName": "소하고등학교",
+    "officialWebsite": "https://soha-h.goegm.kr/soha-h/main.do",
+    "address": "경기도 광명시 소하일로 21",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "woonsan-h",
+    "schoolName": "운산고등학교",
+    "officialWebsite": "https://woonsan-h.goegm.kr/woonsan-h/main.do",
+    "address": "경기도 광명시 한내일로 17",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "chunghyun-h",
+    "schoolName": "충현고등학교",
+    "officialWebsite": "https://chunghyun-h.goegm.kr/chunghyun-h/main.do",
+    "address": "경기도 광명시 오리로348번길 62",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "jinsung-h",
+    "schoolName": "진성고등학교",
+    "officialWebsite": "https://jinsung-h.goegm.kr/jinsung-h/main.do",
+    "address": "경기도 광명시 철망산로 84",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "garim-m",
+    "schoolName": "가림중학교",
+    "officialWebsite": "https://garim-m.goegm.kr/garim-m/main.do",
+    "address": "경기도 광명시 오리로 616",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "knam-m",
+    "schoolName": "광남중학교",
+    "officialWebsite": "https://knam-m.goegm.kr/knam-m/main.do",
+    "address": "경기도 광명시 광명로 785",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gmbuk-m",
+    "schoolName": "광명북중학교",
+    "officialWebsite": "https://gmbuk-m.goegm.kr/gmbuk-m/main.do",
+    "address": "경기도 광명시 시청로 121",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "km-m",
+    "schoolName": "광명중학교",
+    "officialWebsite": "https://km-m.goegm.kr/km-m/main.do",
+    "address": "경기도 광명시 오리로876번길 27",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "gwangmun-m",
+    "schoolName": "광문중학교",
+    "officialWebsite": "https://gwangmun-m.goegm.kr/gwangmun-m/main.do",
+    "address": "경기도 광명시 덕단이로 43",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "bitgaon-m",
+    "schoolName": "빛가온중학교",
+    "officialWebsite": "https://bitgaon-m.goegm.kr/bitgaon-m/main.do",
+    "address": "경기도 광명시 오리로84번길 16",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "soha-m",
+    "schoolName": "소하중학교",
+    "officialWebsite": "https://soha-m.goegm.kr/soha-m/main.do",
+    "address": "경기도 광명시 소하일로 31",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "anseo-m",
+    "schoolName": "안서중학교",
+    "officialWebsite": "https://anseo-m.goegm.kr/anseo-m/main.do",
+    "address": "경기도 광명시 기아로13번안길 9-9",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "cheolsan-m",
+    "schoolName": "철산중학교",
+    "officialWebsite": "https://cheolsan-m.goegm.kr/cheolsan-m/main.do",
+    "address": "경기도 광명시 철망산로 71",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "ch-m",
+    "schoolName": "충현중학교",
+    "officialWebsite": "https://ch-m.goegm.kr/ch-m/main.do",
+    "address": "경기도 광명시 서원로 42",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "haanbuk-m",
+    "schoolName": "하안북중학교",
+    "officialWebsite": "https://haanbuk-m.goegm.kr/haanbuk-m/main.do",
+    "address": "경기도 광명시 가림로 22",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "haan-m",
+    "schoolName": "하안중학교",
+    "officialWebsite": "https://haan-m.goegm.kr/haan-m/main.do",
+    "address": "경기도 광명시 안현로 80-1",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
   }
 ]
