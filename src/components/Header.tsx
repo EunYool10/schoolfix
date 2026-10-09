@@ -5,9 +5,11 @@ interface HeaderProps {
   /** 로고 클릭 시 홈으로 이동 (§5, §42) */
   onGoHome: () => void;
   reportCount: number;
+  schoolName: string;
+  onChangeSchool: () => void;
 }
 
-export function Header({ onGoHome, reportCount }: HeaderProps) {
+export function Header({ onGoHome, reportCount, schoolName, onChangeSchool }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 border-b border-white/80 bg-white/90 shadow-[0_1px_10px_rgba(20,38,73,0.05)] backdrop-blur-md print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -36,6 +38,7 @@ export function Header({ onGoHome, reportCount }: HeaderProps) {
           </button>
 
           <div className="flex items-center gap-3 shrink-0">
+            <button type="button" onClick={onChangeSchool} className="max-w-[42vw] truncate rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100 sm:max-w-none">{schoolName}<span className="ml-1.5 font-medium text-blue-600">학교 변경</span></button>
             <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-slate-500">
               <ShieldCheck className="h-4 w-4 text-emerald-600" />
               <span>로그인 없이 이용</span>
@@ -51,3 +54,4 @@ export function Header({ onGoHome, reportCount }: HeaderProps) {
     </header>
   );
 }
+
