@@ -34,6 +34,10 @@ import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 
 const REPORT_DRAFT_KEY = "schoolfix_report_draft_session_v1";
+function clearSessionDraft() {
+  try { sessionStorage.removeItem(REPORT_DRAFT_KEY); } catch { /* storage may be disabled */ }
+}
+
 const CATEGORY_ICONS = {
   "시설 고장": Wrench,
   "안전 위험": ShieldAlert,
@@ -182,7 +186,7 @@ export function StudentReportView({
         }
       }
     } catch {
-      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+      clearSessionDraft();
     } finally {
       setDraftReady(true);
     }
@@ -192,7 +196,7 @@ export function StudentReportView({
     if (!draftReady || completedReport) return;
     const hasText = Boolean(title || location || locationDetail || category || description);
     if (!hasText) {
-      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+      clearSessionDraft();
       setDraftSavedAt(null);
       return;
     }
@@ -245,7 +249,7 @@ export function StudentReportView({
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isFormDirty) {
         e.preventDefault();
-        e.returnValue = "작성 중인 신고 내용이 유실될 수 있습니다. 창을 닫거나 새로고침하시겠습니까?";
+        e.returnValue = "탭을 닫으면 임시 저장된 신고 내용이 삭제됩니다. 새로고침하면 이 탭에서 복구할 수 있습니다.";
         return e.returnValue;
       }
     };
@@ -355,7 +359,7 @@ export function StudentReportView({
     setSelectedExampleKey(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
     setDisplayedExamples(getRandomFormExamples(4));
-    sessionStorage.removeItem(REPORT_DRAFT_KEY);
+    clearSessionDraft();
     setDraftSavedAt(null);
     setDraftRestored(false);
   };
@@ -434,7 +438,7 @@ export function StudentReportView({
 
     if (res.success && res.report) {
       setCompletedReport(res.report);
-      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+      clearSessionDraft();
       setDraftSavedAt(null);
       setDraftRestored(false);
       handleRemoveFile();
@@ -1225,7 +1229,7 @@ export function StudentReportView({
       <UnsavedChangesModal
         isOpen={showResetConfirmModal}
         title="작성 중인 내용 초기화"
-        message="작성 중인 신고 내용이 모두 지워집니다. 새로고침하거나 벗어날 경우에도 내용이 유실될 수 있습니다. 정말 초기화하시겠습니까?"
+        message="작성 중인 신고 내용과 이 탭에 임시 저장된 초안이 모두 삭제됩니다. 정말 초기화하시겠습니까?"
         confirmText="초기화하기"
         cancelText="계속 작성하기"
         onConfirm={() => {
