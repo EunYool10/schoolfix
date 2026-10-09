@@ -51,4 +51,3 @@ export function Header({ onGoHome, reportCount }: HeaderProps) {
     </header>
   );
 }
-

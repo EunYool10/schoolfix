@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { SchoolReport } from "../types";
 import {
   AlertTriangle,
@@ -34,6 +34,11 @@ export function UserHomeLandingView({
   const inProgressReports = reports.filter(
     (r) => r.status === "in_progress" || r.status === "reviewing"
   ).length;
+  const topLocations = Object.entries(reports.reduce<Record<string, number>>((counts, report) => {
+    const name = [report.location, report.locationDetail].filter(Boolean).join(" · ");
+    counts[name] = (counts[name] || 0) + 1;
+    return counts;
+  }, {})).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, 3);
 
 
   // Filter reports matching search query (by ID, title, location, category)
@@ -43,6 +48,7 @@ export function UserHomeLandingView({
         return (
           r.id.toLowerCase().includes(q) ||
           r.location.toLowerCase().includes(q) ||
+          (r.locationDetail && r.locationDetail.toLowerCase().includes(q)) ||
           r.category.toLowerCase().includes(q) ||
           (r.title && r.title.toLowerCase().includes(q)) ||
           r.description.toLowerCase().includes(q)
@@ -58,7 +64,7 @@ export function UserHomeLandingView({
   return (
     <div className="space-y-8 max-w-6xl mx-auto py-4 sm:py-6">
       {/* 1. Welcoming Hero Banner */}
-      <div className="relative rounded-2xl bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white p-6 sm:p-10 shadow-xl overflow-hidden">
+      <div className="sf-home-hero relative grid gap-7 overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 p-5 text-white shadow-[0_28px_70px_rgba(14,35,79,0.22)] sm:p-8 lg:grid-cols-[1.25fr_0.75fr] lg:p-10">
         {/* Subtle decorative background circles */}
         <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
@@ -76,8 +82,7 @@ export function UserHomeLandingView({
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed break-keep">
-            파손된 비품, 안전 위험 요소, 냉난방 불편 등을 언제든 접수해주세요.
-            접수된 모든 사항은 시설관리팀에 즉시 전달되며, 조치 과정이 투명하게 안내됩니다.
+            파손된 비품, 안전 위험 요소, 냉난방 불편을 알려주세요. 담당자가 확인하고 조치하는 과정을 투명하게 확인할 수 있습니다.
           </p>
 
           <div className="pt-2 flex flex-wrap items-center gap-3">
@@ -102,8 +107,17 @@ export function UserHomeLandingView({
           </div>
         </div>
 
+        <div className="relative z-10 self-center rounded-[1.5rem] border border-white/15 bg-white/[0.07] p-4 backdrop-blur-sm sm:p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div><p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-blue-200">학교 신고 현황</p><h2 className="mt-1 text-sm font-bold text-white">자주 제보된 장소</h2></div>
+            <span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-blue-100">최근 누적</span>
+          </div>
+          {topLocations.length > 0 ? <ol className="mt-4 space-y-3">{topLocations.map(([name, count], index) => <li key={name} className="flex items-center gap-3"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-extrabold ${index === 0 ? "bg-cyan-300 text-slate-950" : "bg-white/10 text-white"}`}>{index + 1}</span><span className="min-w-0 flex-1 truncate text-xs font-semibold text-blue-50">{name}</span><span className="text-xs font-bold tabular-nums text-white">{count}<span className="ml-0.5 text-[10px] font-medium text-blue-200">건</span></span></li>)}</ol> : <div className="mt-4 rounded-xl bg-white/5 px-3 py-4 text-xs leading-relaxed text-blue-100/80">첫 제보를 기다리고 있어요.<br />작은 불편도 알려주세요.</div>}
+          <button type="button" onClick={() => onNavigateReports("ALL")} className="mt-4 inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-white/10">전체 현황 보기 <ArrowRight className="h-3.5 w-3.5" /></button>
+        </div>
+
         {/* Real-time School Metrics Card inside Hero */}
-        <div className="mt-8 pt-6 border-t border-white/10 grid grid-cols-3 gap-2 sm:gap-4 max-w-lg">
+        <div className="relative z-10 mt-1 grid grid-cols-3 gap-2 border-t border-white/10 pt-5 sm:gap-4 lg:col-span-2">
           <div>
             <span className="block text-[11px] text-slate-400">누적 접수</span>
             <strong className="text-lg sm:text-2xl font-bold font-mono text-white">
@@ -376,4 +390,3 @@ export function UserHomeLandingView({
     </div>
   );
 }
-

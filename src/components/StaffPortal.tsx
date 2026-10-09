@@ -122,7 +122,7 @@ export function StaffPortal({ reports, onRefresh }: StaffPortalProps) {
   if (checking) return <div className="py-20 text-center text-slate-500"><Loader2 className="inline h-5 w-5 animate-spin" /> 확인 중</div>;
 
   if (!authenticated) return (
-    <section className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+    <section className="sf-staff-login mx-auto max-w-md rounded-[1.75rem] border border-white bg-white/95 p-6 shadow-sm sm:p-9">
       <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><LockKeyhole /></div>
       <h1 className="text-xl font-bold text-slate-900">운영진 로그인</h1>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">운영진 계정으로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다.</p>
@@ -136,7 +136,7 @@ export function StaffPortal({ reports, onRefresh }: StaffPortalProps) {
   );
 
   return (
-    <section className="space-y-5">
+    <section className="sf-staff-portal space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:p-5">
         <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">운영진 신고 관리</h1><p className="text-sm text-slate-600">신고 상태, 담당자, 처리 메모를 관리합니다.</p></div></div>
         <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
@@ -179,4 +179,3 @@ export function StaffPortal({ reports, onRefresh }: StaffPortalProps) {
     </section>
   );
 }
-

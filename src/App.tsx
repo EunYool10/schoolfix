@@ -17,7 +17,7 @@ import { DeleteReportModal } from "./components/DeleteReportModal";
 import { StaffPortal } from "./components/StaffPortal";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { SchoolReport } from "./types";
-import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound } from "lucide-react";
+import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck } from "lucide-react";
 
 /**
  * 익명 소유 토큰 저장소.
@@ -256,7 +256,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans antialiased text-slate-900">
+    <div className="sf-app min-h-screen flex flex-col font-sans antialiased text-slate-900">
       {/* 토스트 */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none print:hidden">
         {toasts.map((toast) => (
@@ -284,8 +284,8 @@ export default function App() {
 
       <main className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <div className="space-y-6">
-            <nav aria-label="주요 메뉴" className="flex flex-wrap items-center gap-2 p-0.5 print:hidden">
+          <div className="sf-app-content space-y-6">
+            <nav aria-label="주요 메뉴" className="sf-main-nav flex flex-wrap items-center gap-2 p-0.5 print:hidden">
               {navButton("HOME", "메인 홈", Home)}
               {navButton("NEW_REPORT", "신고하기", PlusCircle)}
               {navButton("REPORTS", "신고 목록", ListFilter)}
@@ -302,8 +302,8 @@ export default function App() {
             )}
 
             {view === "NEW_REPORT" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
-                <section className="lg:col-span-7 xl:col-span-8">
+              <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12 lg:gap-7">
+                <section className="min-w-0 lg:col-span-8">
                   <StudentReportView
                     onSubmitReport={handleSubmitReport}
                     isSubmitting={isSubmitting}
@@ -312,20 +312,25 @@ export default function App() {
                   />
                 </section>
 
-                <aside className="lg:col-span-5 xl:col-span-4">
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-                    <h3 className="text-sm font-bold text-slate-900 mb-2">💡 신고 접수 안내</h3>
-                    <ul className="space-y-2 text-xs text-slate-600 leading-relaxed list-disc list-inside">
-                      <li>사진을 함께 첨부하면 담당 부서가 상태를 더 빠르게 파악할 수 있습니다.</li>
-                      <li>
-                        위급하거나 학생 안전에 직결된 사항(유리 파손, 누전 등)은 즉시 교무실 또는
-                        행정실로 구두 연락 바랍니다.
-                      </li>
-                      <li>로그인 없이 접수되며, 신고자 이름·연락처는 수집하지 않습니다.</li>
-                      <li>
-                        접수한 신고는 이 브라우저의 [내 신고] 탭에서 다시 확인할 수 있습니다.
-                      </li>
-                    </ul>
+                <aside className="sf-report-sidepanel space-y-4 lg:sticky lg:top-24 lg:col-span-4">
+                  <div className="overflow-hidden rounded-[1.6rem] bg-gradient-to-br from-slate-950 via-blue-950 to-blue-900 p-5 text-white shadow-[0_20px_50px_rgba(18,40,88,0.18)] sm:p-6">
+                    <div className="flex items-center gap-2 text-blue-200"><ShieldCheck className="h-4 w-4" /><span className="text-[11px] font-extrabold uppercase tracking-[0.16em]">안심 제보</span></div>
+                    <h2 className="mt-3 text-lg font-extrabold leading-snug">제보자의 정보는<br />수집하지 않아요</h2>
+                    <p className="mt-2 text-xs leading-relaxed text-blue-100/80">로그인·이름·학번 없이 접수합니다. 내용은 학교 시설과 안전 문제를 처리하는 데 사용됩니다.</p>
+                    <div className="mt-5 grid grid-cols-3 gap-2 border-t border-white/15 pt-4 text-center">
+                      {["로그인 없음", "익명 접수", "상태 공개"].map((label) => <span key={label} className="rounded-lg bg-white/10 px-2 py-2 text-[10px] font-bold text-blue-50">{label}</span>)}
+                    </div>
+                  </div>
+                  <div className="rounded-[1.4rem] border border-slate-200/80 bg-white/85 p-5 shadow-sm">
+                    <h3 className="text-sm font-extrabold text-slate-900">빠르게 처리되는 제보</h3>
+                    <ol className="mt-4 space-y-4">
+                      {[
+                        ["01", "장소를 자세히", "건물·층·주변 시설까지 적어주세요."],
+                        ["02", "상황을 구체적으로", "언제부터, 어떤 문제가 있는지 알려주세요."],
+                        ["03", "사진은 선택", "현장 사진이 있으면 판단에 도움이 됩니다."],
+                      ].map(([number, title, description]) => <li key={number} className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-extrabold text-blue-700">{number}</span><div><p className="text-xs font-bold text-slate-800">{title}</p><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{description}</p></div></li>)}
+                    </ol>
+                    <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-900">🚨 즉시 조치가 필요한 위험은 신고와 함께 교무실 또는 행정실에도 바로 알려주세요.</p>
                   </div>
                 </aside>
               </div>
@@ -369,7 +374,7 @@ export default function App() {
       <UnsavedChangesModal
         isOpen={Boolean(pendingView)}
         title="작성 중인 내용 유실 주의"
-        message="작성 중인 신고 내용이 있습니다. 다른 화면으로 이동하면 입력한 내용이 유실될 수 있습니다. 이동하시겠습니까?"
+        message="작성 내용은 현재 탭에 임시 저장되어 신고 화면으로 돌아오면 복구됩니다. 다만 첨부 사진과 AI 추가 질문 답변은 보관되지 않습니다. 이동하시겠습니까?"
         confirmText="이동하기"
         cancelText="계속 작성하기"
         onConfirm={() => {
@@ -382,7 +387,7 @@ export default function App() {
         onCancel={() => setPendingView(null)}
       />
 
-      <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500 print:hidden">
+      <footer className="sf-footer border-t border-slate-200 py-7 text-center text-xs text-slate-500 print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <p className="font-semibold text-slate-700">
             SchoolFix AI — 학교 불편사항 신고 및 시설 안전 관리
@@ -395,4 +400,3 @@ export default function App() {
     </div>
   );
 }
-

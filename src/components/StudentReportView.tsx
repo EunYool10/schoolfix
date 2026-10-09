@@ -1,6 +1,5 @@
 ﻿import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
-  Camera,
   X,
   CheckCircle,
   AlertCircle,
@@ -9,6 +8,17 @@ import {
   Info,
   RotateCw,
   AlertTriangle,
+  Wrench,
+  ShieldAlert,
+  Sparkles,
+  Leaf,
+  Volume2,
+  Heart,
+  CircleHelp,
+  CloudCheck,
+  MapPin,
+  Check,
+  Upload,
 } from "lucide-react";
 import {
   SchoolReport,
@@ -22,6 +32,17 @@ import {
 } from "../data/formExamples";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
+
+const REPORT_DRAFT_KEY = "schoolfix_report_draft_session_v1";
+const CATEGORY_ICONS = {
+  "시설 고장": Wrench,
+  "안전 위험": ShieldAlert,
+  "위생 문제": Sparkles,
+  "환경 문제": Leaf,
+  "소음 문제": Volume2,
+  "불편 사항": Heart,
+  기타: CircleHelp,
+} as const;
 
 export interface SubmitReportPayload {
   title?: string;
@@ -81,6 +102,11 @@ export function StudentReportView({
   const [locationDetail, setLocationDetail] = useState<string>("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [copiedReceipt, setCopiedReceipt] = useState(false);
 
   /**
    * AI 사전 확인 (§8 ~ §19).
@@ -128,9 +154,74 @@ export function StudentReportView({
 
   // Field element refs for auto-focusing on invalid input
   const locationRef = useRef<HTMLSelectElement>(null);
-  const categoryRef = useRef<HTMLSelectElement>(null);
+  const categoryRef = useRef<HTMLButtonElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(REPORT_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as Partial<{
+          title: string;
+          location: string;
+          locationDetail: string;
+          category: string;
+          description: string;
+          savedAt: number;
+        }>;
+        if ([draft.title, draft.location, draft.locationDetail, draft.category, draft.description].some(Boolean)) {
+          setTitle(typeof draft.title === "string" ? draft.title : "");
+          setLocation(typeof draft.location === "string" ? draft.location : "");
+          setLocationDetail(typeof draft.locationDetail === "string" ? draft.locationDetail : "");
+          setCategory(typeof draft.category === "string" ? draft.category : "");
+          setDescription(typeof draft.description === "string" ? draft.description : "");
+          setDraftRestored(true);
+          setDraftSavedAt(typeof draft.savedAt === "number" ? draft.savedAt : null);
+        }
+      }
+    } catch {
+      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || completedReport) return;
+    const hasText = Boolean(title || location || locationDetail || category || description);
+    if (!hasText) {
+      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+      setDraftSavedAt(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const savedAt = Date.now();
+      try {
+        sessionStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify({
+          title, location, locationDetail, category, description, savedAt,
+        }));
+        setDraftSavedAt(savedAt);
+      } catch {
+        setDraftSavedAt(null);
+      }
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      const hasText = Boolean(title || location || locationDetail || category || description);
+      if (draftReady && hasText && !completedReport) {
+        try {
+          sessionStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify({ title, location, locationDetail, category, description, savedAt: Date.now() }));
+        } catch {
+          // Draft storage is a convenience; it must never block navigation.
+        }
+      }
+    };
+  }, [title, location, locationDetail, category, description, draftReady, completedReport]);
+
+  const completedSteps = [Boolean(location), Boolean(category), description.trim().length >= 5].filter(Boolean).length;
+  const completionPercent = Math.round((completedSteps / 3) * 100);
 
   // Detect whether form contains unsaved user input
   const isFormDirty = Boolean(
@@ -192,8 +283,7 @@ export function StudentReportView({
   // 목록이 어긋나면 사용자는 첨부가 된 줄 알았는데 조용히 사라지거나 400 을 받는다.
   const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFile = (file?: File) => {
     if (!file) return;
 
     if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
@@ -213,6 +303,7 @@ export function StudentReportView({
           formatFileSize(file.size) +
           ")",
       }));
+      if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
@@ -225,6 +316,10 @@ export function StudentReportView({
       setPreviewUrl(event.target?.result as string);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFile(e.target.files?.[0]);
   };
 
   const handleRemoveFile = () => {
@@ -260,6 +355,9 @@ export function StudentReportView({
     setSelectedExampleKey(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
     setDisplayedExamples(getRandomFormExamples(4));
+    sessionStorage.removeItem(REPORT_DRAFT_KEY);
+    setDraftSavedAt(null);
+    setDraftRestored(false);
   };
 
   // Called when user clicks an example recommendation button
@@ -336,6 +434,9 @@ export function StudentReportView({
 
     if (res.success && res.report) {
       setCompletedReport(res.report);
+      sessionStorage.removeItem(REPORT_DRAFT_KEY);
+      setDraftSavedAt(null);
+      setDraftRestored(false);
       handleRemoveFile();
       setTitle("");
       setDescription("");
@@ -463,28 +564,41 @@ export function StudentReportView({
   // Clean completion screen
   if (completedReport) {
     return (
-      <div className="w-full">
-        <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 text-center shadow-xs">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-blue-700 mb-4">
-            <CheckCircle className="h-8 w-8" />
+      <div className="w-full rounded-[2rem] bg-gradient-to-br from-emerald-50 via-white to-blue-50 p-3 sm:p-8">
+        <div className="mx-auto max-w-2xl rounded-[1.6rem] border border-white bg-white/90 p-7 text-center shadow-[0_24px_70px_rgba(20,38,73,0.12)] sm:p-12">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700 ring-8 ring-emerald-50">
+            <CheckCircle className="h-8 w-8" strokeWidth={2.5} />
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            신고가 정상 접수되었습니다.
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">접수 완료</p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
+            제보가 학교에 전달됐어요
           </h2>
-
-          <div className="mt-4 inline-block rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-center">
-            <span className="text-xs text-slate-500 font-medium">접수번호</span>
-            <div className="font-mono text-base font-bold text-blue-700 mt-0.5">
-              {completedReport.id}
-            </div>
-          </div>
-
-          <p className="mt-4 text-xs sm:text-sm text-slate-600 leading-relaxed max-w-md mx-auto">
-            소중한 제보 감사합니다! 접수된 내용은 학교 시설 및 안전 담당 부서에 전달되었으며 실시간으로 처리 진행 상태가 업데이트됩니다.
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
+            보내주신 내용은 담당자가 확인합니다. 접수번호를 저장해 두면 진행 상황을 다시 확인할 수 있어요.
           </p>
 
-          <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="mx-auto mt-7 max-w-sm rounded-2xl border border-blue-100 bg-blue-50/80 px-5 py-4 text-center">
+            <span className="text-xs font-semibold text-slate-500">내 접수번호</span>
+            <div className="mt-1 font-mono text-xl font-extrabold tracking-wide text-blue-800">
+              {completedReport.id}
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(completedReport.id);
+                  setCopiedReceipt(true);
+                  window.setTimeout(() => setCopiedReceipt(false), 1800);
+                } catch {
+                  setCopiedReceipt(false);
+                }
+              }}
+              className="mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
+            >{copiedReceipt ? "복사했어요" : "접수번호 복사"}</button>
+          </div>
+
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 border-t border-slate-100 pt-6 sm:flex-row">
             {onSuccessNavToMyReports && (
               <button
                 type="button"
@@ -512,16 +626,39 @@ export function StudentReportView({
   }
 
   return (
-    <div className="w-full space-y-4">
+    <div className="sf-report-page w-full space-y-5">
       {/* Title & Introduction */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-          학교에서 발견한 문제를 알려주세요
+      <div className="sf-report-heading">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800"><MapPin className="h-3.5 w-3.5" /> SchoolFix 신고 센터</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-600"><Lock className="h-3 w-3" /> 익명으로 접수</span>
+        </div>
+        <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
+          학교에서 발견한 문제를<br className="sm:hidden" /> 함께 고쳐요
         </h1>
-        <p className="mt-1.5 text-xs sm:text-sm text-slate-500 leading-relaxed">
-          교내 시설 고장, 안전 위험, 위생 문제 등 개선이 필요한 상황을 알려주시면
-          학교 담당 부서에서 확인 후 조치합니다.
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
+          위치와 상황을 알려주시면 담당자가 확인하고 조치합니다. 필수 항목은 <span className="font-bold text-rose-600">*</span> 표시가 있어요.
         </p>
+      </div>
+
+      <div className="sf-progress-panel rounded-2xl border border-blue-100 bg-white/90 p-4 shadow-sm sm:flex sm:items-center sm:gap-5">
+        <div className="min-w-[10rem]">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-extrabold text-slate-800">작성 진행도</span>
+            <span className="text-xs font-bold tabular-nums text-blue-700">{completionPercent}%</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="신고 작성 진행도" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completionPercent}>
+            <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 transition-all duration-300" style={{ width: `${completionPercent}%` }} />
+          </div>
+        </div>
+        <div className="mt-3 grid flex-1 grid-cols-3 gap-2 sm:mt-0">
+          {[{ label: "장소", done: Boolean(location) }, { label: "분류", done: Boolean(category) }, { label: "상황 설명", done: description.trim().length >= 5 }].map((step, index) => (
+            <div key={step.label} className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold ${step.done ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"}`}>
+              <span className={`flex h-5 w-5 items-center justify-center rounded-full ${step.done ? "bg-emerald-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200"}`}>{step.done ? <Check className="h-3 w-3" /> : index + 1}</span>
+              {step.label}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Unsaved changes notice banner when form has data */}
@@ -530,7 +667,7 @@ export function StudentReportView({
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
             <span className="font-medium">
-              신고 작성 중인 내용이 있습니다. 페이지를 새로고침하거나 닫으면 내용이 유실될 수 있습니다.
+              {draftRestored ? "이전에 작성하던 내용을 이 탭에서 복구했어요. 접수 전까지 계속 수정할 수 있습니다." : draftSavedAt ? "작성 내용은 이 탭에 임시 저장됩니다. 탭을 닫으면 임시 저장 내용이 사라져요." : "신고 작성 중인 내용이 있습니다."}
             </span>
           </div>
           <button
@@ -544,7 +681,11 @@ export function StudentReportView({
       )}
 
       {/* Main Form Box */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 sm:p-7 shadow-xs">
+      <div className="sf-form-card rounded-[1.6rem] border border-white bg-white p-4 shadow-[0_18px_55px_rgba(20,38,73,0.08)] sm:p-7 lg:p-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
+          <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">새로운 제보</p><h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">신고 내용을 작성해 주세요</h2></div>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800"><CloudCheck className="h-3.5 w-3.5" />{draftSavedAt ? "이 탭에 임시 저장됨" : "자동 임시저장"}</span>
+        </div>
         {/* 빠른 작성 예시 (랜덤 추천 및 다른 예시 보기) */}
         <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
           <div className="flex items-center justify-between gap-2 mb-1">
@@ -796,31 +937,31 @@ export function StudentReportView({
             <p className="text-xs text-slate-500 mb-2">
               가장 알맞은 문제 종류를 선택해주세요.
             </p>
-            <select
-              ref={categoryRef}
-              id="field-category"
-              value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                clearFieldError("category");
-                setAutoFillNotice(false);
-                resetClarify();
-              }}
-              aria-invalid={Boolean(fieldErrors.category)}
-              aria-describedby={fieldErrors.category ? "category-error" : undefined}
-              className={`w-full h-11 min-h-[44px] rounded-lg border px-3.5 text-sm text-slate-900 outline-none transition cursor-pointer ${
-                fieldErrors.category
-                  ? "border-rose-400 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-400"
-                  : "border-slate-300 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-              }`}
-            >
-              <option value="">문제 종류를 선택해주세요</option>
-              {ISSUE_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+            <div id="field-category" aria-label="문제 종류" aria-invalid={Boolean(fieldErrors.category)} aria-describedby={fieldErrors.category ? "category-error" : undefined} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {ISSUE_CATEGORIES.map((cat, index) => {
+                const Icon = CATEGORY_ICONS[cat as keyof typeof CATEGORY_ICONS];
+                const selected = category === cat;
+                return (
+                  <button
+                    key={cat}
+                    ref={index === 0 ? categoryRef : undefined}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setCategory(cat);
+                      clearFieldError("category");
+                      setAutoFillNotice(false);
+                      resetClarify();
+                    }}
+                    className={`group flex min-h-14 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition sm:text-sm ${selected ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"} ${fieldErrors.category ? "border-rose-300" : ""}`}
+                  >
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700"}`}><Icon className="h-4 w-4" /></span>
+                    <span>{cat}</span>
+                    {selected && <Check className="ml-auto h-4 w-4 text-blue-700" />}
+                  </button>
+                );
+              })}
+            </div>
             {fieldErrors.category && (
               <p
                 id="category-error"
@@ -905,6 +1046,12 @@ export function StudentReportView({
               </div>
             )}
 
+            <div
+              onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
+              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDraggingFile(false); }}
+              onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); handleFile(event.dataTransfer.files?.[0]); }}
+              className={`rounded-2xl border-2 border-dashed p-3 transition ${isDraggingFile ? "border-blue-500 bg-blue-50 ring-4 ring-blue-100" : "border-slate-200 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/40"}`}
+            >
             {attachmentName ? (
               <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -944,12 +1091,14 @@ export function StudentReportView({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 h-11 min-h-[44px] rounded-lg border border-dashed border-slate-300 bg-slate-50/50 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:border-slate-400 transition cursor-pointer"
+                className="flex min-h-24 w-full flex-col items-center justify-center gap-2 rounded-xl px-4 py-5 text-sm font-bold text-slate-700 transition hover:text-blue-800"
               >
-                <Camera className="h-4 w-4 text-slate-500" />
-                <span>사진 또는 파일 첨부하기</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-700 shadow-sm"><Upload className="h-5 w-5" /></span>
+                <span>{isDraggingFile ? "여기에 놓아 첨부하세요" : "사진을 끌어 놓거나 눌러서 선택"}</span>
+                <span className="text-[11px] font-medium text-slate-500">PNG, JPG, GIF, WEBP · 최대 8MB</span>
               </button>
             )}
+            </div>
           </div>
 
           {/*
