@@ -923,12 +923,14 @@ export function StudentReportView({
               value={location}
               onChange={(e) => {
                 const newLoc = e.target.value;
-                const locationNeedsReview = availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review");
-                // Close the native select popup, then open the detail prompt on the next paint.
+                const selectedLabel = e.currentTarget.selectedOptions[0]?.textContent ?? "";
+                const locationNeedsReview = selectedLabel.includes("세부 시설 확인 필요")
+                  || availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review");
+                // Close the native select popup before showing the location details prompt.
                 e.currentTarget.blur();
                 setLocation(newLoc);
                 setShowLocationInfoModal(false);
-                if (locationNeedsReview) window.requestAnimationFrame(() => setShowLocationInfoModal(true));
+                if (locationNeedsReview) window.setTimeout(() => setShowLocationInfoModal(true), 0);
                 setLocationId("");
                 setLocationDetail("");
                 clearFieldError("location");
