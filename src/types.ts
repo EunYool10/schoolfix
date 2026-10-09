@@ -1,5 +1,36 @@
 export type ReportStatus = "pending" | "reviewing" | "in_progress" | "completed";
 
+export interface SchoolDepartment {
+  name: string;
+  /** 공식 학교 현황에 기재된 학년별 학급 수 (실제 반 이름 목록은 아님) */
+  classesByGrade: number[];
+}
+
+export interface School {
+  id: string;
+  schoolName: string;
+  officialWebsite: string;
+  address: string;
+  supportStatus: "active" | "reviewing" | "rejected";
+  verificationStatus: "official" | "needs_review";
+  verifiedAt: string;
+  sourceUrl: string;
+  departments: SchoolDepartment[];
+}
+
+export interface SchoolLocation {
+  id: string;
+  type: string;
+  name: string;
+  count?: number;
+  verificationStatus: "official" | "needs_review" | "user_entered";
+}
+
+export interface SchoolLocationType {
+  type: string;
+  verificationStatus: "official" | "needs_review" | "user_entered";
+}
+
 /**
  * 서버가 실제 DB 에서 계산한 통계 (§20).
  * 클라이언트는 이 값을 표시만 하고 다시 계산하거나 만들어내지 않는다.
@@ -161,6 +192,16 @@ export const RISK_LEVEL_MAP: Record<RiskLevel, RiskLevelBadgeConfig> = {
 export interface SchoolReport {
   /** 접수번호 (예: REP-20260919-0001). 내부 DB 식별자가 아니라 사용자에게 안내되는 번호다. */
   id: string;
+  schoolId?: string;
+  schoolName?: string;
+  locationId?: string | null;
+  locationType?: string;
+  buildingName?: string | null;
+  floor?: string | null;
+  department?: string | null;
+  grade?: string | null;
+  className?: string | null;
+  roomName?: string | null;
   title?: string;
   location: string;
   /**
@@ -172,6 +213,9 @@ export interface SchoolReport {
   description: string;
   attachmentUrl?: string | null;
   status: ReportStatus;
+  moderationStatus?: "held" | "approved";
+  moderationReason?: string | null;
+  attachmentName?: string | null;
   /** 서버가 산출한 위험도 등급 — 분석 전이면 null */
   riskLevel?: RiskLevel | null;
   riskScore?: number | null;
@@ -245,3 +289,4 @@ export const STATUS_MAP: Record<ReportStatus, StatusBadgeConfig> = {
     textColor: "text-emerald-800",
   },
 };
+
