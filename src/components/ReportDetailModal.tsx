@@ -52,6 +52,7 @@ export function ReportDetailModal({
   if (!isOpen || !report) return null;
 
   const status = STATUS_MAP[report.status] || STATUS_MAP.pending;
+  const detailedLocation = [report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ");
 
   return (
     <>
@@ -75,7 +76,7 @@ export function ReportDetailModal({
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${status.badgeClass}`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
-                  {status.label}
+                  {report.moderationStatus === "held" ? "운영진 검토 대기" : status.label}
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">{report.id}</span>
               </div>
@@ -100,7 +101,9 @@ export function ReportDetailModal({
           {/* 본문 */}
           <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <InfoCell icon={MapPin} label="위치" value={report.location} />
+              <InfoCell icon={MapPin} label="학교" value={report.schoolName || ""} />
+              <InfoCell icon={MapPin} label="위치 유형" value={report.locationType || report.location} />
+              <InfoCell icon={MapPin} label="세부 위치" value={detailedLocation || "직접 확인 필요"} />
               <InfoCell icon={Tag} label="문제 종류" value={report.category} />
               <InfoCell
                 icon={Clock}
@@ -211,3 +214,4 @@ function InfoCell({
     </div>
   );
 }
+
