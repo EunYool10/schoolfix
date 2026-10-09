@@ -9,6 +9,7 @@ export interface SchoolDepartment {
 export interface School {
   id: string;
   schoolName: string;
+  highSchoolType?: "일반고" | "특성화고" | "특목고";
   officialWebsite: string;
   address: string;
   supportStatus: "active" | "reviewing" | "rejected";
