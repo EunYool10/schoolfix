@@ -29,23 +29,32 @@ interface Props {
 }
 
 function SchoolLogo({ school, selected }: { school: School; selected: boolean }) {
-  const [failed, setFailed] = useState(false);
-  // 학교마다 favicon.ico를 제공하지 않거나 실제 로고가 다른 경로에 있어,
-  // 공식 홈페이지의 favicon을 조회하는 서비스로 로고를 가져온다.
-  const officialLogo = school.id === "gahs-h"
-    ? "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png"
-    : `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`;
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const websiteOrigin = new URL(school.officialWebsite).origin;
+  // 일부 학교 사이트는 favicon.ico를 제공하지 않으므로 먼저 사이트 메타데이터를
+  // 읽는 favicon 조회 주소를 사용하고, 실패하면 공식 도메인의 기본 경로도 시도한다.
+  const logoSources = school.id === "gahs-h"
+    ? [
+        "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png",
+        `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`,
+        `${websiteOrigin}/favicon.ico`,
+      ]
+    : [
+        `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`,
+        `${websiteOrigin}/favicon.ico`,
+      ];
+  const hasLogoSource = sourceIndex < logoSources.length;
 
   return (
     <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${selected ? "border-blue-100 bg-white" : "border-slate-100 bg-blue-50"}`}>
-      {!failed ? (
+      {hasLogoSource ? (
         <img
-          src={officialLogo}
+          src={logoSources[sourceIndex]}
           alt={`${school.schoolName} 학교 로고`}
           className="h-full w-full object-contain p-1.5"
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => setFailed(true)}
+          onError={() => setSourceIndex((current) => current + 1)}
         />
       ) : <Building2 className={`h-6 w-6 ${selected ? "text-blue-700" : "text-blue-600"}`} />}
     </span>
