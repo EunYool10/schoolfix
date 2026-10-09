@@ -277,6 +277,8 @@ export default function App() {
 
   const selectSchool = (school: School) => {
     setSelectedSchool(school);
+    setSchoolLocationsLoading(true);
+    setSchoolLocationsError("");
     setSchoolLocations([]); setSchoolLocationTypes([]);
     setReports([]); setMyReports([]); setIsLoading(true);
     try { localStorage.setItem("schoolfix_selected_school_v1", school.id); } catch { /* school remains selected in memory */ }
