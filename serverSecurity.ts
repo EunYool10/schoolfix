@@ -451,7 +451,7 @@ export function securityHeaders() {
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
         "font-src 'self' https://cdn.jsdelivr.net data:",
-        "img-src 'self' data: blob:",
+        "img-src 'self' data: blob: https://www.google.com https://*.goegm.kr",
         "connect-src 'self'",
         "frame-ancestors 'none'",
         "base-uri 'self'",

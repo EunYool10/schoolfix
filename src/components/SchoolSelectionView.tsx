@@ -28,24 +28,41 @@ interface Props {
   onSelect: (school: School) => void;
 }
 
+function getSchoolLogoSources(school: School): string[] {
+  const sources: string[] = [];
+  if (school.id === "gahs-h") {
+    sources.push("https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png");
+  }
+  try {
+    const website = new URL(school.officialWebsite);
+    // 학교 홈페이지마다 favicon 제공 여부가 달라 순서대로 대체 이미지를 시도한다.
+    sources.push(`https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(website.href)}&sz=128`);
+    sources.push(new URL("/favicon.ico", website).href);
+  } catch {
+    // 홈페이지 주소가 없거나 잘못되어도 학교 선택 화면 전체는 계속 표시한다.
+  }
+  return sources;
+}
+
 function SchoolLogo({ school, selected }: { school: School; selected: boolean }) {
-  const [failed, setFailed] = useState(false);
-  // 학교마다 favicon.ico를 제공하지 않거나 실제 로고가 다른 경로에 있어,
-  // 공식 홈페이지의 favicon을 조회하는 서비스로 로고를 가져온다.
-  const officialLogo = school.id === "gahs-h"
-    ? "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png"
-    : `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`;
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const logoSources = getSchoolLogoSources(school);
+  const hasLogoSource = sourceIndex < logoSources.length;
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [school.id]);
 
   return (
     <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${selected ? "border-blue-100 bg-white" : "border-slate-100 bg-blue-50"}`}>
-      {!failed ? (
+      {hasLogoSource ? (
         <img
-          src={officialLogo}
+          src={logoSources[sourceIndex]}
           alt={`${school.schoolName} 학교 로고`}
           className="h-full w-full object-contain p-1.5"
           loading="lazy"
           referrerPolicy="no-referrer"
-          onError={() => setFailed(true)}
+          onError={() => setSourceIndex((current) => current + 1)}
         />
       ) : <Building2 className={`h-6 w-6 ${selected ? "text-blue-700" : "text-blue-600"}`} />}
     </span>
