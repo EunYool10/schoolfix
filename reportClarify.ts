@@ -64,6 +64,7 @@ export const MAX_CLARIFY_QUESTIONS = 3;
 
 export interface ClarifySession {
   id: string;
+  schoolId?: string;
   location: string;
   category: string;
   /** 최초 신고 내용. 사용자가 처음 쓴 문장 그대로 */
@@ -89,11 +90,13 @@ setInterval(() => {
 export function createClarifySession(
   location: string,
   category: string,
-  baseDescription: string
+  baseDescription: string,
+  schoolId?: string
 ): ClarifySession {
   const now = Date.now();
   const session: ClarifySession = {
     id: crypto.randomBytes(24).toString("hex"),
+    schoolId,
     location,
     category,
     baseDescription,
@@ -411,3 +414,4 @@ export async function analyzeClarity(
 
   throw lastError instanceof Error ? lastError : new Error("신고 내용 확인에 실패했습니다.");
 }
+
