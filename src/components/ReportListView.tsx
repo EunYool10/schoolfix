@@ -45,7 +45,7 @@ interface ReportListViewProps {
 }
 
 const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
-const STATUS_OPTIONS: ReportStatus[] = ["pending", "reviewing", "in_progress", "completed"];
+const STATUS_OPTIONS = Object.keys(STATUS_MAP) as ReportStatus[];
 
 export function ReportListView({
   schoolId,

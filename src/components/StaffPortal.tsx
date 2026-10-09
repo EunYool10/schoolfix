@@ -40,7 +40,7 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
     total: displayedReports.length,
     pending: displayedReports.filter((report) => report.status === "pending" && report.moderationStatus !== "held").length,
     held: displayedReports.filter((report) => report.moderationStatus === "held").length,
-    active: displayedReports.filter((report) => report.status === "reviewing" || report.status === "in_progress").length,
+    active: displayedReports.filter((report) => report.status !== "pending" && report.status !== "completed").length,
     urgent: displayedReports.filter((report) => report.riskLevel === "긴급" || report.riskLevel === "높음").length,
   }), [displayedReports]);
 

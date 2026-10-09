@@ -1,11 +1,13 @@
 import React from "react";
-import { Check, Clock, Eye, Hammer, CheckCircle2 } from "lucide-react";
+import { Check, Clock, Eye, Hammer, CheckCircle2, UserRound, CalendarClock } from "lucide-react";
 import { ReportStatus } from "../types";
 
 interface ReportTimelineProps {
   status: ReportStatus;
   createdAt: string;
   reviewedAt?: string | null;
+  assignedAt?: string | null;
+  scheduledAt?: string | null;
   inProgressAt?: string | null;
   completedAt?: string | null;
 }
@@ -14,6 +16,8 @@ export function ReportTimeline({
   status,
   createdAt,
   reviewedAt,
+  assignedAt,
+  scheduledAt,
   inProgressAt,
   completedAt,
 }: ReportTimelineProps) {
@@ -39,6 +43,20 @@ export function ReportTimeline({
       icon: <Eye className="h-4 w-4" />,
     },
     {
+      key: "assigned",
+      label: "담당자 배정",
+      description: "담당자 또는 담당 부서 배정",
+      timestamp: assignedAt,
+      icon: <UserRound className="h-4 w-4" />,
+    },
+    {
+      key: "scheduled",
+      label: "조치 예정",
+      description: "점검·보수 일정 수립",
+      timestamp: scheduledAt,
+      icon: <CalendarClock className="h-4 w-4" />,
+    },
+    {
       key: "in_progress",
       label: "처리 중",
       description: "시설 보수 및 조치 진행",
@@ -57,8 +75,10 @@ export function ReportTimeline({
   const statusOrder: Record<ReportStatus, number> = {
     pending: 0,
     reviewing: 1,
-    in_progress: 2,
-    completed: 3,
+    assigned: 2,
+    scheduled: 3,
+    in_progress: 4,
+    completed: 5,
   };
 
   const currentLevel = statusOrder[status];
@@ -81,7 +101,7 @@ export function ReportTimeline({
         {/* Active progress bar */}
         <div
           className="absolute left-0 top-4 -translate-y-1/2 h-1 bg-blue-600 transition-all duration-300 z-0"
-          style={{ width: `${(currentLevel / 3) * 100}%` }}
+          style={{ width: `${(currentLevel / (steps.length - 1)) * 100}%` }}
         />
 
         {steps.map((step, idx) => {

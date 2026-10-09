@@ -146,6 +146,8 @@ export function ReportDetailModal({
               status={report.status}
               createdAt={report.createdAt}
               reviewedAt={report.reviewedAt}
+              assignedAt={report.assignedAt}
+              scheduledAt={report.scheduledAt}
               inProgressAt={report.inProgressAt}
               completedAt={report.completedAt}
             />

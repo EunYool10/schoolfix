@@ -146,7 +146,7 @@ interface StoredReport {
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   attachmentSize?: number | null;
-  status: "pending" | "reviewing" | "in_progress" | "completed";
+  status: "pending" | "reviewing" | "assigned" | "scheduled" | "in_progress" | "completed";
   moderationStatus?: "held" | "approved";
   moderationReason?: string | null;
   assignee?: string | null;
@@ -158,6 +158,8 @@ interface StoredReport {
   /** Soft Delete — 값이 있으면 모든 공개 기능에서 제외된다. */
   deletedAt?: string | null;
   reviewedAt?: string | null;
+  assignedAt?: string | null;
+  scheduledAt?: string | null;
   inProgressAt?: string | null;
   completedAt?: string | null;
   createdAt: string;
@@ -313,6 +315,8 @@ function toPublicReport(r: StoredReport) {
     assignee: r.assignee ?? null,
     resolutionNote: r.resolutionNote ?? null,
     reviewedAt: r.reviewedAt ?? null,
+    assignedAt: r.assignedAt ?? null,
+    scheduledAt: r.scheduledAt ?? null,
     inProgressAt: r.inProgressAt ?? null,
     completedAt: r.completedAt ?? null,
     createdAt: r.createdAt,
@@ -538,7 +542,7 @@ app.get("/api/reports", (req, res) => {
 // 규칙이 두 벌이면 "최근 7일" 로 좁힌 목록과 그 아래 통계가 서로 다른 신고를 세게 된다.
 // ---------------------------------------------------------------------------
 
-const STATUS_VALUES = ["pending", "reviewing", "in_progress", "completed"];
+const STATUS_VALUES = ["pending", "reviewing", "assigned", "scheduled", "in_progress", "completed"];
 
 function requireStaff(req: express.Request, res: express.Response): boolean {
   if (getStaffSession(req)) return true;
@@ -639,7 +643,7 @@ app.patch("/api/staff/reports/:id", (req, res) => {
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const { id } = req.params;
   const body = req.body || {};
-  const allowedStatuses = ["pending", "reviewing", "in_progress", "completed"];
+  const allowedStatuses = ["pending", "reviewing", "assigned", "scheduled", "in_progress", "completed"];
   if (typeof body.status !== "string" || !allowedStatuses.includes(body.status)) {
     return safeError(res, 400, "처리 상태가 올바르지 않습니다.");
   }
@@ -659,6 +663,8 @@ app.patch("/api/staff/reports/:id", (req, res) => {
   report.resolutionNote = resolutionNote || null;
   report.updatedAt = now;
   if (body.status === "reviewing" && !report.reviewedAt) report.reviewedAt = now;
+  if (body.status === "assigned" && !report.assignedAt) report.assignedAt = now;
+  if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
   if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
   if (body.status === "completed" && !report.completedAt) report.completedAt = now;
   saveReports(all);

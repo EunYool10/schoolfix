@@ -1,4 +1,4 @@
-export type ReportStatus = "pending" | "reviewing" | "in_progress" | "completed";
+export type ReportStatus = "pending" | "reviewing" | "assigned" | "scheduled" | "in_progress" | "completed";
 
 export interface SchoolDepartment {
   name: string;
@@ -226,6 +226,8 @@ export interface SchoolReport {
   assignee?: string | null;
   resolutionNote?: string | null;
   reviewedAt?: string | null;
+  assignedAt?: string | null;
+  scheduledAt?: string | null;
   inProgressAt?: string | null;
   completedAt?: string | null;
   createdAt: string;
@@ -276,6 +278,18 @@ export const STATUS_MAP: Record<ReportStatus, StatusBadgeConfig> = {
     badgeClass: "bg-blue-50 text-blue-700 border-blue-200",
     dotClass: "bg-blue-500",
     textColor: "text-blue-700",
+  },
+  assigned: {
+    label: "담당자 배정",
+    badgeClass: "bg-violet-50 text-violet-700 border-violet-200",
+    dotClass: "bg-violet-500",
+    textColor: "text-violet-700",
+  },
+  scheduled: {
+    label: "조치 예정",
+    badgeClass: "bg-cyan-50 text-cyan-800 border-cyan-200",
+    dotClass: "bg-cyan-500",
+    textColor: "text-cyan-800",
   },
   in_progress: {
     label: "처리 중",
