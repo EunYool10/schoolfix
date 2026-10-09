@@ -140,12 +140,21 @@ export function buildReportHtml({
 <style>
   @page { size: A4 portrait; margin: 14mm 12mm; }
   * { box-sizing: border-box; }
+  html { width: 100%; min-width: 0; }
   body {
     margin: 0;
+    padding: 14px 16px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
     font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
     color: #0f172a;
     font-size: 11px;
     line-height: 1.5;
+  }
+  @media print {
+    body { padding: 0; }
   }
   header { border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 18px; }
   h1 { font-size: 17px; margin: 0 0 4px; }
@@ -157,7 +166,7 @@ export function buildReportHtml({
   th { font-weight: 600; border-bottom: 1px solid #94a3b8; }
   .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; width: 70px; }
   .mono { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
-  .list { font-size: 10px; }
+  .list { width: 100%; table-layout: fixed; font-size: 10px; }
   .list th:nth-child(1) { width: 96px; }
   .list th:nth-child(2) { width: 52px; }
   .list th:nth-child(3) { width: 64px; }
@@ -169,6 +178,8 @@ export function buildReportHtml({
   .empty { color: #64748b; margin: 0; }
   .note { color: #94a3b8; font-size: 10px; margin: 6px 0 0; }
   footer { border-top: 1px solid #cbd5e1; padding-top: 6px; color: #94a3b8; font-size: 10px; }
+  td, th { overflow-wrap: anywhere; word-break: break-word; }
+  .mono { white-space: normal; }
 </style>
 </head>
 <body>
