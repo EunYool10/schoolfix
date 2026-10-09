@@ -285,7 +285,7 @@ export default function App() {
       <main className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           <div className="space-y-6">
-            <nav className="flex items-center gap-1.5 overflow-x-auto p-0.5 print:hidden">
+            <nav aria-label="주요 메뉴" className="flex flex-wrap items-center gap-2 p-0.5 print:hidden">
               {navButton("HOME", "메인 홈", Home)}
               {navButton("NEW_REPORT", "신고하기", PlusCircle)}
               {navButton("REPORTS", "신고 목록", ListFilter)}
