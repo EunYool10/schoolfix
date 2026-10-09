@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Loader2, LockKeyhole, LogOut, Save, ShieldCheck } from "lucide-react";
-import { STATUS_MAP, type SchoolReport } from "../types";
+import { Download, Loader2, LockKeyhole, LogOut, Save, Search, ShieldCheck } from "lucide-react";
+import { RISK_LEVEL_MAP, STATUS_MAP, type SchoolReport } from "../types";
 
 interface StaffPortalProps {
   reports: SchoolReport[];
@@ -15,6 +15,53 @@ export function StaffPortal({ reports, onRefresh }: StaffPortalProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [riskFilter, setRiskFilter] = useState("all");
+
+  const summary = useMemo(() => ({
+    total: reports.length,
+    pending: reports.filter((report) => report.status === "pending").length,
+    active: reports.filter((report) => report.status === "reviewing" || report.status === "in_progress").length,
+    urgent: reports.filter((report) => report.riskLevel === "긴급" || report.riskLevel === "높음").length,
+  }), [reports]);
+
+  const visibleReports = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    const riskOrder = { 긴급: 0, 높음: 1, 중간: 2, 낮음: 3 } as const;
+    return reports
+      .filter((report) => statusFilter === "all" || report.status === statusFilter)
+      .filter((report) => riskFilter === "all" || report.riskLevel === riskFilter)
+      .filter((report) => !query || [report.id, report.title, report.description, report.location, report.locationDetail, report.category, report.assignee]
+        .some((value) => value?.toLocaleLowerCase().includes(query)))
+      .sort((a, b) => {
+        const riskA = a.riskLevel ? riskOrder[a.riskLevel] : 4;
+        const riskB = b.riskLevel ? riskOrder[b.riskLevel] : 4;
+        return riskA - riskB || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+  }, [reports, search, statusFilter, riskFilter]);
+
+  const exportCsv = () => {
+    const columns = ["접수번호", "접수일시", "위치", "상세 위치", "분류", "위험도", "상태", "제목", "신고 내용", "담당자", "처리 메모"];
+    const escapeCell = (value: unknown) => {
+      const cell = String(value ?? "");
+      // 신고 내용은 사용자가 작성하므로 스프레드시트 수식 실행을 막는다.
+      const safeCell = /^[\s\u0000-\u001f]*[=+\-@]/.test(cell) ? `'${cell}` : cell;
+      return `"${safeCell.replace(/"/g, '""')}"`;
+    };
+    const rows = visibleReports.map((report) => [
+      report.id, new Date(report.createdAt).toLocaleString("ko-KR"), report.location, report.locationDetail,
+      report.category, report.riskLevel, STATUS_MAP[report.status]?.label ?? report.status,
+      report.title, report.description, report.assignee, report.resolutionNote,
+    ]);
+    const csv = "\uFEFF" + [columns, ...rows].map((row) => row.map(escapeCell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `schoolfix-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   useEffect(() => {
     fetch("/api/staff/session").then((res) => res.json()).then((json) => {
@@ -94,11 +141,33 @@ export function StaffPortal({ reports, onRefresh }: StaffPortalProps) {
         <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">운영진 신고 관리</h1><p className="text-sm text-slate-600">신고 상태, 담당자, 처리 메모를 관리합니다.</p></div></div>
         <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
       </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: "전체 신고", value: summary.total, className: "text-slate-900" },
+          { label: "접수 대기", value: summary.pending, className: "text-slate-700" },
+          { label: "확인·처리 중", value: summary.active, className: "text-blue-700" },
+          { label: "높음 이상", value: summary.urgent, className: "text-rose-700" },
+        ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold text-slate-500">{item.label}</p><p className={`mt-1 text-2xl font-bold ${item.className}`}>{item.value}</p></div>)}
+      </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center">
+        <label className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="검색: 접수번호, 내용, 위치, 담당자" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm" aria-label="신고 검색" />
+        </label>
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" aria-label="상태 필터">
+          <option value="all">모든 상태</option>{Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+        </select>
+        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" aria-label="위험도 필터">
+          <option value="all">모든 위험도</option>{Object.keys(RISK_LEVEL_MAP).map((level) => <option key={level} value={level}>{level}</option>)}
+        </select>
+        <button type="button" onClick={exportCsv} disabled={visibleReports.length === 0} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download className="h-4 w-4" /> CSV 내보내기</button>
+      </div>
+      <p className="text-sm text-slate-500">{visibleReports.length}건 표시 · 긴급/높음 위험도와 최근 신고 순</p>
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
-      {reports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">접수된 신고가 없습니다.</p> : reports.map((report) => (
-        <article key={report.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <div className="mb-4"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-slate-500">{report.id}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{report.location} · {report.category}</span></div><h2 className="mt-2 font-bold text-slate-900">{report.title || "시설 문제 신고"}</h2><p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{report.description}</p></div>
+      {reports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">접수된 신고가 없습니다.</p> : visibleReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">조건에 맞는 신고가 없습니다.</p> : visibleReports.map((report) => (
+        <article key={`${report.id}-${report.updatedAt}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-4"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs text-slate-500">{report.id}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{report.location}{report.locationDetail ? ` · ${report.locationDetail}` : ""} · {report.category}</span><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${report.riskLevel ? RISK_LEVEL_MAP[report.riskLevel].badgeClass : "border-slate-200 bg-slate-50 text-slate-500"}`}>{report.riskLevel || "분석 대기"}</span><span className={`rounded-full border px-2 py-1 text-xs ${STATUS_MAP[report.status].badgeClass}`}>{STATUS_MAP[report.status].label}</span></div><h2 className="mt-2 font-bold text-slate-900">{report.title || "시설 문제 신고"}</h2><p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{report.description}</p><p className="mt-2 text-xs text-slate-500">접수 {new Date(report.createdAt).toLocaleString("ko-KR")}{report.assignee ? ` · 담당 ${report.assignee}` : " · 담당자 미지정"}</p></div>
           <form onSubmit={(event) => saveReport(event, report)} className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-2">
             <label className="text-xs font-semibold text-slate-600">처리 상태<select name="status" defaultValue={report.status} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
             <label className="text-xs font-semibold text-slate-600">담당자<input name="assignee" defaultValue={report.assignee || ""} maxLength={100} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="담당 부서 또는 담당자" /></label>
