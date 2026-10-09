@@ -1,11 +1,5 @@
-import {
-  SchoolReport,
-  ReportStatsResponse,
-  AiSummaryResponse,
-  LocationStatistic,
-  STATUS_MAP,
-  ReportStatus,
-} from "../types";
+import { STATUS_MAP } from "../types";
+import type { SchoolReport, ReportStatsResponse, AiSummaryResponse, LocationStatistic, ReportStatus } from "../types";
 
 /**
  * 인쇄 / PDF 저장용 독립 HTML 문서를 만든다.
@@ -22,6 +16,7 @@ import {
  */
 
 export interface ReportDocumentInput {
+  schoolName?: string;
   reports: SchoolReport[];
   stats: ReportStatsResponse;
   summary: AiSummaryResponse["summary"];
@@ -54,6 +49,7 @@ function rows(entries: [string, number][], emptyText: string): string {
 }
 
 export function buildReportHtml({
+  schoolName,
   reports,
   stats,
   summary,
@@ -125,7 +121,7 @@ export function buildReportHtml({
               .map(
                 (r) => `<tr>
                   <td class="mono">${escapeHtml(r.id)}</td>
-                  <td>${escapeHtml(r.location)}</td>
+                  <td>${escapeHtml([r.locationType || r.location, r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · "))}</td>
                   <td>${escapeHtml(r.category)}</td>
                   <td>${escapeHtml(r.riskLevel ?? "-")}</td>
                   <td>${escapeHtml(STATUS_MAP[r.status]?.label ?? r.status)}</td>
@@ -177,8 +173,8 @@ export function buildReportHtml({
 </head>
 <body>
 <header>
-  <h1>SchoolFix AI — 학교 신고 현황 리포트</h1>
-  <p class="meta">생성 일시: ${escapeHtml(now)}${scopeLabel ? ` · 대상: ${escapeHtml(scopeLabel)}` : ""}</p>
+  <h1>SchoolFix AI — ${escapeHtml(schoolName || "학교")} 신고 현황 리포트</h1>
+  <p class="meta">학교: ${escapeHtml(schoolName || reports[0]?.schoolName || "")} · 생성 일시: ${escapeHtml(now)}${scopeLabel ? ` · 대상: ${escapeHtml(scopeLabel)}` : ""}</p>
 </header>
 
 <section><h2>1. 신고 현황</h2>${rows(overview, "등록된 신고가 없습니다.")}</section>
@@ -193,3 +189,4 @@ export function buildReportHtml({
 </body>
 </html>`;
 }
+
