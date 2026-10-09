@@ -39,7 +39,7 @@
       { "id": "student-counseling", "type": "보건·상담", "name": "학생상담공간", "verificationStatus": "official" },
       { "id": "broadcast-room", "type": "특별실", "name": "방송실", "verificationStatus": "official" },
       { "id": "library", "type": "도서관", "name": "도서실", "verificationStatus": "official" },
-      { "id": "science-lab", "type": "특별실", "name": "과학실", "verificationStatus": "official" },
+      { "id": "science-lab", "type": "특별실", "name": "과학실", "count": 1, "verificationStatus": "official" },
       { "id": "visual-design", "type": "특별실", "name": "시각디자인실", "verificationStatus": "official" },
       { "id": "character-making", "type": "특별실", "name": "캐릭터제작실", "verificationStatus": "official" },
       { "id": "creative-management", "type": "특별실", "name": "창의경영실", "verificationStatus": "official" },
@@ -50,7 +50,7 @@
       { "id": "tax-accounting", "type": "특별실", "name": "세무회계실", "verificationStatus": "official" },
       { "id": "multimedia", "type": "특별실", "name": "멀티미디어실", "verificationStatus": "official" },
       { "id": "project", "type": "특별실", "name": "프로젝트실", "verificationStatus": "official" },
-      { "id": "dining", "type": "급식실", "name": "학생식당", "verificationStatus": "official" },
+      { "id": "dining", "type": "급식실", "name": "학생식당", "count": 2, "verificationStatus": "official" },
       { "id": "e-room-cafe", "type": "특별실", "name": "이룸카페·바리스타실", "verificationStatus": "official" },
       { "id": "culinary-classroom", "type": "특별실", "name": "제과제빵·한식실", "verificationStatus": "official" },
       { "id": "it-club", "type": "특별실", "name": "IT동아리실", "verificationStatus": "official" },
@@ -65,6 +65,63 @@
       { "id": "hall", "type": "공용공간", "name": "비즈홀", "verificationStatus": "official" },
       { "id": "dasom", "type": "공용공간", "name": "다솜관", "verificationStatus": "official" }
     ]
+  },
+  {
+    "id": "gahs-h",
+    "schoolName": "경기항공고등학교 (구 광명공업고등학교)",
+    "officialWebsite": "https://gahs-h.goegm.kr/gahs-h/main.do",
+    "address": "경기도 광명시 새터안로 20",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-09",
+    "sourceUrl": "https://gahs-h.goegm.kr/gahs-h/cm/cntnts/cntntsView.do?cntntsId=2707&mi=5697",
+    "departments": [
+      { "name": "항공전기전자과", "classesByGrade": [1, 1, 1] },
+      { "name": "항공영상미디어과", "classesByGrade": [1, 1, 1] },
+      { "name": "로봇자동화과", "classesByGrade": [1, 1, 1] },
+      { "name": "인테리어리모델링과", "classesByGrade": [1, 1, 1] }
+    ],
+    "locationTypes": [
+      { "type": "교실", "verificationStatus": "official" },
+      { "type": "화장실", "verificationStatus": "official" },
+      { "type": "급식실", "verificationStatus": "official" },
+      { "type": "도서관", "verificationStatus": "official" },
+      { "type": "특별실", "verificationStatus": "official" },
+      { "type": "보건·상담", "verificationStatus": "official" },
+      { "type": "학습공간", "verificationStatus": "official" },
+      { "type": "공용공간", "verificationStatus": "official" },
+      { "type": "기타", "verificationStatus": "user_entered" }
+    ],
+    "locations": [
+      { "id": "regular-classrooms", "type": "교실", "name": "정규교실", "count": 12, "verificationStatus": "official" },
+      { "id": "staff-rooms", "type": "특별실", "name": "교무실", "count": 2, "verificationStatus": "official" },
+      { "id": "administration-office", "type": "특별실", "name": "행정실", "count": 1, "verificationStatus": "official" },
+      { "id": "principal-office", "type": "특별실", "name": "교장실", "count": 1, "verificationStatus": "official" },
+      { "id": "health-room", "type": "보건·상담", "name": "보건실", "count": 1, "verificationStatus": "official" },
+      { "id": "counseling-rooms", "type": "보건·상담", "name": "상담실", "count": 2, "verificationStatus": "official" },
+      { "id": "parent-room", "type": "공용공간", "name": "학부모 상주실", "count": 1, "verificationStatus": "official" },
+      { "id": "teacher-rest-rooms", "type": "공용공간", "name": "교사 휴게실", "count": 3, "verificationStatus": "official" },
+      { "id": "aircraft-maintenance", "type": "특별실", "name": "항공정비실", "count": 1, "verificationStatus": "official" },
+      { "id": "aircraft-electronics", "type": "특별실", "name": "항공전자실", "count": 1, "verificationStatus": "official" },
+      { "id": "parts-production", "type": "특별실", "name": "부품생산실", "count": 1, "verificationStatus": "official" },
+      { "id": "video-media", "type": "특별실", "name": "영상미디어실", "count": 1, "verificationStatus": "official" },
+      { "id": "drone-operations", "type": "특별실", "name": "드론운용실", "count": 1, "verificationStatus": "official" },
+      { "id": "multimedia", "type": "특별실", "name": "멀티미디어실", "count": 1, "verificationStatus": "official" },
+      { "id": "computer-application", "type": "특별실", "name": "컴퓨터응용실", "count": 2, "verificationStatus": "official" },
+      { "id": "design-practice", "type": "특별실", "name": "디자인실습실", "count": 2, "verificationStatus": "official" },
+      { "id": "woodcraft-practice", "type": "특별실", "name": "목공예실습실", "count": 1, "verificationStatus": "official" },
+      { "id": "kitchen", "type": "급식실", "name": "조리실", "count": 1, "verificationStatus": "official" },
+      { "id": "cafeteria", "type": "급식실", "name": "식당", "count": 2, "verificationStatus": "official" },
+      { "id": "computer-room", "type": "특별실", "name": "전산실", "count": 1, "verificationStatus": "official" },
+      { "id": "night-duty-room", "type": "특별실", "name": "숙직실", "count": 1, "verificationStatus": "official" },
+      { "id": "restrooms", "type": "화장실", "name": "화장실", "count": 6, "verificationStatus": "official" },
+      { "id": "interview-room", "type": "보건·상담", "name": "면담실", "count": 1, "verificationStatus": "official" },
+      { "id": "library", "type": "도서관", "name": "도서실", "count": 1, "verificationStatus": "official" },
+      { "id": "storage-rooms", "type": "특별실", "name": "창고", "count": 4, "verificationStatus": "official" },
+      { "id": "digital-classroom", "type": "학습공간", "name": "디지털교실", "count": 1, "verificationStatus": "official" },
+      { "id": "auditorium", "type": "공용공간", "name": "강당", "count": 1, "verificationStatus": "official" },
+      { "id": "study-cafe", "type": "학습공간", "name": "스터디카페", "count": 1, "verificationStatus": "official" },
+      { "id": "science-room", "type": "특별실", "name": "과학실", "count": 1, "verificationStatus": "official" }
+    ]
   }
 ]
-
