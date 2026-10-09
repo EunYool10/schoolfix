@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { SchoolReport } from "../types";
+import { SchoolReport, STATUS_MAP } from "../types";
 import {
   AlertTriangle,
   ClipboardList,
@@ -32,7 +32,7 @@ export function UserHomeLandingView({
   const totalReports = reports.length;
   const completedReports = reports.filter((r) => r.status === "completed").length;
   const inProgressReports = reports.filter(
-    (r) => r.status === "in_progress" || r.status === "reviewing"
+    (r) => r.status !== "pending" && r.status !== "completed"
   ).length;
   const topLocations = Object.entries(reports.reduce<Record<string, number>>((counts, report) => {
     const name = [report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ");
@@ -202,22 +202,8 @@ export function UserHomeLandingView({
                         <span className="text-[11px] font-mono font-bold text-slate-700">
                           {r.id}
                         </span>
-                        <span
-                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                            r.status === "completed"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : r.status === "in_progress"
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-blue-100 text-blue-800"
-                          }`}
-                        >
-                          {r.status === "completed"
-                            ? "처리 완료"
-                            : r.status === "in_progress"
-                            ? "처리 중"
-                            : r.status === "reviewing"
-                            ? "확인 중"
-                            : "접수 대기"}
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${STATUS_MAP[r.status]?.badgeClass ?? STATUS_MAP.pending.badgeClass}`}>
+                          {STATUS_MAP[r.status]?.label ?? STATUS_MAP.pending.label}
                         </span>
                       </div>
                       <p className="text-xs font-semibold text-slate-900 truncate mt-0.5">
