@@ -14,6 +14,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -88,6 +89,7 @@ app.use(express.json({ limit: "15mb" }));
 // 배포 시에는 영구 디스크 마운트 경로를 DATA_DIR로 지정한다(예: /var/data).
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "reports_db.json");
+const SCHOOL_APPLICATIONS_FILE = path.join(DATA_DIR, "school_applications.json");
 const SCHOOL_CATALOG_FILE = path.join(process.cwd(), "schools.seed.json");
 // 테스트 시연 데이터는 더 이상 실제 신고 목록에 노출하지 않는다.
 const LEGACY_SAMPLE_REPORT_IDS = new Set([
@@ -195,6 +197,41 @@ function loadAllReports(): StoredReport[] {
  */
 function loadReports(): StoredReport[] {
   return loadAllReports().filter((r) => !r.deletedAt && r.moderationStatus !== "held");
+}
+
+interface SchoolApplication {
+  id: string;
+  schoolName: string;
+  website: string;
+  address: string;
+  reason: string;
+  requests: string;
+  replyEmail: string;
+  status: "new" | "reviewed";
+  createdAt: string;
+  updatedAt: string;
+}
+
+function loadSchoolApplications(): SchoolApplication[] {
+  try {
+    if (!fs.existsSync(SCHOOL_APPLICATIONS_FILE)) return [];
+    const parsed = JSON.parse(fs.readFileSync(SCHOOL_APPLICATIONS_FILE, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error("[school-applications] 신청함 읽기 실패:", err);
+    return [];
+  }
+}
+
+function saveSchoolApplications(applications: SchoolApplication[]) {
+  try {
+    const tmp = `${SCHOOL_APPLICATIONS_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(applications, null, 2), "utf-8");
+    fs.renameSync(tmp, SCHOOL_APPLICATIONS_FILE);
+  } catch (err) {
+    console.error("[school-applications] 신청함 저장 실패:", err);
+    throw err;
+  }
 }
 
 /** 텍스트와 첨부 이미지를 OpenAI Moderation으로 검사한다. 검사 실패 시 이미지는 보류한다. */
@@ -444,6 +481,40 @@ app.get("/api/schools/:schoolId/locations", (req, res) => {
   return res.json({ ok: true, schoolId: school.id, data: school.locations.filter((location) => location.verificationStatus === "official"), locationTypes: school.locationTypes ?? [...new Set(school.locations.map((location) => location.type))].map((type) => ({ type, verificationStatus: "official" })), verificationStatus: school.verificationStatus, sourceUrl: school.sourceUrl });
 });
 
+/** 학교 추가 요청은 학생 화면에 공개하지 않고 DATA_DIR에 별도 보관한다. */
+app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 60 * 60 * 1000, max: 5, message: "신청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), (req, res) => {
+  const body = req.body || {};
+  const schoolName = typeof body.schoolName === "string" ? body.schoolName.trim() : "";
+  const website = typeof body.website === "string" ? body.website.trim() : "";
+  const address = typeof body.address === "string" ? body.address.trim() : "";
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  const requests = typeof body.requests === "string" ? body.requests.trim() : "";
+  const replyEmail = typeof body.replyEmail === "string" ? body.replyEmail.trim() : "";
+  if (!schoolName || schoolName.length > 100 || !address || address.length > 200 || !reason || reason.length > 1000 || requests.length > 1000 || replyEmail.length > 254) {
+    return safeError(res, 400, "필수 항목을 확인하고 입력 길이를 줄여주세요.");
+  }
+  try {
+    const parsedUrl = new URL(website);
+    if (!(parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:") || website.length > 500) throw new Error("invalid website");
+  } catch {
+    return safeError(res, 400, "학교 공식 홈페이지 주소를 확인해주세요.");
+  }
+  if (replyEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyEmail)) return safeError(res, 400, "회신 이메일 주소를 확인해주세요.");
+
+  const now = new Date().toISOString();
+  const application: SchoolApplication = {
+    id: `SCH-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`,
+    schoolName, website, address, reason, requests, replyEmail,
+    status: "new", createdAt: now, updatedAt: now,
+  };
+  try {
+    saveSchoolApplications([application, ...loadSchoolApplications()]);
+    return res.status(201).json({ ok: true, data: { id: application.id, createdAt: application.createdAt } });
+  } catch {
+    return safeError(res, 500, "신청을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
+  }
+});
+
 /** 전체 신고 — 누구나 조회 가능. 개인정보 없음. */
 app.get("/api/reports", (req, res) => {
   const school = findSchool(req.query.schoolId);
@@ -494,6 +565,41 @@ app.post("/api/staff/logout", (req, res) => {
   revokeStaffSession(getStaffSession(req));
   clearStaffSessionCookie(res);
   return res.json({ ok: true });
+});
+
+app.get("/api/staff/school-applications", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  return res.json({ ok: true, data: loadSchoolApplications() });
+});
+
+app.patch("/api/staff/school-applications/:id", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const action = req.body?.action;
+  if (action !== "mark-reviewed" && action !== "mark-new") return safeError(res, 400, "신청 처리 상태가 올바르지 않습니다.");
+  const applications = loadSchoolApplications();
+  const application = applications.find((item) => item.id === req.params.id);
+  if (!application) return safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
+  application.status = action === "mark-reviewed" ? "reviewed" : "new";
+  application.updatedAt = new Date().toISOString();
+  try {
+    saveSchoolApplications(applications);
+    return res.json({ ok: true });
+  } catch {
+    return safeError(res, 500, "신청 상태를 저장하지 못했습니다.");
+  }
+});
+
+app.delete("/api/staff/school-applications/:id", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const applications = loadSchoolApplications();
+  const remaining = applications.filter((item) => item.id !== req.params.id);
+  if (remaining.length === applications.length) return safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
+  try {
+    saveSchoolApplications(remaining);
+    return res.json({ ok: true });
+  } catch {
+    return safeError(res, 500, "학교 신청을 삭제하지 못했습니다.");
+  }
 });
 
 app.get("/api/staff/moderation", (req, res) => {
@@ -1169,4 +1275,3 @@ async function startServer() {
 }
 
 startServer();
-
