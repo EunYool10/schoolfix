@@ -165,6 +165,7 @@ export function StudentReportView({
 
   // Unsaved changes dialog state
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
+  const [showLocationInfoModal, setShowLocationInfoModal] = useState(false);
 
   // 작성 중인 내용에 가려질 표현이 있는지 미리 알려 준다.
   // 차단이 아니라 안내이므로 제출은 그대로 가능하다.
@@ -924,6 +925,7 @@ export function StudentReportView({
               onChange={(e) => {
                 const newLoc = e.target.value;
                 setLocation(newLoc);
+                setShowLocationInfoModal(availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review"));
                 setLocationId("");
                 setLocationDetail("");
                 clearFieldError("location");
@@ -946,7 +948,7 @@ export function StudentReportView({
               <option value="">{locationsLoading ? "학교 위치 정보를 불러오는 중…" : "문제 위치를 선택해주세요"}</option>
               {availableLocationTypes.map((entry) => (
                 <option key={entry.type} value={entry.type}>
-                  {entry.type}{entry.verificationStatus === "needs_review" ? " · 세부 시설 확인 필요" : entry.verificationStatus === "user_entered" ? " · 직접 입력" : ""}
+                  {entry.type}{entry.verificationStatus === "user_entered" ? " · 직접 입력" : ""}
                 </option>
               ))}
             </select>
@@ -1309,6 +1311,25 @@ export function StudentReportView({
         }}
         onCancel={() => setShowResetConfirmModal(false)}
       />
+
+      {showLocationInfoModal && (
+        <div
+          role="presentation"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLocationInfoModal(false); }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+        >
+          <section role="dialog" aria-modal="true" aria-labelledby="location-info-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700"><Info className="h-5 w-5" /></span>
+              <div>
+                <h2 id="location-info-title" className="text-base font-extrabold text-slate-900">세부 위치를 알려주세요</h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">이 장소의 세부 시설 정보는 확인되지 않았어요. 알고 있는 건물·층·시설명을 아래에 적어 주세요. 모르는 정보는 추측해서 입력하지 않아도 됩니다.</p>
+              </div>
+            </div>
+            <button type="button" autoFocus onClick={() => setShowLocationInfoModal(false)} className="mt-5 min-h-11 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800">확인</button>
+          </section>
+        </div>
+      )}
 
       {/* Helpful Guidance Footer */}
       <div className="text-center text-xs text-slate-400 leading-relaxed py-1">
