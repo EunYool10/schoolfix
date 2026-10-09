@@ -309,7 +309,8 @@
         "name": "다솜관",
         "verificationStatus": "official"
       }
-    ]
+    ],
+    "highSchoolType": "특성화고"
   },
   {
     "id": "gahs-h",
@@ -596,7 +597,8 @@
         "count": 1,
         "verificationStatus": "official"
       }
-    ]
+    ],
+    "highSchoolType": "특성화고"
   },
   {
     "id": "karim-e",
@@ -2246,7 +2248,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "gmbh-h",
@@ -2312,7 +2315,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "kmoon-h",
@@ -2378,7 +2382,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "gwanghwi-h",
@@ -2444,7 +2449,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "mm-h",
@@ -2510,7 +2516,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "soha-h",
@@ -2576,7 +2583,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "woonsan-h",
@@ -2642,7 +2650,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "chunghyun-h",
@@ -2708,7 +2717,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "jinsung-h",
@@ -2774,7 +2784,8 @@
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [],
+    "highSchoolType": "일반고"
   },
   {
     "id": "garim-m",
