@@ -28,6 +28,29 @@ interface Props {
   onSelect: (school: School) => void;
 }
 
+function SchoolLogo({ school, selected }: { school: School; selected: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const faviconUrl = `${new URL(school.officialWebsite).origin}/favicon.ico`;
+  const officialLogo = school.id === "gahs-h"
+    ? "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png"
+    : faviconUrl;
+
+  return (
+    <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${selected ? "border-blue-100 bg-white" : "border-slate-100 bg-blue-50"}`}>
+      {!failed ? (
+        <img
+          src={officialLogo}
+          alt={`${school.schoolName} 학교 로고`}
+          className="h-full w-full object-contain p-1.5"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      ) : <Building2 className={`h-6 w-6 ${selected ? "text-blue-700" : "text-blue-600"}`} />}
+    </span>
+  );
+}
+
 export function SchoolSelectionView({ schools, loading, error, initialSchoolId = "", onRetry, onSelect }: Props) {
   const [selectedId, setSelectedId] = useState(initialSchoolId);
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,7 +174,7 @@ export function SchoolSelectionView({ schools, loading, error, initialSchoolId =
                   <option value="level">초등학교 → 중학교 → 고등학교</option><option value="name">가나다순</option>
                 </select>
               </label>
-              <p className="text-[11px] font-medium text-slate-500 sm:col-span-3">학교 카드의 별을 눌러 즐겨찾기를 저장할 수 있습니다. 창의경영고등학교는 항상 맨 위에 표시됩니다.</p>
+              <p className="text-[11px] font-medium text-slate-500 sm:col-span-3">학교 카드의 별을 눌러 즐겨찾기를 저장할 수 있습니다.</p>
             </div>
             <div className="grid gap-3">
               {displayedSchools.map((school) => {
@@ -159,7 +182,7 @@ export function SchoolSelectionView({ schools, loading, error, initialSchoolId =
                 const isFavorite = favoriteIds.includes(school.id);
                 return <article key={school.id} className={`flex items-stretch rounded-2xl border bg-white shadow-sm transition ${selected ? "border-blue-600 ring-2 ring-blue-100 shadow-md" : "border-slate-200 hover:border-blue-300 hover:shadow-md"}`}>
                   <button type="button" aria-pressed={selected} onClick={() => setSelectedId(school.id)} className="min-w-0 flex-1 rounded-l-2xl p-5 text-left sm:p-6">
-                    <div className="flex min-w-0 items-start gap-4"><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-blue-700 text-white" : "bg-blue-50 text-blue-700"}`}>{selected ? <Check className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}</span><span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-3"><span><span className="block text-lg font-extrabold text-slate-900">{school.schoolName}</span>{school.highSchoolType && <span className="mt-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">{school.highSchoolType}</span>}<span className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-slate-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{school.address}</span><span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700"><Globe2 className="h-3.5 w-3.5" />공식 홈페이지에서 학교 정보 확인</span></span><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${selected ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{selected ? "선택됨" : "선택"}</span></span></span></div>
+                    <div className="flex min-w-0 items-start gap-4"><SchoolLogo school={school} selected={selected} /><span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-3"><span><span className="block text-lg font-extrabold text-slate-900">{school.schoolName}</span>{school.highSchoolType && <span className="mt-1 inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">{school.highSchoolType}</span>}<span className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-slate-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{school.address}</span><span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700"><Globe2 className="h-3.5 w-3.5" />공식 홈페이지에서 학교 정보 확인</span></span><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${selected ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{selected ? "선택됨" : "선택"}</span></span></span></div>
                   </button>
                   <button type="button" aria-label={isFavorite ? `${school.schoolName} 즐겨찾기 해제` : `${school.schoolName} 즐겨찾기 추가`} aria-pressed={isFavorite} onClick={() => toggleFavorite(school.id)} className={`m-3 flex h-10 w-10 shrink-0 items-center justify-center self-start rounded-xl transition ${isFavorite ? "bg-amber-50 text-amber-500" : "bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-500"}`} title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}><Star className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`} /></button>
                 </article>;
