@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { SchoolReport } from "../types";
 import {
   AlertTriangle,
@@ -56,7 +56,7 @@ export function UserHomeLandingView({
     .slice(0, 3);
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto px-4 py-4 sm:py-6">
+    <div className="space-y-8 max-w-6xl mx-auto py-4 sm:py-6">
       {/* 1. Welcoming Hero Banner */}
       <div className="relative rounded-2xl bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white p-6 sm:p-10 shadow-xl overflow-hidden">
         {/* Subtle decorative background circles */}
@@ -376,3 +376,4 @@ export function UserHomeLandingView({
     </div>
   );
 }
+
