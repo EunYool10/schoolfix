@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { X, Lock, AlertTriangle, Loader2 } from "lucide-react";
 
 interface DeleteReportModalProps {
+  schoolId: string;
   isOpen: boolean;
   reportId: string | null;
   onClose: () => void;
@@ -20,6 +21,7 @@ interface DeleteReportModalProps {
  * 클라이언트에는 비밀번호 원문도, 비교 로직도 존재하지 않는다.
  */
 export function DeleteReportModal({
+  schoolId,
   isOpen,
   reportId,
   onClose,
@@ -55,7 +57,7 @@ export function DeleteReportModal({
       const res = await fetch("/api/admin/verify-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reportId, password }),
+        body: JSON.stringify({ reportId, password, schoolId }),
       });
       const json = await res.json();
 
@@ -216,3 +218,4 @@ export function DeleteReportModal({
     </div>
   );
 }
+
