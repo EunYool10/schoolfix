@@ -1,16 +1,124 @@
 @import "tailwindcss";
 
-/* 모달이 열려 있는 동안 뒤 페이지가 스크롤되지 않게 한다 */
+:root {
+  font-family: Inter, Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+  color: #17243b;
+  background: #f5f7fb;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  --sf-ink: #17243b;
+  --sf-muted: #64748b;
+  --sf-line: #e2e8f0;
+  --sf-primary: #2457d6;
+  --sf-primary-dark: #1947bd;
+  --sf-focus: rgba(37, 99, 235, 0.18);
+  --sf-shadow: 0 8px 24px rgba(20, 38, 73, 0.055), 0 1px 3px rgba(20, 38, 73, 0.04);
+}
+
+* { box-sizing: border-box; }
+
+html {
+  min-width: 320px;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--sf-ink);
+  background:
+    radial-gradient(ellipse at 50% -18rem, rgba(219, 232, 255, 0.72), transparent 42rem),
+    #f5f7fb;
+  font-size: 15px;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body.modal-open {
   overflow: hidden !important;
   overscroll-behavior: none;
 }
 
-/*
- * 인쇄 / PDF 저장은 메인 페이지를 인쇄하지 않는다.
- * 보고서만 담은 새 창을 열어 그 창을 인쇄한다 (src/utils/reportDocument.ts).
- *
- * 이전에는 여기서 body 전체를 숨기고 보고서만 다시 보이게 했는데,
- * :has() 지원 여부·숨긴 요소가 차지하는 공간·유틸리티 우선순위에 의존해
- * 출력이 비거나 빈 페이지가 따라붙었다. 그 CSS 는 더 이상 필요하지 않다.
- */
+button, input, select, textarea { font: inherit; }
+
+button {
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: ease-out;
+}
+
+button:disabled { cursor: not-allowed; }
+
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 2px;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+select,
+textarea {
+  color: #1e293b;
+  background-color: #fff;
+  border: 1px solid #d6deea;
+  border-radius: 0.8rem;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):focus,
+select:focus,
+textarea:focus {
+  border-color: #5a83e8;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--sf-focus);
+}
+
+input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--sf-primary); }
+textarea { resize: vertical; }
+
+::selection { color: #163c9e; background: #dce8ff; }
+
+/* Reused white panels share one border and elevation across the app. */
+:where(section, article, div).border.border-slate-200.bg-white {
+  border-color: #e3e9f2;
+  box-shadow: var(--sf-shadow);
+}
+
+.bg-slate-50 { background-color: #f5f7fb; }
+.border-slate-200 { border-color: #e3e9f2; }
+
+/* Make keyboard focus and disabled states clear without changing component layout. */
+button:disabled { opacity: 0.58; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+
+@media (max-width: 640px) {
+  body { font-size: 14px; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  select,
+  textarea { border-radius: 0.72rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* PDF / print uses a dedicated report window (src/utils/reportDocument.ts). */
+
