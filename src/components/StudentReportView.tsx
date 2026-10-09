@@ -921,15 +921,14 @@ export function StudentReportView({
               ref={locationRef}
               id="field-location"
               value={location}
-              disabled={locationsLoading}
               onChange={(e) => {
                 const newLoc = e.target.value;
                 const locationNeedsReview = availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review");
-                // Select's native option popup must close before the dialog is layered over the page.
+                // Close the native select popup, then open the detail prompt on the next paint.
                 e.currentTarget.blur();
                 setLocation(newLoc);
                 setShowLocationInfoModal(false);
-                if (locationNeedsReview) window.setTimeout(() => setShowLocationInfoModal(true), 100);
+                if (locationNeedsReview) window.requestAnimationFrame(() => setShowLocationInfoModal(true));
                 setLocationId("");
                 setLocationDetail("");
                 clearFieldError("location");
