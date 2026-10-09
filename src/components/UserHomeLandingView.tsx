@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { SchoolReport } from "../types";
 import {
   AlertTriangle,
@@ -35,7 +35,7 @@ export function UserHomeLandingView({
     (r) => r.status === "in_progress" || r.status === "reviewing"
   ).length;
   const topLocations = Object.entries(reports.reduce<Record<string, number>>((counts, report) => {
-    const name = [report.location, report.locationDetail].filter(Boolean).join(" · ");
+    const name = [report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ");
     counts[name] = (counts[name] || 0) + 1;
     return counts;
   }, {})).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, 3);
@@ -48,7 +48,9 @@ export function UserHomeLandingView({
         return (
           r.id.toLowerCase().includes(q) ||
           r.location.toLowerCase().includes(q) ||
+          (r.schoolName && r.schoolName.toLowerCase().includes(q)) ||
           (r.locationDetail && r.locationDetail.toLowerCase().includes(q)) ||
+          [r.buildingName, r.floor, r.department, r.grade, r.className, r.roomName].some((value) => value?.toLowerCase().includes(q)) ||
           r.category.toLowerCase().includes(q) ||
           (r.title && r.title.toLowerCase().includes(q)) ||
           r.description.toLowerCase().includes(q)
@@ -390,3 +392,4 @@ export function UserHomeLandingView({
     </div>
   );
 }
+
