@@ -95,6 +95,7 @@ npm run dev          # http://localhost:3000
 ```bash
 OPENAI_API_KEY="sk-..."
 ADMIN_PASSWORD_HASH="$2b$12$..."
+STAFF_PASSWORD_HASH="$2b$12$..."
 ```
 
 키가 없어도 **신고 등록·조회·검색·필터·PDF·인쇄는 그대로 동작합니다.** 위험도 분석과 AI 요약만 비활성화됩니다.
@@ -105,6 +106,7 @@ ADMIN_PASSWORD_HASH="$2b$12$..."
 |---|---|---|
 | `OPENAI_API_KEY` | AI 기능 사용 시 | 위험도 분석 + AI 요약 |
 | `ADMIN_PASSWORD_HASH` | 삭제 기능 사용 시 | bcrypt 해시. 없으면 삭제가 503 |
+| `STAFF_PASSWORD_HASH` | 운영진 기능 사용 시 | 운영진 로그인용 bcrypt 해시. 없으면 로그인 기능 비활성화 |
 | `DATA_DIR` | 선택 | JSON 저장 경로. 영구 디스크용 |
 | `ALLOWED_ORIGINS` | 선택 | 교차 출처 허용 도메인 |
 | `PORT` | 선택 | 기본 3000. 호스팅이 자동 주입 |
@@ -171,6 +173,10 @@ data/                          JSON 저장소 (git 제외)
 | POST | `/api/reports` | 공개 | 신고 등록 (소유 토큰 발급). 내용이 애매하면 `422`와 함께 질문을 반환하고 저장하지 않음 |
 | POST | `/api/reports/mine` | 공개 | 소유 토큰으로 내 신고 조회 |
 | POST | `/api/ai/summary` | 공개 | AI 요약 (Rate Limit + 캐시) |
+| GET | `/api/staff/session` | 공개 | 운영진 로그인 상태 확인 |
+| POST | `/api/staff/login` | 비밀번호 | 운영진 로그인 (HttpOnly 세션 쿠키, 8시간) |
+| POST | `/api/staff/logout` | 세션 | 로그아웃 및 세션 폐기 |
+| PATCH | `/api/staff/reports/:id` | 운영진 세션 | 신고 상태·담당자·처리 메모 변경 |
 | POST | `/api/admin/verify-delete` | 비밀번호 | 삭제 토큰 발급 |
 | DELETE | `/api/reports/:id` | 삭제 토큰 | Soft Delete |
 
@@ -194,7 +200,13 @@ data/                          JSON 저장소 (git 제외)
 
 ## 배포
 
-`render.yaml`이 포함되어 있어 Render에서 **New → Blueprint**로 저장소를 연결하면 구성됩니다. `OPENAI_API_KEY`와 `ADMIN_PASSWORD_HASH`는 커밋하지 않고 대시보드에서 입력합니다.
+`render.yaml`이 포함되어 있어 Render에서 **New → Blueprint**로 저장소를 연결하면 구성됩니다. `OPENAI_API_KEY`, `ADMIN_PASSWORD_HASH`, `STAFF_PASSWORD_HASH`는 커밋하지 않고 대시보드에서 입력합니다. 운영진 로그인 비밀번호 해시는 다음 명령으로 생성합니다.
+
+```bash
+node -e "console.log(require('bcryptjs').hashSync('운영진비밀번호', 12))"
+```
+
+STAFF 비밀번호는 운영진 전체가 공유하는 단일 비밀번호입니다. 로그인 세션은 서버 메모리에 보관되며 8시간 뒤 만료됩니다. 서버가 재시작되면 기존 세션은 모두 로그아웃됩니다.
 
 배포 후 `https://<주소>/api/health`가 `{"status":"ok"}`를 반환하면 정상입니다.
 
@@ -213,3 +225,4 @@ data/                          JSON 저장소 (git 제외)
 - **Rate Limit이 인메모리**입니다. 인스턴스를 여러 개로 늘리면 Redis 같은 공유 저장소가 필요합니다.
 - **욕설 필터는 모음 삽입 우회를 잡지 못합니다.** 모음을 구분자로 허용하면 정상 문장을 오탐하므로 의도적으로 제외했습니다.
 - `data/` 폴더에는 신고 내용이 저장되며 git에 포함되지 않습니다.
+

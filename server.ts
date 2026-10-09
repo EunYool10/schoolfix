@@ -37,6 +37,13 @@ import {
   LIMITS,
   verifyAdminPassword,
   isAdminPasswordConfigured,
+  isStaffPasswordConfigured,
+  verifyStaffPassword,
+  createStaffSession,
+  getStaffSession,
+  revokeStaffSession,
+  setStaffSessionCookie,
+  clearStaffSessionCookie,
   issueDeleteToken,
   consumeDeleteToken,
   issueOwnerToken,
@@ -373,6 +380,64 @@ app.get("/api/reports", (_req, res) => {
 // ---------------------------------------------------------------------------
 
 const STATUS_VALUES = ["pending", "reviewing", "in_progress", "completed"];
+
+function requireStaff(req: express.Request, res: express.Response): boolean {
+  if (getStaffSession(req)) return true;
+  safeError(res, 401, "운영진 로그인이 필요합니다.");
+  return false;
+}
+
+app.get("/api/staff/session", (req, res) => {
+  res.json({ ok: true, authenticated: Boolean(getStaffSession(req)) });
+});
+
+app.post("/api/staff/login", rateLimit("staffLogin", LIMITS.staffLogin), async (req, res) => {
+  if (!isStaffPasswordConfigured()) {
+    console.error("[staff] STAFF_PASSWORD_HASH 환경변수가 설정되지 않았습니다.");
+    return safeError(res, 503, "운영진 로그인을 사용할 수 없습니다.");
+  }
+  const valid = await verifyStaffPassword(req.body?.password);
+  if (!valid) return safeError(res, 401, "비밀번호가 올바르지 않습니다.");
+  const token = createStaffSession();
+  setStaffSessionCookie(res, token);
+  return res.json({ ok: true });
+});
+
+app.post("/api/staff/logout", (req, res) => {
+  revokeStaffSession(getStaffSession(req));
+  clearStaffSessionCookie(res);
+  return res.json({ ok: true });
+});
+
+app.patch("/api/staff/reports/:id", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const { id } = req.params;
+  const body = req.body || {};
+  const allowedStatuses = ["pending", "reviewing", "in_progress", "completed"];
+  if (typeof body.status !== "string" || !allowedStatuses.includes(body.status)) {
+    return safeError(res, 400, "처리 상태가 올바르지 않습니다.");
+  }
+  const assignee = typeof body.assignee === "string" ? body.assignee.trim() : "";
+  const resolutionNote = typeof body.resolutionNote === "string" ? body.resolutionNote.trim() : "";
+  if (assignee.length > 100 || resolutionNote.length > 1000) {
+    return safeError(res, 400, "담당자 또는 처리 메모가 너무 깁니다.");
+  }
+  const all = loadAllReports();
+  const report = all.find((item) => item.id === id && !item.deletedAt);
+  if (!report) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+
+  const now = new Date().toISOString();
+  report.status = body.status;
+  report.assignee = assignee || null;
+  report.resolutionNote = resolutionNote || null;
+  report.updatedAt = now;
+  if (body.status === "reviewing" && !report.reviewedAt) report.reviewedAt = now;
+  if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
+  if (body.status === "completed" && !report.completedAt) report.completedAt = now;
+  saveReports(all);
+  summaryCache = null;
+  return res.json({ ok: true, data: toPublicReport(report) });
+});
 
 app.get("/api/reports/location-statistics", (req, res) => {
   const filters = parseFilterQuery(
@@ -926,3 +991,4 @@ async function startServer() {
 }
 
 startServer();
+

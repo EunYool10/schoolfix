@@ -142,7 +142,78 @@ export const LIMITS = {
     blockMs: 10 * 60 * 1000,
     message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
+  staffLogin: {
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    blockMs: 10 * 60 * 1000,
+    message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
 };
+
+// ---------------------------------------------------------------------------
+// 운영진 세션
+// ---------------------------------------------------------------------------
+
+const STAFF_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const staffSessions = new Map<string, number>();
+const STAFF_SESSION_COOKIE = "schoolfix_staff_session";
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, expiresAt] of staffSessions) {
+    if (expiresAt <= now) staffSessions.delete(token);
+  }
+}, 10 * 60 * 1000).unref?.();
+
+export function isStaffPasswordConfigured(): boolean {
+  const hash = process.env.STAFF_PASSWORD_HASH;
+  return Boolean(hash && hash.startsWith("$2"));
+}
+
+export async function verifyStaffPassword(password: unknown): Promise<boolean> {
+  const hash = process.env.STAFF_PASSWORD_HASH;
+  if (!hash || typeof password !== "string" || !password) return false;
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch {
+    return false;
+  }
+}
+
+export function createStaffSession(): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  staffSessions.set(token, Date.now() + STAFF_SESSION_TTL_MS);
+  return token;
+}
+
+export function getStaffSession(req: express.Request): string | null {
+  const cookie = req.headers.cookie || "";
+  const raw = cookie.split(";").map((part) => part.trim())
+    .find((part) => part.startsWith(`${STAFF_SESSION_COOKIE}=`))
+    ?.slice(STAFF_SESSION_COOKIE.length + 1);
+  if (!raw) return null;
+  const expiresAt = staffSessions.get(raw);
+  if (!expiresAt) return null;
+  if (expiresAt <= Date.now()) {
+    staffSessions.delete(raw);
+    return null;
+  }
+  return raw;
+}
+
+export function revokeStaffSession(token: string | null): void {
+  if (token) staffSessions.delete(token);
+}
+
+export function setStaffSessionCookie(res: express.Response, token: string): void {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `${STAFF_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${STAFF_SESSION_TTL_MS / 1000}${secure}`);
+}
+
+export function clearStaffSessionCookie(res: express.Response): void {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `${STAFF_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
 
 // ---------------------------------------------------------------------------
 // 관리자 비밀번호 (신고 삭제 전용)
@@ -442,3 +513,4 @@ export function safeError(
   }
   res.status(status).json({ ok: false, error: userMessage });
 }
+

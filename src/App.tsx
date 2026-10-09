@@ -14,9 +14,10 @@ import {
 import { ReportListView } from "./components/ReportListView";
 import { ReportDetailModal } from "./components/ReportDetailModal";
 import { DeleteReportModal } from "./components/DeleteReportModal";
+import { StaffPortal } from "./components/StaffPortal";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { SchoolReport } from "./types";
-import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter } from "lucide-react";
+import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound } from "lucide-react";
 
 /**
  * 익명 소유 토큰 저장소.
@@ -49,7 +50,7 @@ function saveOwnerToken(token: string) {
   }
 }
 
-type View = "HOME" | "NEW_REPORT" | "REPORTS";
+type View = "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
 
 interface ToastState {
   id: string;
@@ -288,6 +289,7 @@ export default function App() {
               {navButton("HOME", "메인 홈", Home)}
               {navButton("NEW_REPORT", "신고하기", PlusCircle)}
               {navButton("REPORTS", "신고 목록", ListFilter)}
+              {navButton("STAFF", "운영진", UsersRound)}
             </nav>
 
             {view === "HOME" && (
@@ -341,6 +343,9 @@ export default function App() {
                 initialTab={reportsTab}
               />
             )}
+            {view === "STAFF" && (
+              <StaffPortal reports={allReportsMarked} onRefresh={refreshAll} />
+            )}
           </div>
         </div>
       </main>
@@ -390,3 +395,4 @@ export default function App() {
     </div>
   );
 }
+

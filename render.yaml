@@ -38,6 +38,9 @@ services:
       # 이 항목이 없으면 삭제 기능이 영구히 503 을 반환한다.
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      # 운영진 로그인 비밀번호의 bcrypt 해시.
+      - key: STAFF_PASSWORD_HASH
+        sync: false
 
       # ── 유료 플랜으로 올릴 때 활성화 (위 mountPath 와 일치시킬 것) ──
       # - key: DATA_DIR
@@ -46,3 +49,4 @@ services:
     # PORT 는 Render 가 자동 주입하며 server.ts 가 process.env.PORT 로 읽습니다.
     # DATA_DIR 을 지정하지 않으면 server.ts 는 프로젝트의 data/ 를 사용하고,
     # 해당 폴더가 없으면 부팅 시 자동 생성합니다.
+
