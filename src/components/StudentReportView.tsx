@@ -924,8 +924,12 @@ export function StudentReportView({
               disabled={locationsLoading}
               onChange={(e) => {
                 const newLoc = e.target.value;
+                const locationNeedsReview = availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review");
+                // Select's native option popup must close before the dialog is layered over the page.
+                e.currentTarget.blur();
                 setLocation(newLoc);
-                setShowLocationInfoModal(availableLocationTypes.some((entry) => entry.type === newLoc && entry.verificationStatus === "needs_review"));
+                setShowLocationInfoModal(false);
+                if (locationNeedsReview) window.setTimeout(() => setShowLocationInfoModal(true), 100);
                 setLocationId("");
                 setLocationDetail("");
                 clearFieldError("location");
@@ -1338,4 +1342,3 @@ export function StudentReportView({
     </div>
   );
 }
-
