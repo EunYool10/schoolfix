@@ -28,22 +28,30 @@ interface Props {
   onSelect: (school: School) => void;
 }
 
+function getSchoolLogoSources(school: School): string[] {
+  const sources: string[] = [];
+  if (school.id === "gahs-h") {
+    sources.push("https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png");
+  }
+  try {
+    const website = new URL(school.officialWebsite);
+    // 학교 홈페이지마다 favicon 제공 여부가 달라 순서대로 대체 이미지를 시도한다.
+    sources.push(`https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(website.href)}&sz=128`);
+    sources.push(new URL("/favicon.ico", website).href);
+  } catch {
+    // 홈페이지 주소가 없거나 잘못되어도 학교 선택 화면 전체는 계속 표시한다.
+  }
+  return sources;
+}
+
 function SchoolLogo({ school, selected }: { school: School; selected: boolean }) {
   const [sourceIndex, setSourceIndex] = useState(0);
-  const websiteOrigin = new URL(school.officialWebsite).origin;
-  // 일부 학교 사이트는 favicon.ico를 제공하지 않으므로 먼저 사이트 메타데이터를
-  // 읽는 favicon 조회 주소를 사용하고, 실패하면 공식 도메인의 기본 경로도 시도한다.
-  const logoSources = school.id === "gahs-h"
-    ? [
-        "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png",
-        `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`,
-        `${websiteOrigin}/favicon.ico`,
-      ]
-    : [
-        `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`,
-        `${websiteOrigin}/favicon.ico`,
-      ];
+  const logoSources = getSchoolLogoSources(school);
   const hasLogoSource = sourceIndex < logoSources.length;
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [school.id]);
 
   return (
     <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${selected ? "border-blue-100 bg-white" : "border-slate-100 bg-blue-50"}`}>
