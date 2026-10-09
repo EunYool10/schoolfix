@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   X,
   CheckCircle,
@@ -22,7 +22,9 @@ import {
 } from "lucide-react";
 import {
   SchoolReport,
-  SCHOOL_LOCATIONS,
+  School,
+  SchoolLocation,
+  SchoolLocationType,
   ISSUE_CATEGORIES,
 } from "../types";
 import {
@@ -33,9 +35,9 @@ import {
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 
-const REPORT_DRAFT_KEY = "schoolfix_report_draft_session_v1";
-function clearSessionDraft() {
-  try { sessionStorage.removeItem(REPORT_DRAFT_KEY); } catch { /* storage may be disabled */ }
+const REPORT_DRAFT_KEY = "schoolfix_report_draft_session_v2";
+function clearSessionDraft(key: string) {
+  try { sessionStorage.removeItem(key); } catch { /* storage may be disabled */ }
 }
 
 const CATEGORY_ICONS = {
@@ -49,8 +51,16 @@ const CATEGORY_ICONS = {
 } as const;
 
 export interface SubmitReportPayload {
+  schoolId: string;
   title?: string;
   location: string;
+  locationId?: string | null;
+  buildingName?: string | null;
+  floor?: string | null;
+  department?: string | null;
+  grade?: string | null;
+  className?: string | null;
+  roomName?: string | null;
   /** 상세 위치 (선택). 위치 통계는 이 값을 함께 써서 장소를 구분한다. */
   locationDetail?: string | null;
   category: string;
@@ -65,6 +75,7 @@ export interface SubmitReportPayload {
 export interface SubmitReportResult {
   success: boolean;
   report?: SchoolReport;
+  heldForReview?: boolean;
   error?: string;
   /** 서버가 추가 확인이 필요하다고 판단한 경우 */
   needsMoreInfo?: boolean;
@@ -73,6 +84,11 @@ export interface SubmitReportResult {
 }
 
 interface StudentReportViewProps {
+  school: School;
+  locations: SchoolLocation[];
+  locationTypes: SchoolLocationType[];
+  locationsLoading: boolean;
+  locationsError: string;
   onSubmitReport: (data: SubmitReportPayload) => Promise<SubmitReportResult>;
   isSubmitting: boolean;
   onSuccessNavToMyReports?: () => void;
@@ -95,6 +111,11 @@ interface FieldErrors {
 }
 
 export function StudentReportView({
+  school,
+  locations,
+  locationTypes,
+  locationsLoading,
+  locationsError,
   onSubmitReport,
   isSubmitting,
   onSuccessNavToMyReports,
@@ -103,7 +124,14 @@ export function StudentReportView({
   // Problem fields
   const [title, setTitle] = useState<string>("");
   const [location, setLocation] = useState<string>("");
+  const [locationId, setLocationId] = useState<string>("");
   const [locationDetail, setLocationDetail] = useState<string>("");
+  const [buildingName, setBuildingName] = useState("");
+  const [floor, setFloor] = useState("");
+  const [department, setDepartment] = useState("");
+  const [grade, setGrade] = useState("");
+  const [className, setClassName] = useState("");
+  const [roomName, setRoomName] = useState("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState<string>("");
   const [draftReady, setDraftReady] = useState(false);
@@ -161,24 +189,36 @@ export function StudentReportView({
   const categoryRef = useRef<HTMLButtonElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportDraftKey = `${REPORT_DRAFT_KEY}_${school.id}`;
+  const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set(locations.map((item) => item.type)), "기타"].map((type) => ({ type, verificationStatus: "official" as const })), [locationTypes, locations]);
+  const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(REPORT_DRAFT_KEY);
+      const raw = sessionStorage.getItem(reportDraftKey);
       if (raw) {
         const draft = JSON.parse(raw) as Partial<{
           title: string;
           location: string;
           locationDetail: string;
+          locationId: string;
+          buildingName: string; floor: string; department: string; grade: string; className: string; roomName: string;
           category: string;
           description: string;
           savedAt: number;
         }>;
-        if ([draft.title, draft.location, draft.locationDetail, draft.category, draft.description].some(Boolean)) {
+        if ([draft.title, draft.location, draft.locationDetail, draft.locationId, draft.buildingName, draft.floor, draft.department, draft.grade, draft.className, draft.roomName, draft.category, draft.description].some(Boolean)) {
           setTitle(typeof draft.title === "string" ? draft.title : "");
           setLocation(typeof draft.location === "string" ? draft.location : "");
           setLocationDetail(typeof draft.locationDetail === "string" ? draft.locationDetail : "");
+          setLocationId(typeof draft.locationId === "string" ? draft.locationId : "");
+          setBuildingName(typeof draft.buildingName === "string" ? draft.buildingName : "");
+          setFloor(typeof draft.floor === "string" ? draft.floor : "");
+          setDepartment(typeof draft.department === "string" ? draft.department : "");
+          setGrade(typeof draft.grade === "string" ? draft.grade : "");
+          setClassName(typeof draft.className === "string" ? draft.className : "");
+          setRoomName(typeof draft.roomName === "string" ? draft.roomName : "");
           setCategory(typeof draft.category === "string" ? draft.category : "");
           setDescription(typeof draft.description === "string" ? draft.description : "");
           setDraftRestored(true);
@@ -186,25 +226,25 @@ export function StudentReportView({
         }
       }
     } catch {
-      clearSessionDraft();
+      clearSessionDraft(reportDraftKey);
     } finally {
       setDraftReady(true);
     }
-  }, []);
+  }, [reportDraftKey]);
 
   useEffect(() => {
     if (!draftReady || completedReport) return;
-    const hasText = Boolean(title || location || locationDetail || category || description);
+    const hasText = Boolean(title || location || locationDetail || locationId || buildingName || floor || department || grade || className || roomName || category || description);
     if (!hasText) {
-      clearSessionDraft();
+      clearSessionDraft(reportDraftKey);
       setDraftSavedAt(null);
       return;
     }
     const timer = window.setTimeout(() => {
       const savedAt = Date.now();
       try {
-        sessionStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify({
-          title, location, locationDetail, category, description, savedAt,
+        sessionStorage.setItem(reportDraftKey, JSON.stringify({
+          title, location, locationId, locationDetail, buildingName, floor, department, grade, className, roomName, category, description, savedAt,
         }));
         setDraftSavedAt(savedAt);
       } catch {
@@ -213,16 +253,16 @@ export function StudentReportView({
     }, 450);
     return () => {
       window.clearTimeout(timer);
-      const hasText = Boolean(title || location || locationDetail || category || description);
+      const hasText = Boolean(title || location || locationDetail || locationId || buildingName || floor || department || grade || className || roomName || category || description);
       if (draftReady && hasText && !completedReport) {
         try {
-          sessionStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify({ title, location, locationDetail, category, description, savedAt: Date.now() }));
+          sessionStorage.setItem(reportDraftKey, JSON.stringify({ title, location, locationId, locationDetail, buildingName, floor, department, grade, className, roomName, category, description, savedAt: Date.now() }));
         } catch {
           // Draft storage is a convenience; it must never block navigation.
         }
       }
     };
-  }, [title, location, locationDetail, category, description, draftReady, completedReport]);
+  }, [title, location, locationId, locationDetail, buildingName, floor, department, grade, className, roomName, category, description, draftReady, completedReport, reportDraftKey]);
 
   const completedSteps = [Boolean(location), Boolean(category), description.trim().length >= 5].filter(Boolean).length;
   const completionPercent = Math.round((completedSteps / 3) * 100);
@@ -232,7 +272,9 @@ export function StudentReportView({
     !completedReport &&
       (title.trim().length > 0 ||
         location.length > 0 ||
+        locationId.length > 0 ||
         locationDetail.trim().length > 0 ||
+        buildingName.trim().length > 0 || floor.trim().length > 0 || department.length > 0 || grade.length > 0 || className.trim().length > 0 || roomName.trim().length > 0 ||
         category.length > 0 ||
         description.trim().length > 0 ||
         previewUrl !== null ||
@@ -346,7 +388,9 @@ export function StudentReportView({
   const handleResetForm = () => {
     setTitle("");
     setLocation("");
+    setLocationId("");
     setLocationDetail("");
+    setBuildingName(""); setFloor(""); setDepartment(""); setGrade(""); setClassName(""); setRoomName("");
     setCategory("");
     setDescription("");
     resetClarify();
@@ -359,7 +403,7 @@ export function StudentReportView({
     setSelectedExampleKey(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
     setDisplayedExamples(getRandomFormExamples(4));
-    clearSessionDraft();
+    clearSessionDraft(reportDraftKey);
     setDraftSavedAt(null);
     setDraftRestored(false);
   };
@@ -368,7 +412,9 @@ export function StudentReportView({
   // Note: Form fields are auto-filled ONLY; NO database submission occurs.
   const handleApplyExample = (example: FormExampleItem) => {
     setTitle(example.label);
-    setLocation(example.location);
+    setLocation(locations.some((item) => item.type === example.location) ? example.location : "기타");
+    setLocationId("");
+    setLocationDetail(example.location);
     setCategory(example.category);
     setDescription(example.description);
     setSelectedExampleKey(example.key);
@@ -384,8 +430,9 @@ export function StudentReportView({
     const errors: FieldErrors = {};
 
     // 1. Location Validation
-    if (!location || !location.trim()) {
-      errors.location = "문제 위치를 선택해주세요.";
+    const hasManualLocation = [locationDetail, buildingName, floor, className, roomName].some((value) => value.trim());
+    if (!location || !location.trim() || (!locationId && !hasManualLocation)) {
+      errors.location = "위치 유형을 선택하고 세부 위치를 선택하거나 직접 입력해주세요.";
     }
 
     // 2. Category Validation
@@ -425,9 +472,17 @@ export function StudentReportView({
   /** 실제 접수. 사전 확인이 끝난 뒤에만 호출된다 (§16) */
   const submitReport = async (sessionId: string | null) => {
     const res = await onSubmitReport({
+      schoolId: school.id,
       title: title.trim() || undefined,
       location: location.trim(),
-      locationDetail: locationDetail.trim() || null,
+      locationId: locationId || null,
+      locationDetail: (locations.find((item) => item.id === locationId)?.name || locationDetail).trim() || null,
+      buildingName: buildingName.trim() || null,
+      floor: floor.trim() || null,
+      department: department || null,
+      grade: grade || null,
+      className: className.trim() || null,
+      roomName: roomName.trim() || null,
       category: category.trim(),
       description: description.trim(),
       attachmentUrl: previewUrl || null,
@@ -438,7 +493,7 @@ export function StudentReportView({
 
     if (res.success && res.report) {
       setCompletedReport(res.report);
-      clearSessionDraft();
+      clearSessionDraft(reportDraftKey);
       setDraftSavedAt(null);
       setDraftRestored(false);
       handleRemoveFile();
@@ -446,7 +501,7 @@ export function StudentReportView({
       setDescription("");
       setCategory("");
       setLocation("");
-      setLocationDetail("");
+      setLocationId(""); setLocationDetail(""); setBuildingName(""); setFloor(""); setDepartment(""); setGrade(""); setClassName(""); setRoomName("");
       resetClarify();
       setFieldErrors({});
       setGlobalError(null);
@@ -476,7 +531,7 @@ export function StudentReportView({
       const res = await fetch("/api/reports/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, schoolId: school.id }),
       });
       const json = await res.json();
 
@@ -576,10 +631,10 @@ export function StudentReportView({
 
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">접수 완료</p>
           <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
-            제보가 학교에 전달됐어요
+            {completedReport.moderationStatus === "held" ? "운영진 확인을 기다리고 있어요" : "제보가 학교에 전달됐어요"}
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
-            보내주신 내용은 담당자가 확인합니다. 접수번호를 저장해 두면 진행 상황을 다시 확인할 수 있어요.
+            {completedReport.moderationStatus === "held" ? "안전성 확인이 필요한 내용이나 이미지가 포함되어 공개가 보류됐습니다. 운영진 검토 후 처리되며, 접수번호로 상태를 확인할 수 있어요." : "보내주신 내용은 담당자가 확인합니다. 접수번호를 저장해 두면 진행 상황을 다시 확인할 수 있어요."}
           </p>
 
           <div className="mx-auto mt-7 max-w-sm rounded-2xl border border-blue-100 bg-blue-50/80 px-5 py-4 text-center">
@@ -634,9 +689,11 @@ export function StudentReportView({
       {/* Title & Introduction */}
       <div className="sf-report-heading">
         <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-extrabold text-indigo-800"><MapPin className="h-3.5 w-3.5" /> {school.schoolName}</span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800"><MapPin className="h-3.5 w-3.5" /> SchoolFix 신고 센터</span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-600"><Lock className="h-3 w-3" /> 익명으로 접수</span>
         </div>
+        <p role={locationsError ? "alert" : "status"} className={`mb-3 text-xs ${locationsError ? "text-rose-700" : "text-slate-500"}`}>{locationsLoading ? "학교별 공식 위치 목록을 불러오는 중…" : locationsError ? `${locationsError} 직접 입력 위치를 이용할 수 있습니다.` : <>공식 확인된 장소 항목 {locations.length}개 · 학교별 정보 기준 {school.verifiedAt} · <a href={school.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">출처</a></>}</p>
         <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
           학교에서 발견한 문제를<br className="sm:hidden" /> 함께 고쳐요
         </h1>
@@ -865,6 +922,8 @@ export function StudentReportView({
               onChange={(e) => {
                 const newLoc = e.target.value;
                 setLocation(newLoc);
+                setLocationId("");
+                setLocationDetail("");
                 clearFieldError("location");
                 setAutoFillNotice(false);
                 setSelectedExampleKey(null);
@@ -883,9 +942,9 @@ export function StudentReportView({
               }`}
             >
               <option value="">문제 위치를 선택해주세요</option>
-              {SCHOOL_LOCATIONS.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
+              {availableLocationTypes.map((entry) => (
+                <option key={entry.type} value={entry.type}>
+                  {entry.type}{entry.verificationStatus === "needs_review" ? " · 세부 시설 확인 필요" : entry.verificationStatus === "user_entered" ? " · 직접 입력" : ""}
                 </option>
               ))}
             </select>
@@ -899,35 +958,45 @@ export function StudentReportView({
               </p>
             )}
 
-            {/*
-              상세 위치 (선택).
-              같은 "화장실" 이라도 본관 3층인지 별관 2층인지에 따라 담당자가 가야 할 곳이 달라진다.
-              이 값은 위치별 신고 현황 집계에도 함께 쓰인다.
-            */}
+            {location && matchingLocations.length > 0 && <div className="mt-3">
+              <label htmlFor="field-verified-location" className="mb-1 block text-xs font-semibold text-slate-700">공식 확인된 세부 장소 <span className="font-normal text-slate-500">(선택)</span></label>
+              <select id="field-verified-location" value={locationId} onChange={(e) => { setLocationId(e.target.value); if (e.target.value) setLocationDetail(""); clearFieldError("location"); }} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm"><option value="">목록에서 선택하거나 아래에 직접 입력</option>{matchingLocations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.count ? ` (${item.count}실)` : ""} · 공식 확인</option>)}</select>
+            </div>}
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1">
                 <label
                   htmlFor="field-location-detail"
                   className="block text-xs font-semibold text-slate-700"
                 >
-                  상세 위치 <span className="font-normal text-slate-500">(선택)</span>
+                  {location === "기타" ? "목록에 없는 위치를 설명해 주세요" : "세부 위치"} <span className="font-normal text-slate-500">{locationId ? "(공식 목록 선택됨)" : "(직접 입력)"}</span>
                 </label>
-                <span className="text-[11px] text-slate-400">{locationDetail.length}/50자</span>
+                <span className="text-[11px] text-slate-400">{locationDetail.length}/150자</span>
               </div>
               <input
                 id="field-location-detail"
                 type="text"
-                maxLength={50}
+                maxLength={150}
                 value={locationDetail}
-                onChange={(e) => setLocationDetail(e.target.value)}
-                placeholder="예: 본관 3층, 별관 2층 서편, 운동장 농구 골대 앞"
+                disabled={Boolean(locationId)}
+                onChange={(e) => { setLocationDetail(e.target.value); clearFieldError("location"); }}
+                placeholder="예: 본관 동쪽 2층, 급식실 출입구 옆"
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
               <p className="mt-1.5 text-[11px] text-slate-500">
-                건물·층까지 적어 주시면 담당자가 바로 찾아갈 수 있고, 같은 장소의 신고가 모여
-                현황으로 집계됩니다.
+                공식 목록에 없는 위치도 직접 입력할 수 있습니다. 직접 입력은 공식 시설로 등록되지 않습니다.
               </p>
             </div>
+            {location === "교실" && <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+              <label className="text-xs font-semibold text-slate-700">학과(선택)<select value={department} onChange={(e) => setDepartment(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm"><option value="">선택 안 함</option>{school.departments.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
+              <label className="text-xs font-semibold text-slate-700">학년(선택)<select value={grade} onChange={(e) => setGrade(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm"><option value="">선택 안 함</option>{[1, 2, 3].map((year) => <option key={year} value={String(year)}>{year}학년</option>)}</select></label>
+              <label className="text-xs font-semibold text-slate-700">반(직접 입력)<input value={className} onChange={(e) => setClassName(e.target.value)} maxLength={40} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm" placeholder="예: 2반" /></label>
+              {department && grade && <p className="col-span-2 text-[11px] leading-relaxed text-slate-500 sm:col-span-3">공식 학교 현황에는 {department} {grade}학년 {school.departments.find((item) => item.name === department)?.classesByGrade[Number(grade) - 1] ?? ""}학급으로 기재되어 있습니다. 실제 반 이름은 공개 자료에서 확인되지 않아 직접 입력하도록 했습니다.</p>}
+            </div>}
+            {location && <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <label className="text-xs font-semibold text-slate-700">건물(직접 입력)<input value={buildingName} onChange={(e) => setBuildingName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="건물 이름" /></label>
+              <label className="text-xs font-semibold text-slate-700">층(직접 입력)<input value={floor} onChange={(e) => setFloor(e.target.value)} maxLength={40} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="예: 2층" /></label>
+              <label className="text-xs font-semibold text-slate-700">호실·구역(직접 입력)<input value={roomName} onChange={(e) => setRoomName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="실제 번호를 아는 경우 입력" /></label>
+            </div>}
           </div>
 
           {/* 2. Problem Category */}
@@ -1246,3 +1315,4 @@ export function StudentReportView({
     </div>
   );
 }
+
