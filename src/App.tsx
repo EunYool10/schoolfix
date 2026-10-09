@@ -15,8 +15,9 @@ import { ReportListView } from "./components/ReportListView";
 import { ReportDetailModal } from "./components/ReportDetailModal";
 import { DeleteReportModal } from "./components/DeleteReportModal";
 import { StaffPortal } from "./components/StaffPortal";
+import { SchoolSelectionView } from "./components/SchoolSelectionView";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
-import { SchoolReport } from "./types";
+import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
 import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck } from "lucide-react";
 
 /**
@@ -50,7 +51,7 @@ function saveOwnerToken(token: string) {
   }
 }
 
-type View = "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
+type View = "SCHOOL_SELECT" | "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
 
 interface ToastState {
   id: string;
@@ -60,6 +61,14 @@ interface ToastState {
 
 export default function App() {
   const [view, setView] = useState<View>("HOME");
+  const [schools, setSchools] = useState<School[]>([]);
+  const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [schoolLocations, setSchoolLocations] = useState<SchoolLocation[]>([]);
+  const [schoolLocationTypes, setSchoolLocationTypes] = useState<SchoolLocationType[]>([]);
+  const [schoolLocationsLoading, setSchoolLocationsLoading] = useState(false);
+  const [schoolLocationsError, setSchoolLocationsError] = useState("");
+  const [schoolLoading, setSchoolLoading] = useState(true);
+  const [schoolError, setSchoolError] = useState("");
   const [reportsTab, setReportsTab] = useState<"MINE" | "ALL">("ALL");
 
   const [reports, setReports] = useState<SchoolReport[]>([]);
@@ -85,10 +94,11 @@ export default function App() {
 
   /** 전체 신고 + 서버 계산 통계 */
   const fetchReports = useCallback(async (silent = false) => {
+    if (!selectedSchool) { setIsLoading(false); return; }
     if (!silent) setIsLoading(true);
     setIsRefreshing(true);
     try {
-      const res = await fetch("/api/reports");
+      const res = await fetch(`/api/reports?schoolId=${encodeURIComponent(selectedSchool.id)}`);
       if (!res.ok) throw new Error("신고 목록을 불러오지 못했습니다.");
       const json = await res.json();
       if (json.ok) {
@@ -101,10 +111,11 @@ export default function App() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [showToast]);
+  }, [showToast, selectedSchool]);
 
   /** 내 신고 — 브라우저에 보관된 토큰으로 조회 */
   const fetchMyReports = useCallback(async () => {
+    if (!selectedSchool) { setMyReports([]); return; }
     const tokens = loadOwnerTokens();
     if (tokens.length === 0) {
       setMyReports([]);
@@ -114,14 +125,49 @@ export default function App() {
       const res = await fetch("/api/reports/mine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tokens }),
+        body: JSON.stringify({ tokens, schoolId: selectedSchool.id }),
       });
       const json = await res.json();
       if (json.ok) setMyReports(json.data || []);
     } catch (err) {
       console.error("내 신고를 불러오지 못했습니다.", err);
     }
+  }, [selectedSchool]);
+
+  const loadSchoolCatalog = useCallback(async () => {
+    setSchoolLoading(true); setSchoolError("");
+    try {
+      const response = await fetch("/api/schools");
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error("지원 학교 목록을 불러오지 못했습니다.");
+      const available = (Array.isArray(json.data) ? json.data : []) as School[];
+      setSchools(available);
+      // 매번 먼저 학교 선택 화면에서 선택을 확인한 뒤 서비스에 입장합니다.
+      // 마지막 학교는 선택 화면에서 미리 선택해 두어 재방문도 빠르게 합니다.
+      let savedId = "";
+      try { savedId = localStorage.getItem("schoolfix_selected_school_v1") || ""; } catch { /* selection can still be made for this session */ }
+      if (!available.some((school) => school.id === savedId)) {
+        try { localStorage.removeItem("schoolfix_selected_school_v1"); } catch { /* selection starts fresh */ }
+      }
+      setSelectedSchool(null);
+      setView("SCHOOL_SELECT");
+    } catch (error) { setSchoolError(error instanceof Error ? error.message : "지원 학교 목록을 불러오지 못했습니다."); }
+    finally { setSchoolLoading(false); }
   }, []);
+
+  useEffect(() => { void loadSchoolCatalog(); }, [loadSchoolCatalog]);
+
+  useEffect(() => {
+    if (!selectedSchool) { setSchoolLocations([]); setSchoolLocationTypes([]); return; }
+    let cancelled = false;
+    setSchoolLocationsLoading(true); setSchoolLocationsError(""); setSchoolLocations([]);
+    fetch(`/api/schools/${encodeURIComponent(selectedSchool.id)}/locations`).then(async (response) => {
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error("학교 위치 정보를 불러오지 못했습니다.");
+      if (!cancelled) { setSchoolLocations(Array.isArray(json.data) ? json.data : []); setSchoolLocationTypes(Array.isArray(json.locationTypes) ? json.locationTypes : []); }
+    }).catch((error) => { if (!cancelled) { setSchoolLocations([]); setSchoolLocationTypes([]); setSchoolLocationsError(error instanceof Error ? error.message : "학교 위치 정보를 불러오지 못했습니다."); } }).finally(() => { if (!cancelled) setSchoolLocationsLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedSchool]);
 
   useEffect(() => {
     fetchReports();
@@ -165,7 +211,7 @@ export default function App() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, schoolId: selectedSchool?.id }),
       });
       const json = await res.json();
 
@@ -189,7 +235,7 @@ export default function App() {
       // 서버가 발급한 소유 토큰을 저장해야 "내 신고"에서 다시 찾을 수 있다.
       if (json.ownerToken) saveOwnerToken(json.ownerToken);
 
-      showToast("success", `신고가 접수되었습니다 (접수번호: ${json.data.id})`);
+      showToast(json.heldForReview ? "info" : "success", json.heldForReview ? `신고가 운영진 검토 대기 상태입니다 (접수번호: ${json.data.id})` : `신고가 접수되었습니다 (접수번호: ${json.data.id})`);
       if (json.masked) {
         // 사용자가 모르게 내용이 바뀌면 안 되므로 반드시 알린다.
         showToast(
@@ -198,7 +244,7 @@ export default function App() {
         );
       }
       refreshAll();
-      return { success: true as const, report: json.data as SchoolReport };
+      return { success: true as const, report: json.data as SchoolReport, heldForReview: Boolean(json.heldForReview) };
     } catch (err: any) {
       const message = err?.message || "신고를 저장하지 못했습니다.";
       showToast("error", message);
@@ -228,6 +274,15 @@ export default function App() {
   };
 
   const goHome = () => requestView("HOME");
+
+  const selectSchool = (school: School) => {
+    setSelectedSchool(school);
+    setSchoolLocations([]); setSchoolLocationTypes([]);
+    setReports([]); setMyReports([]); setIsLoading(true);
+    try { localStorage.setItem("schoolfix_selected_school_v1", school.id); } catch { /* school remains selected in memory */ }
+    setView("HOME");
+    setIsFormDirty(false);
+  };
 
   const myReportIds = useMemo(() => new Set(myReports.map((r) => r.id)), [myReports]);
 
@@ -280,11 +335,12 @@ export default function App() {
         ))}
       </div>
 
-      <Header onGoHome={goHome} reportCount={reports.length} />
+      {selectedSchool && view !== "SCHOOL_SELECT" && <Header onGoHome={goHome} reportCount={reports.length} schoolName={selectedSchool.schoolName} onChangeSchool={() => requestView("SCHOOL_SELECT")} />}
 
       <main className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
           <div className="sf-app-content space-y-6">
+            {view === "SCHOOL_SELECT" || !selectedSchool ? <SchoolSelectionView schools={schools} loading={schoolLoading} error={schoolError} initialSchoolId={selectedSchool?.id || (() => { try { return localStorage.getItem("schoolfix_selected_school_v1") || ""; } catch { return ""; } })()} onRetry={() => void loadSchoolCatalog()} onSelect={selectSchool} /> : <>
             <nav aria-label="주요 메뉴" className="sf-main-nav flex flex-wrap items-center gap-2 p-0.5 print:hidden">
               {navButton("HOME", "메인 홈", Home)}
               {navButton("NEW_REPORT", "신고하기", PlusCircle)}
@@ -304,7 +360,12 @@ export default function App() {
             {view === "NEW_REPORT" && (
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12 lg:gap-7">
                 <section className="min-w-0 lg:col-span-8">
-                  <StudentReportView
+                <StudentReportView
+                    school={selectedSchool}
+                    locations={schoolLocations}
+                    locationTypes={schoolLocationTypes}
+                    locationsLoading={schoolLocationsLoading}
+                    locationsError={schoolLocationsError}
                     onSubmitReport={handleSubmitReport}
                     isSubmitting={isSubmitting}
                     onSuccessNavToMyReports={() => setView("REPORTS")}
@@ -337,7 +398,8 @@ export default function App() {
             )}
 
             {view === "REPORTS" && (
-              <ReportListView
+                <ReportListView
+                schoolId={selectedSchool.id}
                 allReports={allReportsMarked}
                 myReports={myReports}
                 isLoading={isLoading}
@@ -349,8 +411,9 @@ export default function App() {
               />
             )}
             {view === "STAFF" && (
-              <StaffPortal reports={allReportsMarked} onRefresh={refreshAll} />
+              <StaffPortal schoolId={selectedSchool.id} reports={allReportsMarked} onRefresh={refreshAll} />
             )}
+            </>}
           </div>
         </div>
       </main>
@@ -365,6 +428,7 @@ export default function App() {
       )}
 
       <DeleteReportModal
+        schoolId={selectedSchool?.id || ""}
         isOpen={Boolean(deleteTargetId)}
         reportId={deleteTargetId}
         onClose={() => setDeleteTargetId(null)}
@@ -400,3 +464,4 @@ export default function App() {
     </div>
   );
 }
+
