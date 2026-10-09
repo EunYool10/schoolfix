@@ -16,6 +16,7 @@ import { ReportDetailModal } from "./components/ReportDetailModal";
 import { DeleteReportModal } from "./components/DeleteReportModal";
 import { StaffPortal } from "./components/StaffPortal";
 import { SchoolSelectionView } from "./components/SchoolSelectionView";
+import { ServicePolicyDialog, type PolicySection } from "./components/ServicePolicyDialog";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
 import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck } from "lucide-react";
@@ -63,6 +64,7 @@ export default function App() {
   const [view, setView] = useState<View>("HOME");
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
+  const [policySection, setPolicySection] = useState<PolicySection | null>(null);
   const [schoolLocations, setSchoolLocations] = useState<SchoolLocation[]>([]);
   const [schoolLocationTypes, setSchoolLocationTypes] = useState<SchoolLocationType[]>([]);
   const [schoolLocationsLoading, setSchoolLocationsLoading] = useState(false);
@@ -459,11 +461,12 @@ export default function App() {
             SchoolFix AI — 학교 불편사항 신고 및 시설 안전 관리
           </p>
           <p className="mt-1 text-slate-400">
-            로그인 없이 누구나 이용할 수 있으며, 신고자 개인정보는 수집하지 않습니다.
+            익명 신고를 이용할 수 있습니다. 학교 추가 신청의 개인정보 처리 안내를 확인해 주세요.
           </p>
+          <div className="mt-3 flex justify-center gap-4"><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button></div>
         </div>
       </footer>
+      {policySection && <ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} />}
     </div>
   );
 }
-
