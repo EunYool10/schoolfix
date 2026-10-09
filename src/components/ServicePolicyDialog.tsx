@@ -1,10 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
-
-
-
-export type PolicySection = "terms" | "privacy";
+export type PolicySection = "guide" | "terms" | "privacy";
 
 
 
@@ -33,9 +30,24 @@ export function ServicePolicyDialog({ section, onClose }: Props) {
         <nav aria-label="서비스 안내 종류" className="flex gap-2 border-b border-slate-100 px-5 pt-3 sm:px-6">
           <button type="button" aria-pressed={activeSection === "terms"} onClick={() => setActiveSection("terms")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeSection === "terms" ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500"}`}>서비스 이용약관</button>
           <button type="button" aria-pressed={activeSection === "privacy"} onClick={() => setActiveSection("privacy")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeSection === "privacy" ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500"}`}>개인정보 안내</button>
-        </nav>
+                  <button type="button" aria-pressed={activeSection === "guide"} onClick={() => setActiveSection("guide")} className={`border-b-2 px-2 pb-3 text-sm font-bold ${activeSection === "guide" ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500"}`}>서비스 설명서</button>
+</nav>
         <div className="overflow-y-auto p-5 text-sm leading-7 text-slate-700 sm:p-6">
-          {activeSection === "terms" ? <>
+          {activeSection === "guide" ? <>
+            <h3 className="text-lg font-extrabold text-slate-900">SchoolFix AI 서비스 설명서</h3>
+            <p className="mt-1 text-xs text-slate-500">학교 시설 문제를 제보하고 진행 상황을 확인하는 방법</p>
+            <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">SchoolFix AI는 학교 시설의 불편·위험 제보를 모아 확인과 조치에 참고하도록 돕는 서비스입니다. 긴급 신고나 학교의 공식 민원 창구를 대신하지 않습니다.</p>
+            <div className="mt-4 space-y-5">
+              <section><h4 className="font-extrabold text-slate-900">1. 학교 선택</h4><p>첫 화면의 검색창에 학교 이름을 입력해 찾으세요. 학교급·고등학교 유형 필터와 가나다순 정렬을 사용할 수 있고, 별표로 즐겨찾기를 등록하면 다음에 쉽게 찾을 수 있습니다. 목록에 없는 학교는 ‘우리 학교 추가 신청’에서 등록 검토를 요청할 수 있습니다.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">2. 신고 작성</h4><p>선택한 학교의 신고 화면에서 문제가 발생한 장소와 시설 항목을 고르고, 언제 어떤 문제가 있었는지 구체적으로 적으세요. 목록에 없는 위치나 항목은 직접 입력할 수 있습니다. 아는 정보만 작성하고 확인되지 않은 사실을 추측해 쓰지 마세요.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">3. 사진과 개인정보</h4><p>현장 확인에 필요한 사진만 첨부하세요. 사람의 얼굴, 이름표, 학번, 연락처, 계정 정보, 문서 속 개인정보는 촬영하지 않거나 제출 전에 가려 주세요. 글이나 이미지가 자동 안전성 확인에서 추가 검토 대상으로 분류되면 운영진 확인 전까지 공개가 보류될 수 있습니다.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">4. 접수 확인과 진행 상태</h4><p>신고를 제출한 뒤 표시되는 접수번호를 보관하세요. 화면의 ‘내 신고’에서 접수번호를 이용해 신고와 상태를 확인할 수 있습니다. 상태는 접수 대기, 확인 중, 담당자 배정, 조치 예정, 처리 중, 처리 완료로 표시될 수 있으며, 담당자가 실제 내용을 확인하는 데 시간이 걸릴 수 있습니다.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">5. 학교 추가 신청</h4><p>학교명, 공식 홈페이지, 지역·주소와 지원 요청 사유를 입력하고 약관 및 개인정보 안내를 확인해 주세요. 전달 방식에서 웹 내부 전달을 고르면 운영진 신청함에 접수되고, 이메일 전달을 고르면 기기의 메일 앱에서 직접 보내야 접수가 완료됩니다. 검토와 등록에는 시간이 걸릴 수 있습니다.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">6. 운영진 검토</h4><p>운영진은 신고 내용과 첨부 자료를 확인하고 처리 상태를 갱신합니다. 개인정보 노출, 욕설·괴롭힘, 허위 정보, 부적절한 이미지 등 문제가 있으면 공개를 보류하거나 삭제할 수 있습니다. 상태 표시는 학교의 공식 답변이나 조치 완료 증명서가 아닙니다.</p></section>
+              <section><h4 className="font-extrabold text-slate-900">긴급 상황은 바로 알리기</h4><p>화재, 폭력, 부상 또는 붕괴 우려처럼 즉각 대응이 필요한 상황에서는 주변 교직원·보호자에게 알리고 112·119 또는 관계 기관에 직접 연락하세요. 이 서비스는 상시 모니터링이나 즉시 대응을 보장하지 않습니다.</p></section>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">브라우저 데이터 삭제, 장애, 재시작 또는 재배포로 저장 자료가 사라질 수 있습니다. 접수번호를 별도로 보관하고, 개인정보 처리와 이용 기준은 각각 ‘서비스 이용약관’ 및 ‘개인정보 안내’에서 확인해 주세요.</p>
+            </div>
+          </> : activeSection === "terms" ? <>
             <h3 className="text-lg font-extrabold text-slate-900">SchoolFix AI 운영규정 및 서비스 이용 안내</h3>
             <p className="mt-1 text-xs text-slate-500">시행일: 2026년 10월 10일</p>
             <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">SchoolFix는 학교 시설의 불편·위험 제보를 접수하고 진행 상태를 공유하는 서비스입니다. 학교나 교육기관의 공식 민원·긴급 신고 창구가 아니며, 학교의 조치나 답변을 대신하지 않습니다.</p>
