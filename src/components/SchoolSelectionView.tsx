@@ -1,8 +1,23 @@
-import { useEffect, useState } from "react";
-import { ArrowRight, Building2, Check, CheckCircle2, Globe2, Mail, MapPin, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, Building2, Check, CheckCircle2, Globe2, Mail, MapPin, Search, Star, X } from "lucide-react";
 import type { FormEvent } from "react";
 import type { School } from "../types";
 import { ServicePolicyDialog, type PolicySection } from "./ServicePolicyDialog";
+
+const FAVORITES_KEY = "schoolfix_favorite_schools_v1";
+
+function loadFavoriteIds(): string[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+  } catch { return []; }
+}
+
+function schoolLevel(school: School): number {
+  if (school.schoolName.includes("초등학교")) return 0;
+  if (school.schoolName.includes("중학교")) return 1;
+  return 2;
+}
 
 interface Props {
   schools: School[];
@@ -15,6 +30,10 @@ interface Props {
 
 export function SchoolSelectionView({ schools, loading, error, initialSchoolId = "", onRetry, onSelect }: Props) {
   const [selectedId, setSelectedId] = useState(initialSchoolId);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [schoolFilter, setSchoolFilter] = useState<"all" | "elementary" | "middle" | "high" | "favorites">("all");
+  const [sortMode, setSortMode] = useState<"level" | "name">("level");
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(loadFavoriteIds);
   const [showApplication, setShowApplication] = useState(false);
   const [schoolName, setSchoolName] = useState("");
   const [website, setWebsite] = useState("");
@@ -38,6 +57,34 @@ export function SchoolSelectionView({ schools, loading, error, initialSchoolId =
   }, [initialSchoolId, schools]);
 
   const selectedSchool = schools.find((school) => school.id === selectedId) || null;
+  const displayedSchools = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    const filtered = schools.filter((school) => {
+      const level = schoolLevel(school);
+      const matchesLevel = schoolFilter === "all"
+        || (schoolFilter === "elementary" && level === 0)
+        || (schoolFilter === "middle" && level === 1)
+        || (schoolFilter === "high" && level === 2)
+        || (schoolFilter === "favorites" && favoriteIds.includes(school.id));
+      const matchesSearch = !query || `${school.schoolName} ${school.address}`.toLocaleLowerCase().includes(query);
+      return matchesLevel && matchesSearch;
+    });
+    const collator = new Intl.Collator("ko");
+    return filtered.sort((a, b) => {
+      if (a.id === "cem-h") return -1;
+      if (b.id === "cem-h") return 1;
+      if (sortMode === "name") return collator.compare(a.schoolName, b.schoolName);
+      return schoolLevel(a) - schoolLevel(b) || collator.compare(a.schoolName, b.schoolName);
+    });
+  }, [schools, searchQuery, schoolFilter, sortMode, favoriteIds]);
+
+  useEffect(() => {
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(favoriteIds)); } catch { /* favorites remain available in memory */ }
+  }, [favoriteIds]);
+
+  const toggleFavorite = (schoolId: string) => {
+    setFavoriteIds((current) => current.includes(schoolId) ? current.filter((id) => id !== schoolId) : [...current, schoolId]);
+  };
 
   const submitApplication = async (event: FormEvent) => {
     event.preventDefault();
@@ -86,15 +133,37 @@ export function SchoolSelectionView({ schools, loading, error, initialSchoolId =
         </div>
 
         {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">지원 학교 정보를 불러오는 중…</div> : error ? <div className="rounded-2xl border border-rose-200 bg-white p-6 text-center"><p role="alert" className="text-sm text-rose-700">{error}</p><button onClick={onRetry} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white">다시 시도</button></div> : (
-          <div className="grid gap-3">
-            {schools.map((school) => {
-              const selected = selectedId === school.id;
-              return <button type="button" key={school.id} aria-pressed={selected} onClick={() => setSelectedId(school.id)} className={`w-full rounded-2xl border bg-white p-5 text-left shadow-sm transition sm:p-6 ${selected ? "border-blue-600 ring-2 ring-blue-100 shadow-md" : "border-slate-200 hover:border-blue-300 hover:shadow-md"}`}>
-              <div className="flex min-w-0 items-start gap-4"><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-blue-700 text-white" : "bg-blue-50 text-blue-700"}`}>{selected ? <Check className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}</span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-extrabold text-slate-900">{school.schoolName}</h2><p className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-slate-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{school.address}</p><span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700"><Globe2 className="h-3.5 w-3.5" />공식 홈페이지에서 학교 정보 확인</span></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${selected ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{selected ? "선택됨" : "선택"}</span></div></div></div>
-              </button>;
-            })}
-            {schools.length === 0 && <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">현재 지원 중인 학교가 없습니다.</p>}
-          </div>
+          <>
+            <div className="mb-4 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+              <label className="block text-xs font-bold text-slate-700">학교 검색
+                <span className="relative mt-1.5 block"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="학교 이름 또는 주소" className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" /></span>
+              </label>
+              <label className="block text-xs font-bold text-slate-700">보기
+                <select value={schoolFilter} onChange={(event) => setSchoolFilter(event.target.value as typeof schoolFilter)} className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:min-w-36">
+                  <option value="all">전체 학교</option><option value="elementary">초등학교만</option><option value="middle">중학교만</option><option value="high">고등학교만</option><option value="favorites">즐겨찾기만</option>
+                </select>
+              </label>
+              <label className="block text-xs font-bold text-slate-700">정렬
+                <select value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)} className="mt-1.5 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm sm:min-w-48">
+                  <option value="level">초등학교 → 중학교 → 고등학교</option><option value="name">가나다순</option>
+                </select>
+              </label>
+              <p className="text-[11px] font-medium text-slate-500 sm:col-span-3">학교 카드의 별을 눌러 즐겨찾기를 저장할 수 있습니다. 창의경영고등학교는 항상 맨 위에 표시됩니다.</p>
+            </div>
+            <div className="grid gap-3">
+              {displayedSchools.map((school) => {
+                const selected = selectedId === school.id;
+                const isFavorite = favoriteIds.includes(school.id);
+                return <article key={school.id} className={`flex items-stretch rounded-2xl border bg-white shadow-sm transition ${selected ? "border-blue-600 ring-2 ring-blue-100 shadow-md" : "border-slate-200 hover:border-blue-300 hover:shadow-md"}`}>
+                  <button type="button" aria-pressed={selected} onClick={() => setSelectedId(school.id)} className="min-w-0 flex-1 rounded-l-2xl p-5 text-left sm:p-6">
+                    <div className="flex min-w-0 items-start gap-4"><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-blue-700 text-white" : "bg-blue-50 text-blue-700"}`}>{selected ? <Check className="h-6 w-6" /> : <Building2 className="h-6 w-6" />}</span><span className="min-w-0 flex-1"><span className="flex items-start justify-between gap-3"><span><span className="block text-lg font-extrabold text-slate-900">{school.schoolName}</span><span className="mt-1 flex items-start gap-1.5 text-xs leading-relaxed text-slate-500"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{school.address}</span><span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700"><Globe2 className="h-3.5 w-3.5" />공식 홈페이지에서 학교 정보 확인</span></span><span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${selected ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{selected ? "선택됨" : "선택"}</span></span></span></div>
+                  </button>
+                  <button type="button" aria-label={isFavorite ? `${school.schoolName} 즐겨찾기 해제` : `${school.schoolName} 즐겨찾기 추가`} aria-pressed={isFavorite} onClick={() => toggleFavorite(school.id)} className={`m-3 flex h-10 w-10 shrink-0 items-center justify-center self-start rounded-xl transition ${isFavorite ? "bg-amber-50 text-amber-500" : "bg-slate-50 text-slate-400 hover:bg-amber-50 hover:text-amber-500"}`} title={isFavorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}><Star className={`h-5 w-5 ${isFavorite ? "fill-current" : ""}`} /></button>
+                </article>;
+              })}
+              {displayedSchools.length === 0 && <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">{schoolFilter === "favorites" && favoriteIds.length === 0 ? "즐겨찾기한 학교가 없습니다. 학교 카드의 별을 눌러 추가해 주세요." : "검색 조건에 맞는 학교가 없습니다."}</p>}
+            </div>
+          </>
         )}
 
         {!loading && !error && schools.length > 0 && <div className="sticky bottom-3 z-10 mt-5 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-900/10 backdrop-blur sm:p-4"><p className="min-w-0 text-xs text-slate-600 sm:text-sm">{selectedSchool ? <><span className="font-bold text-slate-900">{selectedSchool.schoolName}</span> 선택됨</> : "입장할 학교를 선택해 주세요."}</p><button type="button" disabled={!selectedSchool} onClick={() => selectedSchool && onSelect(selectedSchool)} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-extrabold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300">학교에 입장 <ArrowRight className="h-4 w-4" /></button></div>}
