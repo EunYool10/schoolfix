@@ -70,7 +70,7 @@ import {
   type ClarifySession,
 } from "./reportClarify";
 import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
-import { SCHOOL_LOCATIONS, ISSUE_CATEGORIES } from "./src/types";
+import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
 
@@ -88,9 +88,41 @@ app.use(express.json({ limit: "15mb" }));
 // 배포 시에는 영구 디스크 마운트 경로를 DATA_DIR로 지정한다(예: /var/data).
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "reports_db.json");
+const SCHOOL_CATALOG_FILE = path.join(process.cwd(), "schools.seed.json");
+
+interface SchoolCatalogEntry {
+  id: string; schoolName: string; officialWebsite: string; address: string;
+  supportStatus: "active" | "reviewing" | "rejected";
+  verificationStatus: "official" | "needs_review";
+  verifiedAt: string; sourceUrl: string;
+  departments: Array<{ name: string; classesByGrade: number[] }>;
+  locationTypes: Array<{ type: string; verificationStatus: string }>;
+  locations: Array<{ id: string; type: string; name: string; count?: number; verificationStatus: string }>;
+}
+
+function loadSchools(): SchoolCatalogEntry[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(SCHOOL_CATALOG_FILE, "utf-8"));
+    return Array.isArray(parsed) ? parsed.filter((school) => school.supportStatus === "active") : [];
+  } catch (err) {
+    console.error("[schools] 학교 카탈로그 읽기 실패:", err);
+    return [];
+  }
+}
+function findSchool(id: unknown) { return typeof id === "string" ? loadSchools().find((school) => school.id === id) : undefined; }
 
 interface StoredReport {
   id: string;
+  schoolId?: string;
+  schoolName?: string;
+  locationId?: string | null;
+  locationType?: string;
+  buildingName?: string | null;
+  floor?: string | null;
+  department?: string | null;
+  grade?: string | null;
+  className?: string | null;
+  roomName?: string | null;
   title?: string;
   location: string;
   /**
@@ -105,6 +137,8 @@ interface StoredReport {
   attachmentName?: string | null;
   attachmentSize?: number | null;
   status: "pending" | "reviewing" | "in_progress" | "completed";
+  moderationStatus?: "held" | "approved";
+  moderationReason?: string | null;
   assignee?: string | null;
   resolutionNote?: string | null;
   riskAnalysis?: RiskAnalysis | null;
@@ -149,7 +183,10 @@ function loadAllReports(): StoredReport[] {
   try {
     if (fs.existsSync(DB_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        const defaultSchool = loadSchools()[0];
+        return parsed.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+      }
     }
   } catch (err) {
     console.error("[db] reports_db.json 읽기 실패:", err);
@@ -162,7 +199,36 @@ function loadAllReports(): StoredReport[] {
  * 목록·검색·상세·통계·AI·PDF·인쇄 등 모든 공개 경로는 반드시 이 함수를 쓴다(§12).
  */
 function loadReports(): StoredReport[] {
-  return loadAllReports().filter((r) => !r.deletedAt);
+  return loadAllReports().filter((r) => !r.deletedAt && r.moderationStatus !== "held");
+}
+
+/** 텍스트와 첨부 이미지를 OpenAI Moderation으로 검사한다. 검사 실패 시 이미지는 보류한다. */
+async function moderateReport(title: string, description: string, image: string | null) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
+    return { hold: profanityDetected || Boolean(image), reason: profanityDetected ? "부적절한 표현 자동 감지" : image ? "이미지 안전성 검사 미설정" : null };
+  }
+  try {
+    const content: Array<Record<string, unknown>> = [{ type: "text", text: `${title}\n${description}` }];
+    if (image) content.push({ type: "image_url", image_url: { url: image } });
+    const response = await fetch("https://api.openai.com/v1/moderations", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "omni-moderation-latest", input: content }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error(`moderation status ${response.status}`);
+    const result = await response.json() as { results?: Array<{ flagged?: boolean; categories?: Record<string, boolean> }> };
+    if (!Array.isArray(result.results) || result.results.length === 0) throw new Error("moderation response missing results");
+    const flagged = result.results.some((item) => item.flagged);
+    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
+    return { hold: flagged || profanityDetected, reason: flagged ? "안전성 검사에서 검토 필요 판정" : profanityDetected ? "부적절한 표현 자동 감지" : null };
+  } catch (err) {
+    console.error("[moderation] 검사 실패:", err instanceof Error ? err.message : err);
+    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
+    return { hold: profanityDetected || Boolean(image), reason: profanityDetected ? "부적절한 표현 자동 감지" : image ? "이미지 안전성 검사 실패" : null };
+  }
 }
 
 function saveReports(reports: StoredReport[]) {
@@ -190,12 +256,23 @@ function saveReports(reports: StoredReport[]) {
 function toPublicReport(r: StoredReport) {
   return {
     id: r.id,
+    schoolId: r.schoolId ?? "cem-h",
+    schoolName: r.schoolName ?? loadSchools()[0]?.schoolName ?? "",
+    locationId: r.locationId ?? null,
+    locationType: r.locationType ?? r.location,
+    buildingName: r.buildingName ?? null,
+    floor: r.floor ?? null,
+    department: r.department ?? null,
+    grade: r.grade ?? null,
+    className: r.className ?? null,
+    roomName: r.roomName ?? null,
     title: r.title ?? "",
     location: r.location,
     locationDetail: r.locationDetail ?? null,
     category: r.category,
     description: r.description,
     status: r.status,
+    moderationStatus: r.moderationStatus ?? "approved",
     riskLevel: r.riskAnalysis?.risk_level ?? null,
     riskScore: r.riskAnalysis?.risk_score ?? null,
     riskAnalysis: r.riskAnalysis ?? null,
@@ -221,6 +298,7 @@ function toMyReport(r: StoredReport) {
 
 function buildRepeatContext(
   reports: StoredReport[],
+  schoolId: string,
   location: string,
   category: string,
   excludeId?: string
@@ -228,6 +306,7 @@ function buildRepeatContext(
   const matches = reports.filter(
     (r) =>
       r.id !== excludeId &&
+      r.schoolId === schoolId &&
       r.location === location &&
       r.category === category &&
       r.status !== "completed"
@@ -293,13 +372,14 @@ async function backfillMissingRiskAnalysis() {
   for (const target of targets) {
     const repeat = buildRepeatContext(
       loadReports(),
+      target.schoolId ?? "cem-h",
       target.location,
       target.category,
       target.id
     );
     const { analysis, error } = await runRiskAnalysis(
       target.description,
-      target.location,
+      [target.schoolName, target.location, target.locationDetail, target.buildingName, target.floor].filter(Boolean).join(" · "),
       target.category,
       repeat
     );
@@ -359,9 +439,21 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", storedReportsCount: loadReports().length });
 });
 
+app.get("/api/schools", (_req, res) => {
+  return res.json({ ok: true, data: loadSchools().map(({ id, schoolName, officialWebsite, address, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments }) => ({ id, schoolName, officialWebsite, address, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments })) });
+});
+
+app.get("/api/schools/:schoolId/locations", (req, res) => {
+  const school = findSchool(req.params.schoolId);
+  if (!school) return safeError(res, 404, "지원 중인 학교를 찾을 수 없습니다.");
+  return res.json({ ok: true, schoolId: school.id, data: school.locations.filter((location) => location.verificationStatus === "official"), locationTypes: school.locationTypes ?? [...new Set(school.locations.map((location) => location.type))].map((type) => ({ type, verificationStatus: "official" })), verificationStatus: school.verificationStatus, sourceUrl: school.sourceUrl });
+});
+
 /** 전체 신고 — 누구나 조회 가능. 개인정보 없음. */
-app.get("/api/reports", (_req, res) => {
-  const reports = loadReports();
+app.get("/api/reports", (req, res) => {
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const reports = loadReports().filter((report) => report.schoolId === school.id);
   res.json({
     ok: true,
     data: reports.map(toPublicReport),
@@ -409,8 +501,40 @@ app.post("/api/staff/logout", (req, res) => {
   return res.json({ ok: true });
 });
 
+app.get("/api/staff/moderation", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const held = loadAllReports().filter((report) => !report.deletedAt && report.schoolId === school.id && report.moderationStatus === "held");
+  return res.json({ ok: true, data: held.map((report) => ({ ...toPublicReport(report), moderationReason: report.moderationReason ?? null, attachmentName: report.attachmentName ?? null })) });
+});
+
+app.patch("/api/staff/reports/:id/moderation", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const action = req.body?.action;
+  if (action !== "approve" && action !== "reject") return safeError(res, 400, "검토 작업이 올바르지 않습니다.");
+  const all = loadAllReports();
+  const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt && item.moderationStatus === "held");
+  if (!report) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
+  const now = new Date().toISOString();
+  if (action === "approve") {
+    report.moderationStatus = "approved";
+    report.moderationReason = null;
+  } else {
+    report.deletedAt = now;
+  }
+  report.updatedAt = now;
+  saveReports(all);
+  summaryCache = null;
+  return res.json({ ok: true });
+});
+
 app.patch("/api/staff/reports/:id", (req, res) => {
   if (!requireStaff(req, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const { id } = req.params;
   const body = req.body || {};
   const allowedStatuses = ["pending", "reviewing", "in_progress", "completed"];
@@ -423,8 +547,9 @@ app.patch("/api/staff/reports/:id", (req, res) => {
     return safeError(res, 400, "담당자 또는 처리 메모가 너무 깁니다.");
   }
   const all = loadAllReports();
-  const report = all.find((item) => item.id === id && !item.deletedAt);
+  const report = all.find((item) => item.id === id && item.schoolId === school.id && !item.deletedAt);
   if (!report) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+  if (report.moderationStatus === "held") return safeError(res, 409, "먼저 안전성 검토에서 신고를 승인해주세요.");
 
   const now = new Date().toISOString();
   report.status = body.status;
@@ -440,6 +565,8 @@ app.patch("/api/staff/reports/:id", (req, res) => {
 });
 
 app.get("/api/reports/location-statistics", (req, res) => {
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const filters = parseFilterQuery(
     req.query as Record<string, unknown>,
     ISSUE_CATEGORIES,
@@ -448,11 +575,11 @@ app.get("/api/reports/location-statistics", (req, res) => {
   );
 
   // 공개 DTO 로 바꾼 뒤 거른다. 목록 화면이 받는 것과 정확히 같은 데이터를 세게 된다.
-  const scoped = filterReports(loadReports().map(toPublicReport), filters);
+  const scoped = filterReports(loadReports().filter((report) => report.schoolId === school.id).map(toPublicReport), filters);
 
   const input: LocationStatInput[] = scoped.map((r) => ({
     location: r.location,
-    locationDetail: r.locationDetail,
+    locationDetail: [r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · ") || null,
     category: r.category,
     riskLevel: r.riskLevel,
     createdAt: r.createdAt,
@@ -468,7 +595,8 @@ app.get("/api/reports/location-statistics", (req, res) => {
 
 /** 신고 상세 — 목록과 동일한 공개 범위 (§56) */
 app.get("/api/reports/:id", (req, res) => {
-  const report = loadReports().find((r) => r.id === req.params.id);
+  const school = findSchool(req.query.schoolId);
+  const report = school ? loadReports().find((r) => r.id === req.params.id && r.schoolId === school.id) : undefined;
   if (!report) {
     return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
   }
@@ -480,6 +608,8 @@ app.get("/api/reports/:id", (req, res) => {
  * 토큰을 URL 에 노출하지 않기 위해 POST 를 쓴다.
  */
 app.post("/api/reports/mine", (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const tokens = Array.isArray(req.body?.tokens) ? req.body.tokens : [];
   if (tokens.length === 0) {
     return res.json({ ok: true, data: [] });
@@ -492,7 +622,7 @@ app.post("/api/reports/mine", (req, res) => {
       .map((t: string) => hashOwnerToken(t))
   );
 
-  const mine = loadReports().filter((r) => r.ownerTokenHash && hashes.has(r.ownerTokenHash));
+  const mine = loadAllReports().filter((r) => !r.deletedAt && r.schoolId === school.id && r.ownerTokenHash && hashes.has(r.ownerTokenHash));
   return res.json({ ok: true, data: mine.map(toMyReport) });
 });
 
@@ -526,6 +656,7 @@ async function resolveClarityForSubmission(body: Record<string, any>): Promise<C
   const session = getClarifySession(body.clarifySessionId);
   if (
     session &&
+    session.schoolId === body.schoolId &&
     session.location === location &&
     session.category === category &&
     session.baseDescription.trim() === description
@@ -552,7 +683,7 @@ async function resolveClarityForSubmission(body: Record<string, any>): Promise<C
     const verdict = await analyzeClarity({ location, category, description, turns: [] }, apiKey);
 
     if (verdict.status === "needs_more_information" && verdict.question) {
-      const fresh = createClarifySession(location, category, description);
+      const fresh = createClarifySession(location, category, description, body.schoolId);
       fresh.verdict = verdict;
       return {
         proceed: false,
@@ -576,10 +707,34 @@ async function resolveClarityForSubmission(body: Record<string, any>): Promise<C
 
 /** 신고 등록 */
 app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const allowedLocations = school.locationTypes?.map((entry) => entry.type) ?? [...new Set(school.locations.map((entry) => entry.type)), "기타"];
   // 1) 입력값 검증 — 프론트엔드 검증을 신뢰하지 않는다 (§21, §29)
-  const validation = validateReportInput(req.body || {}, SCHOOL_LOCATIONS, ISSUE_CATEGORIES);
+  const validation = validateReportInput(req.body || {}, allowedLocations, ISSUE_CATEGORIES);
   if (!validation.ok) {
     return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
+  }
+  const selectedLocationId = typeof req.body.locationId === "string" ? req.body.locationId : "";
+  const selectedLocation = selectedLocationId ? school.locations.find((entry) => entry.id === selectedLocationId) : undefined;
+  if (selectedLocationId && (!selectedLocation || selectedLocation.type !== req.body.location)) {
+    return safeError(res, 400, "선택한 세부 위치가 해당 학교의 위치 목록과 일치하지 않습니다.");
+  }
+  const hasManualLocation = [req.body.locationDetail, req.body.buildingName, req.body.floor, req.body.className, req.body.roomName].some((value) => typeof value === "string" && value.trim());
+  if (!selectedLocation && !hasManualLocation) {
+    return safeError(res, 400, "세부 위치를 선택하거나 직접 입력해주세요.");
+  }
+  const department = typeof req.body.department === "string" ? req.body.department.trim() : "";
+  if (department && !school.departments.some((entry) => entry.name === department)) {
+    return safeError(res, 400, "선택한 학과가 학교 공식 정보와 일치하지 않습니다.");
+  }
+  const gradeInput = typeof req.body.grade === "string" ? req.body.grade.trim() : "";
+  const className = typeof req.body.className === "string" ? req.body.className.trim() : "";
+  if ((department || gradeInput || className) && String(req.body.location).trim() !== "교실") {
+    return safeError(res, 400, "학과·학년·반 정보는 교실 신고에만 사용할 수 있습니다.");
+  }
+  if (gradeInput && (!/^[1-3]$/.test(gradeInput) || (department && school.departments.find((entry) => entry.name === department)?.classesByGrade[Number(gradeInput) - 1] === 0))) {
+    return safeError(res, 400, "선택한 학년·학과가 학교 공식 현황과 일치하지 않습니다.");
   }
 
   // 1-2) 사전 확인 — 충분히 명확해지기 전에는 DB 에 저장하지 않는다 (§16)
@@ -639,11 +794,11 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
         : `${location} ${category} 불편 신고`;
 
     // 3) 위험도 분석 (실패해도 접수 자체는 성공시킨다)
-    const active = reports.filter((r) => !r.deletedAt);
-    const repeat = buildRepeatContext(active, location, category);
+    const active = reports.filter((r) => !r.deletedAt && r.schoolId === school.id);
+    const repeat = buildRepeatContext(active, school.id, location, category);
     const { analysis, error: riskError } = await runRiskAnalysis(
       description,
-      location,
+      [school.schoolName, location, selectedLocation?.name, req.body.buildingName, req.body.floor].filter(Boolean).join(" · "),
       category,
       repeat
     );
@@ -662,21 +817,36 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
     const maskedCount = maskedTitle.count + maskedDescription.count + aiMaskCount;
 
+    const attachmentUrl = req.body.attachmentUrl ? String(req.body.attachmentUrl) : null;
+    const moderation = await moderateReport(title, description, attachmentUrl);
+
     // 4) 익명 소유 토큰 — 원본은 응답으로 1회만 전달하고 DB 에는 해시만 남긴다
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
 
     const newReport: StoredReport = {
       id: reportId,
+      schoolId: school.id,
+      schoolName: school.schoolName,
+      locationId: selectedLocation?.id ?? null,
+      locationType: location,
+      buildingName: typeof req.body.buildingName === "string" ? req.body.buildingName.trim().slice(0, 100) : null,
+      floor: typeof req.body.floor === "string" ? req.body.floor.trim().slice(0, 40) : null,
+      department: department || null,
+      grade: gradeInput || null,
+      className: className.slice(0, 40) || null,
+      roomName: typeof req.body.roomName === "string" ? req.body.roomName.trim().slice(0, 100) : null,
       title,
       location,
       locationDetail: clarity.locationDetail,
       category,
       description,
-      attachmentUrl: req.body.attachmentUrl ? String(req.body.attachmentUrl) : null,
+      attachmentUrl,
       attachmentName: req.body.attachmentName ? String(req.body.attachmentName) : null,
       attachmentSize:
         typeof req.body.attachmentSize === "number" ? req.body.attachmentSize : null,
       status: "pending",
+      moderationStatus: moderation.hold ? "held" : "approved",
+      moderationReason: moderation.reason,
       riskAnalysis: analysis,
       riskAnalysisError: riskError,
       ownerTokenHash,
@@ -699,6 +869,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       // 부적절한 표현이 가려졌다면 사용자에게 알린다.
       masked: maskedCount > 0,
       maskedCount,
+      heldForReview: moderation.hold,
     });
   } catch (err) {
     return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);
@@ -728,8 +899,15 @@ function clarifyResponse(session: ClarifySession, extra: Record<string, unknown>
 }
 
 app.post("/api/reports/analyze", rateLimit("clarify", LIMITS.clarify), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  if (req.body.locationId) {
+    const entry = school.locations.find((item) => item.id === req.body.locationId);
+    if (!entry || entry.type !== req.body.location) return safeError(res, 400, "선택한 세부 위치가 해당 학교의 위치 목록과 일치하지 않습니다.");
+  }
+  const allowedLocations = school.locationTypes?.map((entry) => entry.type) ?? [...new Set(school.locations.map((entry) => entry.type)), "기타"];
   // 1) 입력 검증 — 신고 등록과 같은 기준 (§22)
-  const validation = validateClarifyInput(req.body || {}, SCHOOL_LOCATIONS, ISSUE_CATEGORIES);
+  const validation = validateClarifyInput(req.body || {}, allowedLocations, ISSUE_CATEGORIES);
   if (!validation.ok || !validation.value) {
     return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
   }
@@ -745,6 +923,7 @@ app.post("/api/reports/analyze", rateLimit("clarify", LIMITS.clarify), async (re
       return safeError(res, 410, "확인 과정이 만료되었습니다. 신고 내용을 다시 제출해주세요.");
     }
     session = existing;
+    if (session.schoolId !== school.id) return safeError(res, 409, "학교가 변경되었습니다. 신고 내용을 다시 확인해주세요.");
 
     const pendingQuestion = session.verdict?.question;
     if (!pendingQuestion) {
@@ -764,7 +943,7 @@ app.post("/api/reports/analyze", rateLimit("clarify", LIMITS.clarify), async (re
 
     session.turns.push({ question: pendingQuestion, answer: input.answer });
   } else {
-    session = createClarifySession(input.location, input.category, input.description);
+    session = createClarifySession(input.location, input.category, input.description, school.id);
   }
 
   // 3) 질문 한도 — 무한 반복으로 접수를 막지 않는다 (§12)
@@ -827,7 +1006,9 @@ app.post("/api/reports/analyze", rateLimit("clarify", LIMITS.clarify), async (re
 let summaryCache: { key: string; result: AiSummaryResult } | null = null;
 
 app.post("/api/ai/summary", async (req, res) => {
-  const reports = loadReports();
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const reports = loadReports().filter((report) => report.schoolId === school.id);
   const stats = computeStatistics(reports);
 
   // 신고가 없으면 OpenAI 를 호출하지 않는다 (§24, §51)
@@ -847,7 +1028,7 @@ app.post("/api/ai/summary", async (req, res) => {
   }
 
   // 동일한 신고 집합에 대해서는 캐시를 재사용한다 (§27 — 비용 남용 방지)
-  const cacheKey = `${reports.length}:${reports.map((r) => `${r.id}@${r.updatedAt}`).join("|")}`;
+  const cacheKey = `${school.id}:${reports.length}:${reports.map((r) => `${r.id}@${r.updatedAt}`).join("|")}`;
   if (summaryCache && summaryCache.key === cacheKey) {
     return res.json({ ok: true, cached: true, stats, summary: summaryCache.result });
   }
@@ -862,7 +1043,7 @@ app.post("/api/ai/summary", async (req, res) => {
   }
 
   const aiInput: AiReportInput[] = reports.map((r) => ({
-    location: r.location,
+    location: [r.schoolName, r.locationType ?? r.location, r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · "),
     category: r.category,
     riskLevel: r.riskAnalysis?.risk_level ?? null,
     status: r.status,
@@ -895,6 +1076,8 @@ app.post("/api/ai/summary", async (req, res) => {
  */
 app.post("/api/admin/verify-delete", rateLimit("adminVerify", LIMITS.adminVerify), async (req, res) => {
   const { reportId, password } = req.body || {};
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
 
   if (!isAdminPasswordConfigured()) {
     // 설정 미비 사실을 사용자에게 자세히 알리지 않는다 (§9)
@@ -906,7 +1089,7 @@ app.post("/api/admin/verify-delete", rateLimit("adminVerify", LIMITS.adminVerify
     return safeError(res, 400, "요청이 올바르지 않습니다.");
   }
 
-  const exists = loadReports().some((r) => r.id === reportId);
+  const exists = loadReports().some((r) => r.id === reportId && r.schoolId === school.id);
   if (!exists) {
     return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
   }
