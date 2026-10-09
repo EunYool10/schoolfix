@@ -26,6 +26,7 @@ import {
   SchoolLocation,
   SchoolLocationType,
   ISSUE_CATEGORIES,
+  SCHOOL_LOCATIONS,
 } from "../types";
 import {
   FORM_EXAMPLE_LIST,
@@ -190,7 +191,7 @@ export function StudentReportView({
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportDraftKey = `${REPORT_DRAFT_KEY}_${school.id}`;
-  const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set(locations.map((item) => item.type)), "기타"].map((type) => ({ type, verificationStatus: "official" as const })), [locationTypes, locations]);
+  const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set([...locations.map((item) => item.type), ...SCHOOL_LOCATIONS])].map((type) => ({ type, verificationStatus: type === "기타" ? "user_entered" as const : "needs_review" as const })), [locationTypes, locations]);
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
@@ -919,6 +920,7 @@ export function StudentReportView({
               ref={locationRef}
               id="field-location"
               value={location}
+              disabled={locationsLoading}
               onChange={(e) => {
                 const newLoc = e.target.value;
                 setLocation(newLoc);
@@ -941,7 +943,7 @@ export function StudentReportView({
                   : "border-slate-300 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               }`}
             >
-              <option value="">문제 위치를 선택해주세요</option>
+              <option value="">{locationsLoading ? "학교 위치 정보를 불러오는 중…" : "문제 위치를 선택해주세요"}</option>
               {availableLocationTypes.map((entry) => (
                 <option key={entry.type} value={entry.type}>
                   {entry.type}{entry.verificationStatus === "needs_review" ? " · 세부 시설 확인 필요" : entry.verificationStatus === "user_entered" ? " · 직접 입력" : ""}
