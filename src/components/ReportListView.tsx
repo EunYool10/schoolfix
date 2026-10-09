@@ -32,6 +32,7 @@ import { buildReportHtml } from "../utils/reportDocument";
 export type ReportTab = "MINE" | "ALL";
 
 interface ReportListViewProps {
+  schoolId: string;
   allReports: SchoolReport[];
   myReports: SchoolReport[];
   isLoading: boolean;
@@ -47,6 +48,7 @@ const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
 const STATUS_OPTIONS: ReportStatus[] = ["pending", "reviewing", "in_progress", "completed"];
 
 export function ReportListView({
+  schoolId,
   allReports,
   myReports,
   isLoading,
@@ -72,7 +74,7 @@ export function ReportListView({
    * "내 신고" 탭에서 학교 전체 통계를 보여주면 내 신고 건수처럼 읽히므로,
    * 전체 신고 탭에서만 조회한다.
    */
-  const locationStats = useLocationStats(filters, tab === "ALL", allReports.length);
+  const locationStats = useLocationStats(filters, tab === "ALL", schoolId, allReports.length);
 
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [summaryData, setSummaryData] = useState<AiSummaryResponse | null>(null);
@@ -141,7 +143,7 @@ export function ReportListView({
     setSummaryError(null);
 
     try {
-      const res = await fetch("/api/ai/summary", { method: "POST" });
+      const res = await fetch("/api/ai/summary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schoolId }) });
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
@@ -176,6 +178,7 @@ export function ReportListView({
 
     const html = buildReportHtml({
       reports: filtered,
+      schoolName: filtered[0]?.schoolName ?? "",
       stats: exportStats,
       summary: summaryData?.summary ?? null,
       scopeLabel: scopeParts.join(" · "),
@@ -453,7 +456,7 @@ export function ReportListView({
                   className="w-full text-left rounded-xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-xs transition cursor-pointer"
                 >
                   <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                    <StatusChip status={r.status} />
+                    <StatusChip status={r.status} moderationStatus={r.moderationStatus} />
                     <RiskChip level={r.riskLevel ?? null} score={r.riskScore} />
                     {r.isMine && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
@@ -469,7 +472,7 @@ export function ReportListView({
                     {r.description}
                   </p>
                   <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500">
-                    <span>{r.location}</span>
+                    <span>{[r.locationType || r.location, r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · ")}</span>
                     <span className="text-slate-300">·</span>
                     <span>{r.category}</span>
                     <span className="text-slate-300">·</span>
@@ -494,7 +497,8 @@ export function ReportListView({
   );
 }
 
-function StatusChip({ status }: { status: ReportStatus }) {
+function StatusChip({ status, moderationStatus }: { status: ReportStatus; moderationStatus?: SchoolReport["moderationStatus"] }) {
+  if (moderationStatus === "held") return <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />운영진 검토 대기</span>;
   const c = STATUS_MAP[status] || STATUS_MAP.pending;
   return (
     <span
@@ -594,3 +598,4 @@ function EmptyState({
     </div>
   );
 }
+
