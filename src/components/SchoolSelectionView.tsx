@@ -30,10 +30,11 @@ interface Props {
 
 function SchoolLogo({ school, selected }: { school: School; selected: boolean }) {
   const [failed, setFailed] = useState(false);
-  const faviconUrl = `${new URL(school.officialWebsite).origin}/favicon.ico`;
+  // 학교마다 favicon.ico를 제공하지 않거나 실제 로고가 다른 경로에 있어,
+  // 공식 홈페이지의 favicon을 조회하는 서비스로 로고를 가져온다.
   const officialLogo = school.id === "gahs-h"
     ? "https://gahs-h.goegm.kr/images/web/gahs-h/sub/img0107.png"
-    : faviconUrl;
+    : `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(school.officialWebsite)}&sz=128`;
 
   return (
     <span className={`flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${selected ? "border-blue-100 bg-white" : "border-slate-100 bg-blue-50"}`}>
