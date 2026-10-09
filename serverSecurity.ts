@@ -301,7 +301,7 @@ export const FIELD_LIMITS = {
   title: { min: 0, max: 100 },
   description: { min: 5, max: 2000 },
   location: { min: 1, max: 50 },
-  locationDetail: { min: 0, max: 50 },
+  locationDetail: { min: 0, max: 150 },
   category: { min: 1, max: 30 },
   /** AI 추가 질문에 대한 답변 */
   answer: { min: 1, max: 500 },
