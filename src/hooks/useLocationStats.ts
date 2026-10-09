@@ -27,6 +27,7 @@ const EMPTY: LocationStatsState = { locations: [], total: 0, isLoading: false, e
 export function useLocationStats(
   filters: ReportFilterState,
   enabled: boolean,
+  schoolId: string,
   /** 신고가 등록·삭제되면 바뀌는 값. 통계를 다시 받아오는 계기가 된다. */
   revision: unknown
 ): LocationStatsState {
@@ -47,7 +48,7 @@ export function useLocationStats(
     const timer = setTimeout(async () => {
       try {
         const res = await fetch(
-          `/api/reports/location-statistics${query ? `?${query}` : ""}`,
+          `/api/reports/location-statistics?schoolId=${encodeURIComponent(schoolId)}${query ? `&${query}` : ""}`,
           { signal: controller.signal }
         );
         const json = (await res.json()) as LocationStatsResponse;
@@ -78,7 +79,8 @@ export function useLocationStats(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, enabled, revision]);
+  }, [query, enabled, revision, schoolId]);
 
   return state;
 }
+
