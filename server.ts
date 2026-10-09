@@ -89,6 +89,13 @@ app.use(express.json({ limit: "15mb" }));
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_FILE = path.join(DATA_DIR, "reports_db.json");
 const SCHOOL_CATALOG_FILE = path.join(process.cwd(), "schools.seed.json");
+// 테스트 시연 데이터는 더 이상 실제 신고 목록에 노출하지 않는다.
+const LEGACY_SAMPLE_REPORT_IDS = new Set([
+  "REP-20260919-0001",
+  "REP-20260919-0002",
+  "REP-20260919-0003",
+  "REP-20260919-0004",
+]);
 
 interface SchoolCatalogEntry {
   id: string; schoolName: string; officialWebsite: string; address: string;
@@ -158,23 +165,6 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// 영구 디스크가 없는 환경에서는 슬립·재배포마다 DB가 비워진다.
-// 시연용 예시 신고(data.seed.json)가 있으면 DB가 없을 때만 1회 주입한다.
-function seedReportsIfEmpty() {
-  try {
-    if (fs.existsSync(DB_FILE)) return;
-    const seedFile = path.join(process.cwd(), "data.seed.json");
-    if (!fs.existsSync(seedFile)) return;
-    const parsed = JSON.parse(fs.readFileSync(seedFile, "utf-8"));
-    if (!Array.isArray(parsed) || parsed.length === 0) return;
-    fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), "utf-8");
-    console.log(`[seed] 예시 신고 ${parsed.length}건을 주입했습니다.`);
-  } catch (err) {
-    console.error("[seed] 시드 데이터 주입 실패:", err);
-  }
-}
-seedReportsIfEmpty();
-
 // ---------------------------------------------------------------------------
 // 저장소
 // ---------------------------------------------------------------------------
@@ -184,8 +174,13 @@ function loadAllReports(): StoredReport[] {
     if (fs.existsSync(DB_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
       if (Array.isArray(parsed)) {
+        const realReports = parsed.filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id));
+        if (realReports.length !== parsed.length) {
+          saveReports(realReports);
+          console.log(`[db] 테스트용 예시 신고 ${parsed.length - realReports.length}건을 제거했습니다.`);
+        }
         const defaultSchool = loadSchools()[0];
-        return parsed.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+        return realReports.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
       }
     }
   } catch (err) {
