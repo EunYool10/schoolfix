@@ -2,7 +2,11 @@ import { useState } from "react";
 import { X } from "lucide-react";
 
 
+
+
 export type PolicySection = "terms" | "privacy";
+
+
 
 
 interface Props {
@@ -11,8 +15,12 @@ interface Props {
 }
 
 
+
+
 export function ServicePolicyDialog({ section, onClose }: Props) {
   const [activeSection, setActiveSection] = useState<PolicySection>(section);
+
+
 
 
   return (
@@ -69,3 +77,8 @@ export function ServicePolicyDialog({ section, onClose }: Props) {
             </div>
           </>}
         </div>
+        <footer className="border-t border-slate-100 p-4 text-right"><button type="button" onClick={onClose} className="min-h-10 rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white">닫기</button></footer>
+      </section>
+    </div>
+  );
+}
