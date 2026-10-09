@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Check, Download, Loader2, LockKeyhole, LogOut, Save, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, Download, Inbox, Loader2, LockKeyhole, LogOut, Save, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type SchoolReport } from "../types";
 
 interface StaffPortalProps {
   schoolId: string;
   reports: SchoolReport[];
   onRefresh: () => void;
+}
+
+interface SchoolApplication {
+  id: string;
+  schoolName: string;
+  website: string;
+  address: string;
+  reason: string;
+  requests: string;
+  replyEmail: string;
+  status: "new" | "reviewed";
+  createdAt: string;
 }
 
 export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) {
@@ -20,6 +32,8 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
   const [statusFilter, setStatusFilter] = useState("all");
   const [riskFilter, setRiskFilter] = useState("all");
   const [heldReports, setHeldReports] = useState<SchoolReport[]>([]);
+  const [schoolApplications, setSchoolApplications] = useState<SchoolApplication[]>([]);
+  const [activeSection, setActiveSection] = useState<"reports" | "applications">("reports");
   const displayedReports = useMemo(() => [...heldReports, ...reports.filter((report) => report.moderationStatus !== "held")], [reports, heldReports]);
 
   const summary = useMemo(() => ({
@@ -83,6 +97,40 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
   };
 
   useEffect(() => { if (authenticated) void refreshHeld(); }, [authenticated, schoolId]);
+
+  const refreshApplications = async () => {
+    try {
+      const response = await fetch("/api/staff/school-applications");
+      const json = await response.json();
+      if (response.ok && json.ok) setSchoolApplications(Array.isArray(json.data) ? json.data : []);
+    } catch { /* keep the last loaded inbox */ }
+  };
+
+  useEffect(() => { if (authenticated) void refreshApplications(); }, [authenticated]);
+
+  const updateApplicationStatus = async (application: SchoolApplication) => {
+    const action = application.status === "new" ? "mark-reviewed" : "mark-new";
+    setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/staff/school-applications/${encodeURIComponent(application.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error || "신청 상태를 변경하지 못했습니다.");
+      setSchoolApplications((current) => current.map((item) => item.id === application.id ? { ...item, status: action === "mark-reviewed" ? "reviewed" : "new" } : item));
+    } catch (err) { setError(err instanceof Error ? err.message : "신청 상태를 변경하지 못했습니다."); }
+  };
+
+  const deleteApplication = async (application: SchoolApplication) => {
+    if (!window.confirm(`${application.schoolName} 신청을 메일함에서 영구 삭제할까요?`)) return;
+    setError("");
+    try {
+      const response = await fetch(`/api/staff/school-applications/${encodeURIComponent(application.id)}`, { method: "DELETE" });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error || "신청을 삭제하지 못했습니다.");
+      setSchoolApplications((current) => current.filter((item) => item.id !== application.id));
+    } catch (err) { setError(err instanceof Error ? err.message : "신청을 삭제하지 못했습니다."); }
+  };
 
   const moderate = async (report: SchoolReport, action: "approve" | "reject") => {
     setBusyId(report.id); setError(""); setNotice("");
@@ -170,6 +218,14 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
         <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">운영진 신고 관리</h1><p className="text-sm text-slate-600">신고 상태, 담당자, 처리 메모를 관리합니다.</p></div></div>
         <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
       </div>
+      <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveSection("reports")} aria-pressed={activeSection === "reports"} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "reports" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>신고 관리</button><button type="button" onClick={() => { setActiveSection("applications"); void refreshApplications(); }} aria-pressed={activeSection === "applications"} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "applications" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-700"}`}><Inbox className="h-4 w-4" />학교 신청 메일함<span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === "applications" ? "bg-white/20 text-white" : "bg-blue-50 text-blue-800"}`}>{schoolApplications.filter((item) => item.status === "new").length}</span></button></div>
+      {activeSection === "applications" ? <div className="space-y-3">
+        {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+        {schoolApplications.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">접수된 학교 추가 신청이 없습니다.</p> : schoolApplications.map((application) => <article key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{application.schoolName}</h2><span className={`rounded-full px-2 py-1 text-xs font-bold ${application.status === "new" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{application.status === "new" ? "새 신청" : "확인 완료"}</span></div><p className="mt-1 text-xs text-slate-500">{application.id} · {new Date(application.createdAt).toLocaleString("ko-KR")}</p></div><div className="flex gap-2"><button type="button" onClick={() => void updateApplicationStatus(application)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700">{application.status === "new" ? "확인 완료로 표시" : "새 신청으로 표시"}</button><button type="button" onClick={() => void deleteApplication(application)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">삭제</button></div></div>
+          <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs font-semibold text-slate-500">주소 또는 지역</dt><dd className="mt-1 text-slate-800">{application.address}</dd></div><div><dt className="text-xs font-semibold text-slate-500">공식 홈페이지</dt><dd className="mt-1"><a href={application.website} target="_blank" rel="noreferrer" className="break-all text-blue-700 underline">{application.website}</a></dd></div><div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">신청 사유</dt><dd className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{application.reason}</dd></div>{application.requests && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">추가 요청</dt><dd className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{application.requests}</dd></div>}{application.replyEmail && <div><dt className="text-xs font-semibold text-slate-500">회신 이메일</dt><dd className="mt-1"><a href={`mailto:${application.replyEmail}`} className="text-blue-700 underline">{application.replyEmail}</a></dd></div>}</dl>
+        </article>)}
+      </div> : <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {[
           { label: "전체 신고", value: summary.total, className: "text-slate-900" },
@@ -207,7 +263,7 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
           </form>
         </article>
       ))}
+      </>}
     </section>
   );
 }
-
