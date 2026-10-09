@@ -9,7 +9,7 @@ interface HeaderProps {
 
 export function Header({ onGoHome, reportCount }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-xs print:hidden">
+    <header className="sticky top-0 z-30 border-b border-white/80 bg-white/90 shadow-[0_1px_10px_rgba(20,38,73,0.05)] backdrop-blur-md print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between gap-3">
           {/*
@@ -22,11 +22,11 @@ export function Header({ onGoHome, reportCount }: HeaderProps) {
             aria-label="SchoolFix AI 홈으로 이동"
             className="flex items-center gap-2.5 min-w-0 rounded-xl px-2 py-1.5 -ml-2 cursor-pointer transition hover:bg-slate-100 active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
           >
-            <span className="h-9 w-9 rounded-xl bg-blue-700 text-white flex items-center justify-center shrink-0">
+              <span className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-900/15">
               <Building2 className="h-5 w-5" />
             </span>
             <span className="min-w-0 text-left">
-              <span className="block text-sm sm:text-base font-bold text-slate-900 tracking-tight truncate">
+              <span className="block text-sm sm:text-base font-extrabold text-slate-900 tracking-tight truncate">
                 SchoolFix AI
               </span>
               <span className="hidden sm:block text-[11px] text-slate-500 truncate">
@@ -51,3 +51,4 @@ export function Header({ onGoHome, reportCount }: HeaderProps) {
     </header>
   );
 }
+
