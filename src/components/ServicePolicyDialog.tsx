@@ -1,21 +1,25 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 
+
 export type PolicySection = "terms" | "privacy";
+
 
 interface Props {
   section: PolicySection;
   onClose: () => void;
 }
 
+
 export function ServicePolicyDialog({ section, onClose }: Props) {
   const [activeSection, setActiveSection] = useState<PolicySection>(section);
+
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section role="dialog" aria-modal="true" aria-labelledby="service-policy-title" className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6">
-          <div><p className="text-xs font-bold text-blue-700">SchoolFix AI</p><h2 id="service-policy-title" className="mt-1 text-xl font-extrabold text-slate-950">서비스 안내</h2></div>
+          <div><p className="text-xs font-bold text-blue-700">SchoolFix AI</p><h2 id="service-policy-title" className="mt-1 text-xl font-extrabold text-slate-950">운영규정 및 서비스 안내</h2></div>
           <button type="button" aria-label="닫기" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
         </header>
         <nav aria-label="서비스 안내 종류" className="flex gap-2 border-b border-slate-100 px-5 pt-3 sm:px-6">
@@ -24,8 +28,9 @@ export function ServicePolicyDialog({ section, onClose }: Props) {
         </nav>
         <div className="overflow-y-auto p-5 text-sm leading-7 text-slate-700 sm:p-6">
           {activeSection === "terms" ? <>
-            <h3 className="text-lg font-extrabold text-slate-900">SchoolFix AI 서비스 이용약관</h3>
-            <p className="mt-1 text-xs text-slate-500">시행일: 2026년 10월 9일</p>
+            <h3 className="text-lg font-extrabold text-slate-900">SchoolFix AI 운영규정 및 서비스 이용 안내</h3>
+            <p className="mt-1 text-xs text-slate-500">시행일: 2026년 10월 10일</p>
+            <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">SchoolFix는 학교 시설의 불편·위험 제보를 접수하고 진행 상태를 공유하는 서비스입니다. 학교나 교육기관의 공식 민원·긴급 신고 창구가 아니며, 학교의 조치나 답변을 대신하지 않습니다.</p>
             <ol className="mt-4 list-decimal space-y-4 pl-5">
               <li><strong>목적과 서비스.</strong> 이 약관은 SchoolFix AI(이하 “서비스”)를 이용해 학교 시설 문제를 제보하고, 학교 추가 지원을 신청할 때 필요한 기본 사항을 정합니다. 서비스는 제보 내용을 학교 시설 확인과 안전 개선을 위한 참고 자료로 전달합니다.</li>
               <li><strong>긴급 상황.</strong> 서비스는 긴급 구조·신고 기관이 아니며 제보 즉시 확인이나 조치를 보장하지 않습니다. 다치거나 즉각적인 위험이 있으면 교직원·보호자에게 알리고 112·119 등 해당 기관에 먼저 연락해 주세요.</li>
@@ -37,6 +42,11 @@ export function ServicePolicyDialog({ section, onClose }: Props) {
               <li><strong>법령과 금지 행위.</strong> 이용자는 타인의 개인정보·초상·명예·저작권을 침해하는 자료, 허위 사실을 이용한 비방·모욕, 동의 없는 신체 촬영물·성적 이미지, 아동·청소년 성착취물, 협박·괴롭힘 자료를 작성·첨부·공유하면 안 됩니다. 관련 법령에는 「개인정보 보호법」, 「형법」 제307조(명예훼손)·제311조(모욕), 「성폭력범죄의 처벌 등에 관한 특례법」 제14조(카메라 등을 이용한 촬영), 「저작권법」 제103조(복제·전송의 중단) 등이 있습니다. 신고 서비스 이용이 위법 행위를 정당화하지 않습니다.</li>
               <li><strong>검토·비공개·권리침해 요청.</strong> 자동 검토 결과와 이용자 신고를 바탕으로 공개를 보류하거나 게시물을 숨길 수 있습니다. 권리 침해를 주장하는 사람은 게시물 접수번호 또는 URL, 침해 대상, 본인의 권리와 요청 사유를 이메일로 보내 주세요. 운영자는 확인에 필요한 최소 정보를 요청할 수 있고, 검토 중 임시 비공개할 수 있습니다. 허위 요청이나 다른 사람의 권리를 침해하는 용도로는 사용하지 마세요.</li>
               <li><strong>AI 분석과 이의 제기.</strong> 자동 분류·요약·안전성 판단은 참고 정보이며 학교의 사실 확인, 긴급 대응, 공식 결정이나 법률 판단이 아닙니다. 잘못된 보류·비공개·분류에 대한 정정 요청은 접수번호와 사유를 이메일로 보내 주세요. 운영진이 사람이 확인해 수정 또는 삭제 여부를 판단합니다.</li>
+              <li><strong>신고 접수 및 본인 조회.</strong> 일반 신고는 계정이나 실명 없이 접수됩니다. 접수 후 안내되는 접수번호를 보관해 주세요. ‘내 신고’ 조회는 접수에 사용한 브라우저에 저장된 확인 정보로 연결되므로 브라우저 데이터 삭제, 기기 변경 또는 초기화 뒤에는 조회되지 않을 수 있습니다.</li>
+              <li><strong>처리 단계 안내.</strong> 신고 상태는 접수 대기, 확인 중, 담당자 배정, 조치 예정, 처리 중, 처리 완료로 표시될 수 있습니다. 학교의 실제 업무에 따라 단계를 건너뛰거나 갱신이 늦어질 수 있으며, 상태 표시는 공식 확인서·완료 증명서가 아니고 처리 기한이나 결과를 보장하지 않습니다.</li>
+              <li><strong>공개 보류와 운영진 검토.</strong> 글이나 첨부 이미지가 자동 안전성 확인에서 추가 검토 대상으로 분류되면 승인 전까지 공개 목록에서 숨겨질 수 있습니다. 운영진은 보류 사유와 자료를 확인해 공개 승인 또는 삭제를 결정합니다. 자동 분류에는 오류가 있을 수 있으므로 검토를 요청하려면 접수번호와 사유를 문의 이메일로 보내 주세요.</li>
+              <li><strong>학교 추가 신청 전달.</strong> ‘웹 내부로 전달’을 선택하면 신청 내용이 운영진 전용 신청함에 저장됩니다. ‘메일로 전달’을 선택하면 기기의 메일 앱에 신청 초안이 열리며, 이용자가 메일 앱에서 직접 전송해야 신청이 전달됩니다. 접수 후에도 학교 확인과 지원 여부 검토가 필요하며 등록이나 회신 시점은 보장되지 않습니다.</li>
+              <li><strong>서비스 자료 보관 한계.</strong> 현재 배포 환경은 영구 디스크를 사용하지 않아 서버 재시작·재배포 시 신고·학교 신청 자료가 초기화될 수 있습니다. 접수번호를 별도로 보관하고, 장기간 보관이 필요한 자료는 직접 사본을 유지해 주세요.</li>
               <li><strong>문의.</strong> 약관 또는 서비스 이용에 관한 문의는 <a className="font-semibold text-blue-700 underline" href="mailto:eunyool100208@gmail.com">eunyool100208@gmail.com</a>으로 보내 주세요.</li>
             </ol>
             <p className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">법률 조항은 이용자가 지켜야 할 핵심 기준을 안내하기 위한 것입니다. 사건의 위법성·책임·구제 절차는 구체적 사실과 현행 법령에 따라 관계 기관 또는 법률 전문가가 판단합니다.</p>
@@ -59,8 +69,3 @@ export function ServicePolicyDialog({ section, onClose }: Props) {
             </div>
           </>}
         </div>
-        <footer className="border-t border-slate-100 p-4 text-right"><button type="button" onClick={onClose} className="min-h-10 rounded-lg bg-blue-700 px-5 text-sm font-bold text-white">닫기</button></footer>
-      </section>
-    </div>
-  );
-}
