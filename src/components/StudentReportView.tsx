@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   X,
   CheckCircle,
@@ -166,6 +167,12 @@ export function StudentReportView({
   // Unsaved changes dialog state
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
   const [showLocationInfoModal, setShowLocationInfoModal] = useState(false);
+
+  useEffect(() => {
+    if (!showLocationInfoModal) return;
+    document.body.classList.add("modal-open");
+    return () => document.body.classList.remove("modal-open");
+  }, [showLocationInfoModal]);
 
   // 작성 중인 내용에 가려질 표현이 있는지 미리 알려 준다.
   // 차단이 아니라 안내이므로 제출은 그대로 가능하다.
@@ -1318,10 +1325,10 @@ export function StudentReportView({
       />
 
       {showLocationInfoModal && (
-        <div
+        createPortal(<div
           role="presentation"
           onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLocationInfoModal(false); }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[2147483000] flex min-h-screen min-h-[100dvh] items-center justify-center bg-slate-950/65 p-4 backdrop-blur-md"
         >
           <section role="dialog" aria-modal="true" aria-labelledby="location-info-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
             <div className="flex items-start gap-3">
@@ -1333,7 +1340,7 @@ export function StudentReportView({
             </div>
             <button type="button" autoFocus onClick={() => setShowLocationInfoModal(false)} className="mt-5 min-h-11 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800">확인</button>
           </section>
-        </div>
+        </div>, document.body)
       )}
 
       {/* Helpful Guidance Footer */}
