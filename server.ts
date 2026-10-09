@@ -101,6 +101,7 @@ const LEGACY_SAMPLE_REPORT_IDS = new Set([
 
 interface SchoolCatalogEntry {
   id: string; schoolName: string; officialWebsite: string; address: string;
+  highSchoolType?: "일반고" | "특성화고" | "특목고";
   supportStatus: "active" | "reviewing" | "rejected";
   verificationStatus: "official" | "needs_review";
   verifiedAt: string; sourceUrl: string;
@@ -472,7 +473,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/schools", (_req, res) => {
-  return res.json({ ok: true, data: loadSchools().map(({ id, schoolName, officialWebsite, address, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments }) => ({ id, schoolName, officialWebsite, address, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments })) });
+  return res.json({ ok: true, data: loadSchools().map(({ id, schoolName, officialWebsite, address, highSchoolType, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments }) => ({ id, schoolName, officialWebsite, address, highSchoolType, supportStatus, verificationStatus, verifiedAt, sourceUrl, departments })) });
 });
 
 app.get("/api/schools/:schoolId/locations", (req, res) => {
