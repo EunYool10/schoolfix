@@ -212,11 +212,11 @@ export interface SchoolReport {
   locationDetail?: string | null;
   category: string;
   description: string;
-  attachmentUrl?: string | null;
+  /** 첨부 사진들. 공개 보류 신고의 사진은 운영진만 열 수 있다. */
+  photos?: ReportPhoto[];
   status: ReportStatus;
   moderationStatus?: "held" | "approved";
   moderationReason?: string | null;
-  attachmentName?: string | null;
   /** 서버가 산출한 위험도 등급 — 분석 전이면 null */
   riskLevel?: RiskLevel | null;
   riskScore?: number | null;
@@ -239,6 +239,13 @@ export interface SchoolReport {
   feedback?: ReportFeedback | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReportPhoto {
+  /** /api/photos/... 또는 예전 신고의 data URL */
+  url: string;
+  name: string | null;
+  size: number | null;
 }
 
 export interface ReportFeedback {

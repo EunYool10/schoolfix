@@ -7,29 +7,39 @@ import {
   ExternalLink,
   Download,
   Image as ImageIcon,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import type { ReportPhoto } from "../types";
 
 interface ImageLightboxModalProps {
   isOpen: boolean;
   onClose: () => void;
-  imageUrl: string;
-  imageName?: string | null;
-  imageSize?: number | null;
+  /** 넘겨 볼 사진들 */
+  images: ReportPhoto[];
+  /** 처음 보여 줄 사진 순서 */
+  startIndex?: number;
 }
 
 export function ImageLightboxModal({
   isOpen,
   onClose,
-  imageUrl,
-  imageName,
-  imageSize,
+  images,
+  startIndex = 0,
 }: ImageLightboxModalProps) {
   const [zoom, setZoom] = useState<number>(1);
+  const [index, setIndex] = useState(startIndex);
+  const count = images.length;
+  const current = images[Math.min(index, count - 1)] ?? images[0];
+  const imageUrl = current?.url ?? "";
+  const imageName = current?.name;
+  const imageSize = current?.size;
 
-  // Reset zoom on open/close
+  // 열 때마다 고른 사진부터, 확대 없이 보여 준다.
   useEffect(() => {
     if (isOpen) {
       setZoom(1);
+      setIndex(startIndex);
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "unset";
@@ -37,12 +47,20 @@ export function ImageLightboxModal({
     return () => {
       document.body.style.overflow = "unset";
     };
-  }, [isOpen]);
+  }, [isOpen, startIndex]);
 
-  // ESC key handler
+  const go = (step: number) => {
+    if (count < 2) return;
+    setZoom(1);
+    setIndex((prev) => (prev + step + count) % count);
+  };
+
+  // ESC 로 닫고, 좌우 화살표로 넘긴다.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") go(1);
+      if (e.key === "ArrowLeft") go(-1);
     };
     if (isOpen) {
       window.addEventListener("keydown", handleKeyDown);
@@ -50,9 +68,9 @@ export function ImageLightboxModal({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  });
 
-  if (!isOpen) return null;
+  if (!isOpen || !current) return null;
 
   const handleZoomIn = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -117,6 +135,7 @@ export function ImageLightboxModal({
           </div>
           <div className="min-w-0">
             <p className="text-xs sm:text-sm font-semibold truncate text-slate-200">
+              {count > 1 && <span className="mr-1.5 font-mono text-blue-300">{index + 1}/{count}</span>}
               {imageName || "신고 현장 첨부 사진"}
             </p>
             {imageSize && (
@@ -195,7 +214,13 @@ export function ImageLightboxModal({
       </div>
 
       {/* Center Canvas with scroll & zoom */}
-      <div className="flex-1 w-full overflow-auto p-4 sm:p-8 flex items-center justify-center select-none">
+      <div className="relative flex-1 w-full overflow-auto p-4 sm:p-8 flex items-center justify-center select-none">
+        {count > 1 && (
+          <>
+            <button type="button" aria-label="이전 사진" onClick={(e) => { e.stopPropagation(); go(-1); }} className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-900/80 p-2.5 text-white hover:bg-slate-800 sm:left-4"><ChevronLeft className="h-5 w-5" /></button>
+            <button type="button" aria-label="다음 사진" onClick={(e) => { e.stopPropagation(); go(1); }} className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-slate-900/80 p-2.5 text-white hover:bg-slate-800 sm:right-4"><ChevronRight className="h-5 w-5" /></button>
+          </>
+        )}
         <div
           className="transition-transform duration-150 ease-out flex items-center justify-center max-w-full max-h-full"
           style={{ transform: `scale(${zoom})` }}
@@ -219,7 +244,7 @@ export function ImageLightboxModal({
         <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 font-mono text-[10px]">
           ESC
         </kbd>
-        <span> 키를 누르면 뷰어가 닫힙니다.</span>
+        <span> 키를 누르면 뷰어가 닫힙니다.{count > 1 ? " 좌우 화살표 키로 사진을 넘길 수 있습니다." : ""}</span>
       </div>
     </div>
   );

@@ -84,6 +84,8 @@ import { RISK_LEVELS } from "./riskAnalysis";
 import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
+import { feedbackPending } from "./src/utils/feedback";
+import { decodePhotoDataUrl, localPhotoBackend, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache, photoTypeFromId, supabasePhotoBackend, type IncomingPhoto, type PhotoBackend, type StoredPhoto } from "./photoStore";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 const app = express();
@@ -95,7 +97,8 @@ app.set("trust proxy", 1);
 
 app.use(securityHeaders());
 app.use(corsPolicy());
-app.use(express.json({ limit: "15mb" }));
+// 사진 여러 장(장당 최대 5MB, base64 로 약 1.37배)을 한 번에 받을 수 있게 둔다.
+app.use(express.json({ limit: "45mb" }));
 
 // 배포 시에는 영구 디스크 마운트 경로를 DATA_DIR로 지정한다(예: /var/data).
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -121,10 +124,17 @@ interface SchoolCatalogEntry {
   locations: Array<{ id: string; type: string; name: string; count?: number; verificationStatus: string }>;
 }
 
+/**
+ * 공식 카탈로그는 배포할 때만 바뀌므로 한 번 읽어 둔다.
+ * 거의 모든 요청이 findSchool 을 거치는데, 매번 파일을 읽고 파싱하면 학교가 늘수록 느려진다.
+ */
+let seedSchoolsCache: SchoolCatalogEntry[] | null = null;
 function loadSeedSchools(): SchoolCatalogEntry[] {
+  if (seedSchoolsCache) return seedSchoolsCache;
   try {
     const parsed = JSON.parse(fs.readFileSync(SCHOOL_CATALOG_FILE, "utf-8"));
-    return Array.isArray(parsed) ? parsed : [];
+    seedSchoolsCache = Array.isArray(parsed) ? parsed : [];
+    return seedSchoolsCache;
   } catch (err) {
     console.error("[schools] 학교 카탈로그 읽기 실패:", err);
     return [];
@@ -162,9 +172,12 @@ interface StoredReport {
   locationDetail?: string | null;
   category: string;
   description: string;
+  /** 예전 신고의 사진 한 장 (data URL). 새 신고는 photos 를 쓴다. */
   attachmentUrl?: string | null;
   attachmentName?: string | null;
   attachmentSize?: number | null;
+  /** 사진 저장소(photoStore.ts)에 따로 저장한 사진들 */
+  photos?: StoredPhoto[];
   status: "pending" | "reviewing" | "assigned" | "scheduled" | "in_progress" | "completed";
   moderationStatus?: "held" | "approved";
   moderationReason?: string | null;
@@ -533,32 +546,40 @@ async function saveSchoolApplications(applications: SchoolApplication[]) {
   }
 }
 
-/** 텍스트와 첨부 이미지를 OpenAI Moderation으로 검사한다. 검사 실패 시 이미지는 보류한다. */
-async function moderateReport(title: string, description: string, image: string | null) {
+async function moderationFlagged(apiKey: string, content: Array<Record<string, unknown>>): Promise<boolean> {
+  const response = await fetch("https://api.openai.com/v1/moderations", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "omni-moderation-latest", input: content }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new Error(`moderation status ${response.status}`);
+  const result = await response.json() as { results?: Array<{ flagged?: boolean }> };
+  if (!Array.isArray(result.results) || result.results.length === 0) throw new Error("moderation response missing results");
+  return result.results.some((item) => item.flagged);
+}
+
+/**
+ * 텍스트와 첨부 사진을 OpenAI Moderation으로 검사한다. 검사하지 못한 사진이 있으면 보류한다.
+ * 사진은 한 장씩 따로 검사한다(요청 하나에 이미지 여러 장을 넣는 것을 보장하지 않는다).
+ */
+async function moderateReport(title: string, description: string, images: string[]) {
   const apiKey = process.env.OPENAI_API_KEY;
+  const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
+  const hasImages = images.length > 0;
   if (!apiKey) {
-    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
-    return { hold: profanityDetected || Boolean(image), reason: profanityDetected ? "부적절한 표현 자동 감지" : image ? "이미지 안전성 검사 미설정" : null };
+    return { hold: profanityDetected || hasImages, reason: profanityDetected ? "부적절한 표현 자동 감지" : hasImages ? "이미지 안전성 검사 미설정" : null };
   }
   try {
-    const content: Array<Record<string, unknown>> = [{ type: "text", text: `${title}\n${description}` }];
-    if (image) content.push({ type: "image_url", image_url: { url: image } });
-    const response = await fetch("https://api.openai.com/v1/moderations", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "omni-moderation-latest", input: content }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!response.ok) throw new Error(`moderation status ${response.status}`);
-    const result = await response.json() as { results?: Array<{ flagged?: boolean; categories?: Record<string, boolean> }> };
-    if (!Array.isArray(result.results) || result.results.length === 0) throw new Error("moderation response missing results");
-    const flagged = result.results.some((item) => item.flagged);
-    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
+    const checks = await Promise.all([
+      moderationFlagged(apiKey, [{ type: "text", text: `${title}\n${description}` }]),
+      ...images.map((url) => moderationFlagged(apiKey, [{ type: "image_url", image_url: { url } }])),
+    ]);
+    const flagged = checks.some(Boolean);
     return { hold: flagged || profanityDetected, reason: flagged ? "안전성 검사에서 검토 필요 판정" : profanityDetected ? "부적절한 표현 자동 감지" : null };
   } catch (err) {
     console.error("[moderation] 검사 실패:", err instanceof Error ? err.message : err);
-    const profanityDetected = maskProfanity(`${title}\n${description}`).count > 0;
-    return { hold: profanityDetected || Boolean(image), reason: profanityDetected ? "부적절한 표현 자동 감지" : image ? "이미지 안전성 검사 실패" : null };
+    return { hold: profanityDetected || hasImages, reason: profanityDetected ? "부적절한 표현 자동 감지" : hasImages ? "이미지 안전성 검사 실패" : null };
   }
 }
 
@@ -590,6 +611,86 @@ async function saveReports(reports: StoredReport[]) {
     console.error("[db] reports_db.json 저장 실패:", err);
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 사진 저장소 — 신고 JSON 과 분리해 저장한다 (photoStore.ts)
+// ---------------------------------------------------------------------------
+
+const PHOTO_BUCKET = process.env.SUPABASE_PHOTO_BUCKET?.trim() || "report-photos";
+const photoBackend: PhotoBackend = useSupabaseStore
+  ? supabasePhotoBackend(SUPABASE_URL, SUPABASE_API_KEY, !SUPABASE_SECRET_KEY, PHOTO_BUCKET)
+  : localPhotoBackend(path.join(DATA_DIR, "photos"));
+let photoBackendReady = false;
+const photoCache = new PhotoCache();
+
+/** 버킷 준비. 실패해도 서버는 뜨고, 사진을 올릴 때 다시 시도한다. */
+async function ensurePhotoBackend(): Promise<boolean> {
+  if (photoBackendReady) return true;
+  try {
+    await photoBackend.init();
+    photoBackendReady = true;
+  } catch (err) {
+    console.error("[photos] 사진 저장소 준비 실패:", err instanceof Error ? err.message : err);
+  }
+  return photoBackendReady;
+}
+
+/** 요청 본문의 사진들. 예전 화면이 보내는 attachmentUrl 한 장도 받아 준다. */
+function parseIncomingPhotos(body: Record<string, unknown>): { ok: true; photos: IncomingPhoto[] } | { ok: false; error: string } {
+  const raw: unknown[] = Array.isArray(body.photos)
+    ? body.photos
+    : body.attachmentUrl ? [{ dataUrl: body.attachmentUrl, name: body.attachmentName }] : [];
+  if (raw.length > PHOTO_RULES.maxPhotos) return { ok: false, error: `사진은 ${PHOTO_RULES.maxPhotos}장까지 첨부할 수 있습니다.` };
+  const photos: IncomingPhoto[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return { ok: false, error: "첨부 사진 형식이 올바르지 않습니다." };
+    const { dataUrl, name } = item as { dataUrl?: unknown; name?: unknown };
+    const decoded = decodePhotoDataUrl(dataUrl);
+    if (!decoded.ok) return decoded;
+    photos.push({ buffer: decoded.buffer, type: decoded.type, name: typeof name === "string" ? name.trim().slice(0, 120) || null : null });
+  }
+  return { ok: true, photos };
+}
+
+/** 사진을 모두 올린다. 하나라도 실패하면 이미 올린 것을 지우고 실패를 돌려준다. */
+async function uploadPhotos(photos: IncomingPhoto[]): Promise<StoredPhoto[]> {
+  if (photos.length === 0) return [];
+  if (!(await ensurePhotoBackend())) throw new Error("사진 저장소를 사용할 수 없습니다.");
+  const stored: StoredPhoto[] = [];
+  try {
+    for (const photo of photos) {
+      const id = newPhotoId(photo.type);
+      await photoBackend.put(id, photo.buffer, photo.type);
+      photoCache.set(id, photo.buffer);
+      stored.push({ id, name: photo.name, size: photo.buffer.length, type: photo.type });
+    }
+    return stored;
+  } catch (err) {
+    await removePhotos(stored);
+    throw err;
+  }
+}
+
+/** 삭제·반려된 신고의 사진은 저장소에서도 지운다. 실패해도 신고 처리는 막지 않는다. */
+async function removePhotos(photos: StoredPhoto[] | undefined) {
+  if (!photos?.length) return;
+  photos.forEach((photo) => photoCache.delete(photo.id));
+  await photoBackend.remove(photos.map((photo) => photo.id)).catch((err) => {
+    console.error("[photos] 사진 삭제 실패:", err instanceof Error ? err.message : err);
+  });
+}
+
+/** 화면에 내보내는 사진 목록. 예전 신고의 data URL 사진도 같은 모양으로 맞춘다. */
+function publicPhotos(r: StoredReport) {
+  const list = (r.photos ?? []).map((photo) => ({ url: `/api/photos/${photo.id}`, name: photo.name, size: photo.size }));
+  if (r.attachmentUrl) list.push({ url: r.attachmentUrl, name: r.attachmentName ?? null, size: r.attachmentSize ?? 0 });
+  return list;
+}
+
+/** 알림에 실을 사진(data URL). 접수 직후에는 받은 바이트를 그대로 쓴다. */
+function photosAsAttachments(photos: IncomingPhoto[]) {
+  return photos.map((photo) => ({ dataUrl: `data:${photo.type};base64,${photo.buffer.toString("base64")}`, name: photo.name, size: photo.buffer.length }));
 }
 
 // ---------------------------------------------------------------------------
@@ -628,7 +729,7 @@ function toPublicReport(r: StoredReport) {
     riskLevel: r.riskAnalysis?.risk_level ?? null,
     riskScore: r.riskAnalysis?.risk_score ?? null,
     riskAnalysis: r.riskAnalysis ?? null,
-    attachmentUrl: r.attachmentUrl ?? null,
+    photos: publicPhotos(r),
     assignee: r.assignee ?? null,
     resolutionNote: r.resolutionNote ?? null,
     reviewedAt: r.reviewedAt ?? null,
@@ -754,7 +855,7 @@ function publicBaseUrl(): string | null {
  * 새 신고 알림. "모든 신고" 알림이 켜져 있으면 공개 보류 신고까지 모두 보내고,
  * 보류 신고에는 보류 사유·전체 내용·첨부 사진을 싣는다. 꺼져 있으면 기존처럼 긴급 신고만 보낸다.
  */
-function notifyNewReport(report: StoredReport) {
+function notifyNewReport(report: StoredReport, photos: IncomingPhoto[] = []) {
   if (!process.env.NOTIFY_WEBHOOK_URL) return;
   if (!loadNotificationSettings().allReports) {
     notifyIfUrgent(report);
@@ -772,7 +873,8 @@ function notifyNewReport(report: StoredReport) {
     description: maskProfanity(report.description).text,
     held,
     heldReason: held ? report.moderationReason ?? null : null,
-    attachment: report.attachmentUrl ? { dataUrl: report.attachmentUrl, name: report.attachmentName ?? null, size: report.attachmentSize ?? null } : null,
+    // 사진은 보류 신고일 때만 파일로 올라가지만, 몇 장인지는 모든 신고 알림에 표시한다.
+    attachments: photosAsAttachments(photos),
     link: publicBaseUrl(),
   });
 }
@@ -967,7 +1069,40 @@ app.get("/api/health", (_req, res) => {
       channel: webhookChannel(process.env.NOTIFY_WEBHOOK_URL),
       lastResult: lastNotifyResult(),
     },
+    photos: { store: photoBackend.kind, ready: photoBackendReady },
   });
+});
+
+/**
+ * 신고 사진. 공개된 신고의 사진은 누구나, 공개 보류 신고의 사진은 운영진만 볼 수 있다.
+ * 삭제된 신고의 사진이나 어느 신고에도 속하지 않은 id 는 없는 것으로 답한다.
+ */
+app.get("/api/photos/:month/:file", async (req, res) => {
+  const id = `${req.params.month}/${req.params.file}`;
+  if (!PHOTO_ID_PATTERN.test(id)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+  // 사진마다 전체 목록을 복제하지 않도록 저장소 원본을 읽기만 한다.
+  const raw = useSupabaseStore ? cachedReports : localReports();
+  const report = raw.find((r) => r.photos?.some((photo) => photo.id === id));
+  if (!report || report.deletedAt) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+  const isPublic = report.moderationStatus !== "held";
+  if (!isPublic && !getStaffSession(req)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+
+  try {
+    let buffer = photoCache.get(id);
+    if (!buffer) {
+      if (!(await ensurePhotoBackend())) return safeError(res, 503, "사진을 불러오지 못했습니다.");
+      buffer = (await photoBackend.get(id)) ?? undefined;
+      if (!buffer) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+      photoCache.set(id, buffer);
+    }
+    res.setHeader("Content-Type", photoTypeFromId(id));
+    // 신고가 나중에 삭제·보류될 수 있으므로 공용 캐시에는 두지 않고 브라우저에서만 잠깐 둔다.
+    res.setHeader("Cache-Control", isPublic ? "private, max-age=3600" : "private, no-store");
+    res.setHeader("Content-Disposition", "inline");
+    return res.send(buffer);
+  } catch (err) {
+    return safeError(res, 502, "사진을 불러오지 못했습니다.", err);
+  }
 });
 
 app.get("/api/schools", (_req, res) => {
@@ -1147,6 +1282,7 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   const action = req.body?.action;
   if (action !== "approve" && action !== "reject") return safeError(res, 400, "검토 작업이 올바르지 않습니다.");
   let found: boolean;
+  let removedPhotos: StoredPhoto[] = [];
   try {
     found = await withReportsLock(async () => {
       const all = loadAllReports();
@@ -1158,6 +1294,9 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
         report.moderationReason = null;
       } else {
         report.deletedAt = now;
+        // 반려한 신고의 사진은 부적절할 수 있으므로 저장소에서도 지운다.
+        removedPhotos = report.photos ?? [];
+        report.photos = [];
       }
       report.updatedAt = now;
       addHistory(report, { actor: "staff", action: "moderation", from: "held", to: action === "approve" ? "approved" : "deleted" }, now);
@@ -1168,6 +1307,7 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
     return safeError(res, 500, "신고 검토 상태를 저장하지 못했습니다.", err);
   }
   if (!found) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
+  await removePhotos(removedPhotos);
   summaryCache = null;
   return res.json({ ok: true });
 });
@@ -1193,6 +1333,7 @@ app.post("/api/staff/reports/:id/spam", async (req, res) => {
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   let reporterHash: string | null = null;
+  let removedPhotos: StoredPhoto[] = [];
   try {
     const found = await withReportsLock(async () => {
       const all = loadAllReports();
@@ -1200,6 +1341,8 @@ app.post("/api/staff/reports/:id/spam", async (req, res) => {
       if (!report) return false;
       const now = new Date().toISOString();
       report.deletedAt = now;
+      removedPhotos = report.photos ?? [];
+      report.photos = [];
       report.updatedAt = now;
       addHistory(report, { actor: "staff", action: "spam", to: "deleted" }, now);
       reporterHash = report.reporterHash ?? null;
@@ -1210,6 +1353,7 @@ app.post("/api/staff/reports/:id/spam", async (req, res) => {
   } catch (err) {
     return safeError(res, 500, "장난 신고 처리를 저장하지 못했습니다.", err);
   }
+  await removePhotos(removedPhotos);
   summaryCache = null;
 
   // 기기 정보가 없는 과거 신고는 지우기만 한다.
@@ -1441,6 +1585,9 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
       if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
       if (body.status === "completed" && !report.completedAt) report.completedAt = now;
+      // 완료를 되돌리면 완료 시각도 지운다. 남겨 두면 다시 완료할 때 옛 시각이 유지되어
+      // 처리 시간·월별 완료 수·만족도 재응답 판단이 틀어진다.
+      if (body.status !== "completed") report.completedAt = null;
       await saveReports(all);
       return { report, all };
     });
@@ -1578,6 +1725,8 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
       if (!report) return 404;
       if (!report.ownerTokenHash || !hashes.has(report.ownerTokenHash)) return 403;
       if (report.status !== "completed") return 409;
+      // 이번 완료에 이미 응답했으면 다시 받지 않는다. "아직 그대로예요" 뒤 다시 완료되면 새로 응답할 수 있다.
+      if (!feedbackPending(report)) return 409;
 
       const now = new Date().toISOString();
       report.feedback = { resolved, comment: comment || null, at: now };
@@ -1598,7 +1747,7 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
   }
   if (result === 404) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
   if (result === 403) return safeError(res, 403, "이 브라우저에서 접수한 신고만 응답할 수 있습니다.");
-  if (result === 409) return safeError(res, 409, "처리 완료된 신고에만 응답할 수 있습니다.");
+  if (result === 409) return safeError(res, 409, "처리 완료된 신고에 한 번만 응답할 수 있습니다.");
   summaryCache = null;
   return res.json({ ok: true, data: toMyReport(saved as unknown as StoredReport) });
 });
@@ -1692,6 +1841,10 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
   if (!validation.ok) {
     return safeError(res, 400, validation.error || "입력값이 올바르지 않습니다.");
   }
+  // 사진은 형식·장수·크기를 확인하고 실제 이미지인지(파일 앞부분)까지 본다.
+  const parsedPhotos = parseIncomingPhotos(req.body);
+  if (!parsedPhotos.ok) return safeError(res, 400, parsedPhotos.error);
+  const incomingPhotos = parsedPhotos.photos;
   const selectedLocationId = typeof req.body.locationId === "string" ? req.body.locationId : "";
   const selectedLocation = selectedLocationId ? school.locations.find((entry) => entry.id === selectedLocationId) : undefined;
   if (selectedLocationId && (!selectedLocation || selectedLocation.type !== req.body.location)) {
@@ -1785,8 +1938,16 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
     const maskedCount = maskedTitle.count + maskedDescription.count + aiMaskCount;
 
-    const attachmentUrl = req.body.attachmentUrl ? String(req.body.attachmentUrl) : null;
-    const moderation = await moderateReport(title, description, attachmentUrl);
+    const photoAttachments = photosAsAttachments(incomingPhotos);
+    const moderation = await moderateReport(title, description, photoAttachments.map((photo) => photo.dataUrl));
+
+    // 사진은 신고 목록과 따로 저장한다. 실패하면 사진 없이 접수하지 않고 다시 시도하도록 알린다.
+    let storedPhotos: StoredPhoto[];
+    try {
+      storedPhotos = await uploadPhotos(incomingPhotos);
+    } catch (err) {
+      return safeError(res, 503, "사진을 저장하지 못했습니다. 잠시 후 다시 시도하거나 사진을 빼고 접수해주세요.", err);
+    }
 
     // 4) 익명 소유 토큰 — 원본은 응답으로 1회만 전달하고 DB 에는 해시만 남긴다
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
@@ -1810,10 +1971,10 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       locationDetail: clarity.locationDetail,
       category,
       description,
-      attachmentUrl,
-      attachmentName: req.body.attachmentName ? String(req.body.attachmentName) : null,
-      attachmentSize:
-        typeof req.body.attachmentSize === "number" ? req.body.attachmentSize : null,
+      attachmentUrl: null,
+      attachmentName: null,
+      attachmentSize: null,
+      photos: storedPhotos,
       status: "pending",
       moderationStatus: moderation.hold ? "held" : "approved",
       moderationReason: moderation.reason,
@@ -1841,7 +2002,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
         newReport.moderationStatus = "held";
         newReport.moderationReason = reporter.reason;
       }
-      const prefix = `REP-${now.toISOString().slice(0, 10).replace(/-/g, "")}-`;
+      // 접수번호의 날짜는 한국 시간 기준이다. UTC로 매기면 오전 9시 전 신고에 전날 날짜가 붙는다.
+      const prefix = `REP-${new Date(now.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10).replace(/-/g, "")}-`;
       // 당일 발급된 최대 일련번호 + 1 (삭제가 있어도 중복되지 않는다)
       const lastSerial = latest.reduce((max, r) => {
         if (!r.id.startsWith(prefix)) return max;
@@ -1851,12 +2013,16 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       newReport.id = `${prefix}${String(lastSerial + 1).padStart(4, "0")}`;
       latest.unshift(newReport);
       await saveReports(latest);
+    }).catch(async (err) => {
+      // 신고가 저장되지 않았으면 올려 둔 사진도 남기지 않는다.
+      await removePhotos(storedPhotos);
+      throw err;
     });
 
     // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
     if (clarity.session) dropClarifySession(clarity.session.id);
 
-    notifyNewReport(newReport);
+    notifyNewReport(newReport, incomingPhotos);
 
     return res.status(201).json({
       ok: true,
@@ -2114,6 +2280,7 @@ app.delete("/api/reports/:id", async (req, res) => {
   }
 
   let found: boolean;
+  let removedPhotos: StoredPhoto[] = [];
   try {
     found = await withReportsLock(async () => {
       const reports = loadAllReports();
@@ -2123,6 +2290,9 @@ app.delete("/api/reports/:id", async (req, res) => {
       // Soft Delete — 기록은 남기되 모든 공개 기능에서 제외된다 (§11, §12)
       target.deletedAt = new Date().toISOString();
       target.updatedAt = target.deletedAt;
+      // 사진은 기록으로 남길 이유가 없으므로 저장소에서 지운다.
+      removedPhotos = target.photos ?? [];
+      target.photos = [];
       await saveReports(reports);
       return true;
     });
@@ -2132,6 +2302,7 @@ app.delete("/api/reports/:id", async (req, res) => {
   if (!found) {
     return safeError(res, 404, "삭제할 신고를 찾을 수 없습니다.");
   }
+  await removePhotos(removedPhotos);
 
   // 삭제로 집합이 바뀌었으므로 AI 요약 캐시를 무효화한다
   summaryCache = null;
@@ -2151,6 +2322,8 @@ app.use("/api", (_req, res) => {
 
 async function startServer() {
   await initializeDataStore();
+  // 사진 버킷 준비는 기동을 막지 않는다. 실패하면 첫 사진 업로드 때 다시 시도한다.
+  void ensurePhotoBackend();
   const isProduction =
     process.env.NODE_ENV === "production" || process.argv[1]?.endsWith("server.cjs");
 

@@ -5,6 +5,7 @@ import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport,
 import { computeSla, slaLabel } from "../utils/sla";
 import { StaffStatsPanel } from "./StaffStatsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
+import { PhotoGallery } from "./PhotoGallery";
 
 interface StaffPortalProps {
   schoolId: string;
@@ -485,7 +486,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
         const suspicious = report.reporter.blocked || report.reporter.deviceReportCount >= 5;
         return (
         <article key={`${report.id}-${report.updatedAt}`} className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${sla.overdue && report.moderationStatus !== "held" ? "border-rose-300" : "border-slate-200"}`}>
-          {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{report.attachmentUrl && <img src={report.attachmentUrl} alt="검토 대기 첨부 이미지" className="mt-3 max-h-64 rounded-lg border border-amber-200 object-contain" />}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button></div></div>}
+          {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button></div></div>}
           <div className="mb-4">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs text-slate-500">{report.id}</span>
