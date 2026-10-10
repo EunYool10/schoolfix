@@ -213,7 +213,7 @@ console.log("\n=== 3-4) 디스코드가 사진을 거절할 때 ===\n");
   globalThis.fetch = realFetch;
   check("사진 업로드가 거절되면 사진 없이 다시 보내 알림은 전달", sent === true && calls.length === 2 && calls[0].form && !calls[1].form, JSON.stringify(calls.map((c) => c.form)));
   check("다시 보낸 메시지에 '민감한 이미지' 안내", calls[1]?.body.includes("민감한 이미지로 판단") ?? false, calls[1]?.body);
-  check("마지막 결과는 성공(사진 제외)으로 기록", lastNotifyResult()?.ok === true && lastNotifyResult()?.label.includes("사진 제외"));
+  check("마지막 결과는 성공(사진 제외)으로 기록", lastNotifyResult()?.ok === true && (lastNotifyResult()?.label.includes("사진 제외") ?? false));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");
