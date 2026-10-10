@@ -186,6 +186,7 @@ const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_API_KEY = SUPABASE_SECRET_KEY || SUPABASE_SERVICE_ROLE_KEY;
 const useSupabaseStore = Boolean(SUPABASE_URL && SUPABASE_API_KEY);
+const requireSupabaseStore = process.env.REQUIRE_SUPABASE_STORE === "true";
 let cachedReports: StoredReport[] = [];
 let cachedSchoolApplications: SchoolApplication[] = [];
 let storeWriteQueue: Promise<void> = Promise.resolve();
@@ -248,10 +249,14 @@ async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promi
 }
 
 async function readSupabaseDocument(key: "reports" | "school_applications"): Promise<unknown | null> {
-  const query = new URLSearchParams({ select: "payload", key: `eq.${key}`, limit: "1" });
+  const query = new URLSearchParams({ select: "key,payload", key: `eq.${key}`, limit: "1" });
   const response = await supabaseStoreRequest(`schoolfix_store?${query.toString()}`);
-  const rows = await response.json() as Array<{ payload?: unknown }>;
-  return rows.length > 0 ? rows[0].payload ?? null : null;
+  const rows = await response.json() as Array<{ key?: string; payload?: unknown }>;
+  if (rows.length === 0) return null;
+  if (rows.length !== 1 || rows[0].key !== key || !Array.isArray(rows[0].payload)) {
+    throw new Error(`Supabase의 ${key} 문서 형식이 올바르지 않습니다. 기존 데이터를 덮어쓰지 않도록 시작을 중단합니다.`);
+  }
+  return rows[0].payload;
 }
 
 function queueSupabaseDocument(key: "reports" | "school_applications", payload: unknown): Promise<void> {
@@ -271,6 +276,12 @@ async function initializeDataStore() {
     throw new Error("SUPABASE_URL과 API 키를 함께 설정하고, SUPABASE_SECRET_KEY 또는 SUPABASE_SERVICE_ROLE_KEY 중 하나만 사용해야 합니다.");
   }
   if (!useSupabaseStore) {
+    if (requireSupabaseStore) {
+      throw new Error("REQUIRE_SUPABASE_STORE=true 이지만 Supabase 연결 정보가 없습니다. 영구 저장소 없이 서버를 시작하지 않습니다.");
+    }
+    if (process.env.NODE_ENV === "production") {
+      console.warn("[store] 경고: 영구 저장소가 연결되지 않았습니다. Render 재시작·재배포 시 JSON 데이터가 사라질 수 있습니다. Supabase 설정 후 REQUIRE_SUPABASE_STORE=true를 설정하세요.");
+    }
     console.log("[store] 로컬 JSON 파일 저장소를 사용합니다.");
     return;
   }
@@ -288,14 +299,16 @@ async function initializeDataStore() {
   const realReports = reports
     .filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id))
     .map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
-  cachedReports = realReports;
-  cachedSchoolApplications = applications;
+  cachedReports = realReports.map((report) => structuredClone(report));
+  cachedSchoolApplications = applications.map((application) => ({ ...application }));
 
   // 첫 연결 시에는 기존 data/ JSON을 가져오고, 이후에는 Supabase를 기준 저장소로 삼습니다.
   if (!Array.isArray(remoteReports) || realReports.length !== reports.length) {
+    if (!Array.isArray(remoteReports)) console.log(`[store] Supabase reports 문서가 없어 로컬 데이터 ${realReports.length}건을 가져옵니다.`);
     await queueSupabaseDocument("reports", realReports);
   }
   if (!Array.isArray(remoteApplications)) {
+    console.log(`[store] Supabase school_applications 문서가 없어 로컬 데이터 ${applications.length}건을 가져옵니다.`);
     await queueSupabaseDocument("school_applications", applications);
   }
   console.log(`[store] Supabase 연결 완료: 신고 ${realReports.length}건, 학교 신청 ${applications.length}건`);
@@ -305,7 +318,12 @@ function loadAllReports(): StoredReport[] {
   const stored = useSupabaseStore ? cachedReports : localReports();
   const realReports = stored.filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id));
   const defaultSchool = loadSchools()[0];
-  return realReports.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+  // Supabase reads come from an in-memory cache. Return detached objects so a
+  // route cannot mutate the cache before its write succeeds.
+  return realReports.map((report) => {
+    const copy = structuredClone(report);
+    return copy.schoolId || !defaultSchool ? copy : { ...copy, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName };
+  });
 }
 
 /** 삭제·검토 보류된 신고는 모든 공개 경로에서 제외한다. */
@@ -321,7 +339,7 @@ function loadSchoolApplications(): SchoolApplication[] {
 async function saveSchoolApplications(applications: SchoolApplication[]) {
   if (useSupabaseStore) {
     await queueSupabaseDocument("school_applications", applications);
-    cachedSchoolApplications = applications.map((application) => ({ ...application }));
+    cachedSchoolApplications = applications.map((application) => structuredClone(application));
     return;
   }
   try {
@@ -366,7 +384,7 @@ async function moderateReport(title: string, description: string, image: string 
 async function saveReports(reports: StoredReport[]) {
   if (useSupabaseStore) {
     await queueSupabaseDocument("reports", reports);
-    cachedReports = reports.map((report) => ({ ...report }));
+    cachedReports = reports.map((report) => structuredClone(report));
     return;
   }
   try {
@@ -578,7 +596,16 @@ function computeStatistics(reports: StoredReport[]): ReportStatistics {
 // ---------------------------------------------------------------------------
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", dataStore: useSupabaseStore ? "supabase" : "local-json", storedReportsCount: loadReports().length });
+  const persistent = useSupabaseStore;
+  res.json({
+    status: "ok",
+    dataStore: persistent ? "supabase" : "local-json",
+    persistence: {
+      durable: persistent,
+      warning: persistent ? null : "영구 저장소가 연결되지 않아 서버 재시작·재배포 시 데이터가 사라질 수 있습니다.",
+    },
+    storedReportsCount: loadReports().length,
+  });
 });
 
 app.get("/api/schools", (_req, res) => {
