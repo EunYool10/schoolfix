@@ -81,7 +81,7 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
-import { buildApplicationText, buildMonthlyText, sendNewReportNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { buildApplicationText, buildMonthlyText, lastNotifyResult, sendNewReportNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
@@ -961,6 +961,12 @@ app.get("/api/health", (_req, res) => {
       warning: persistent ? null : "영구 저장소가 연결되지 않아 서버 재시작·재배포 시 데이터가 사라질 수 있습니다.",
     },
     storedReportsCount: loadReports().length,
+    // 알림이 안 올 때 로그인 없이 원인을 확인할 수 있도록 연결 여부와 마지막 전송 결과만 보여 준다.
+    // 웹훅 주소는 비밀값이라 내보내지 않는다.
+    notifications: {
+      channel: webhookChannel(process.env.NOTIFY_WEBHOOK_URL),
+      lastResult: lastNotifyResult(),
+    },
   });
 });
 
@@ -1290,7 +1296,9 @@ app.post("/api/staff/notifications/test", rateLimit("notifyTest", { windowMs: 10
   if (!requireStaff(req, res)) return;
   if (!webhookChannel(process.env.NOTIFY_WEBHOOK_URL)) return safeError(res, 400, "NOTIFY_WEBHOOK_URL 환경변수가 설정되지 않았습니다.");
   const sent = await sendText("✅ SchoolFix 알림 연결 테스트입니다. 이 메시지가 보이면 긴급 신고·학교 신청·월간 보고 알림을 받을 수 있습니다.", process.env, "테스트 알림");
-  return sent ? res.json({ ok: true }) : safeError(res, 502, "알림을 보내지 못했습니다. 웹훅 주소가 올바른지, 디스코드에서 웹훅이 삭제되지 않았는지 확인해주세요.");
+  if (sent) return res.json({ ok: true });
+  const reason = lastNotifyResult()?.error;
+  return safeError(res, 502, `알림을 보내지 못했습니다${reason ? ` (${reason})` : ""}. 웹훅 주소가 올바른지, 디스코드에서 웹훅이 삭제되지 않았는지 확인해주세요.`);
 });
 
 /** 선택한 달의 월간 보고를 지금 보낸다. 학교를 지정하면 그 학교만 담는다. */
