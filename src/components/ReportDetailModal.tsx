@@ -12,13 +12,17 @@ import { SchoolReport, STATUS_MAP } from "../types";
 import { ReportTimeline } from "./ReportTimeline";
 import { RiskAnalysisPanel } from "./RiskAnalysisPanel";
 import { ImageLightboxModal } from "./ImageLightboxModal";
+import { ReportEngagement } from "./ReportEngagement";
 
 interface ReportDetailModalProps {
   report: SchoolReport | null;
+  schoolId: string;
   isOpen: boolean;
   onClose: () => void;
   /** 삭제 요청 — 관리자 비밀번호 확인은 DeleteReportModal 이 담당한다. */
   onRequestDelete?: (reportId: string) => void;
+  /** 공감·만족도 응답으로 신고가 바뀌었을 때 */
+  onReportUpdated?: (report: SchoolReport) => void;
 }
 
 /**
@@ -30,9 +34,11 @@ interface ReportDetailModalProps {
  */
 export function ReportDetailModal({
   report,
+  schoolId,
   isOpen,
   onClose,
   onRequestDelete,
+  onReportUpdated,
 }: ReportDetailModalProps) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
 
@@ -139,6 +145,8 @@ export function ReportDetailModal({
                 </button>
               </div>
             )}
+
+            <ReportEngagement key={report.id} report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
 
             {/* 위험도 분석 — 모든 사용자가 확인할 수 있다(§2). */}
             <RiskAnalysisPanel analysis={report.riskAnalysis} />

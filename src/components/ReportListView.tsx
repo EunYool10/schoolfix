@@ -468,6 +468,21 @@ export function ReportListView({
                         내 신고
                       </span>
                     )}
+                    {(r.meTooCount ?? 0) > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-semibold">
+                        나도 겪었어요 {r.meTooCount}
+                      </span>
+                    )}
+                    {r.isMine && r.reporterReply && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold">
+                        학교 답변 있음
+                      </span>
+                    )}
+                    {r.isMine && r.status === "completed" && !r.feedback && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
+                        해결됐는지 알려주세요
+                      </span>
+                    )}
                     <span className="ml-auto text-[10px] font-mono text-slate-400">{r.id}</span>
                   </div>
                   <p className="text-sm font-bold text-slate-900 truncate">

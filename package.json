@@ -14,7 +14,8 @@
     "test:location": "tsx locationStats.test.ts",
     "test:clarify": "tsx reportClarify.test.ts",
     "test:filter": "tsx src/security/profanityFilter.test.ts",
-    "test:report": "tsx src/utils/reportDocument.test.ts"
+    "test:report": "tsx src/utils/reportDocument.test.ts",
+    "test:ops": "tsx operations.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
