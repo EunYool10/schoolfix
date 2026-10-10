@@ -84,6 +84,7 @@ import { RISK_LEVELS } from "./riskAnalysis";
 import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
+import { feedbackPending } from "./src/utils/feedback";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 const app = express();
@@ -121,10 +122,17 @@ interface SchoolCatalogEntry {
   locations: Array<{ id: string; type: string; name: string; count?: number; verificationStatus: string }>;
 }
 
+/**
+ * 공식 카탈로그는 배포할 때만 바뀌므로 한 번 읽어 둔다.
+ * 거의 모든 요청이 findSchool 을 거치는데, 매번 파일을 읽고 파싱하면 학교가 늘수록 느려진다.
+ */
+let seedSchoolsCache: SchoolCatalogEntry[] | null = null;
 function loadSeedSchools(): SchoolCatalogEntry[] {
+  if (seedSchoolsCache) return seedSchoolsCache;
   try {
     const parsed = JSON.parse(fs.readFileSync(SCHOOL_CATALOG_FILE, "utf-8"));
-    return Array.isArray(parsed) ? parsed : [];
+    seedSchoolsCache = Array.isArray(parsed) ? parsed : [];
+    return seedSchoolsCache;
   } catch (err) {
     console.error("[schools] 학교 카탈로그 읽기 실패:", err);
     return [];
@@ -1441,6 +1449,9 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
       if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
       if (body.status === "completed" && !report.completedAt) report.completedAt = now;
+      // 완료를 되돌리면 완료 시각도 지운다. 남겨 두면 다시 완료할 때 옛 시각이 유지되어
+      // 처리 시간·월별 완료 수·만족도 재응답 판단이 틀어진다.
+      if (body.status !== "completed") report.completedAt = null;
       await saveReports(all);
       return { report, all };
     });
@@ -1578,6 +1589,8 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
       if (!report) return 404;
       if (!report.ownerTokenHash || !hashes.has(report.ownerTokenHash)) return 403;
       if (report.status !== "completed") return 409;
+      // 이번 완료에 이미 응답했으면 다시 받지 않는다. "아직 그대로예요" 뒤 다시 완료되면 새로 응답할 수 있다.
+      if (!feedbackPending(report)) return 409;
 
       const now = new Date().toISOString();
       report.feedback = { resolved, comment: comment || null, at: now };
@@ -1598,7 +1611,7 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
   }
   if (result === 404) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
   if (result === 403) return safeError(res, 403, "이 브라우저에서 접수한 신고만 응답할 수 있습니다.");
-  if (result === 409) return safeError(res, 409, "처리 완료된 신고에만 응답할 수 있습니다.");
+  if (result === 409) return safeError(res, 409, "처리 완료된 신고에 한 번만 응답할 수 있습니다.");
   summaryCache = null;
   return res.json({ ok: true, data: toMyReport(saved as unknown as StoredReport) });
 });
@@ -1841,7 +1854,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
         newReport.moderationStatus = "held";
         newReport.moderationReason = reporter.reason;
       }
-      const prefix = `REP-${now.toISOString().slice(0, 10).replace(/-/g, "")}-`;
+      // 접수번호의 날짜는 한국 시간 기준이다. UTC로 매기면 오전 9시 전 신고에 전날 날짜가 붙는다.
+      const prefix = `REP-${new Date(now.getTime() + KST_OFFSET_MS).toISOString().slice(0, 10).replace(/-/g, "")}-`;
       // 당일 발급된 최대 일련번호 + 1 (삭제가 있어도 중복되지 않는다)
       const lastSerial = latest.reduce((max, r) => {
         if (!r.id.startsWith(prefix)) return max;

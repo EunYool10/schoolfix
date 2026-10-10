@@ -2,6 +2,7 @@ import { useState } from "react";
 import { HandHeart, Loader2, MessageSquareReply, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { SchoolReport } from "../types";
 import { getDeviceToken, loadMeTooIds, loadOwnerTokens, setMeToo } from "../utils/clientTokens";
+import { feedbackPending } from "../utils/feedback";
 
 interface Props {
   report: SchoolReport;
@@ -29,10 +30,10 @@ export function ReportEngagement({ report, schoolId, onReportUpdated }: Props) {
           </div>
         </div>
       )}
-      {report.isMine && report.status === "completed" && !report.feedback && (
+      {report.isMine && feedbackPending(report) && (
         <FeedbackBox report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
       )}
-      {report.feedback && report.isMine && (
+      {report.feedback && report.isMine && !feedbackPending(report) && (
         <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
           {report.feedback.resolved ? "👍 해결됐다고 응답했어요. 알려주셔서 고마워요." : "다시 확인해 달라고 응답했어요. 담당자가 다시 살펴봅니다."}
         </p>

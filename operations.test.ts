@@ -13,6 +13,7 @@ import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewRe
 import { buildApplicationEmbed, buildMonthlyEmbed, buildNewReportEmbed, EMBED_COLORS, escapeMarkdown, type DiscordEmbed } from "./notify";
 import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
+import { feedbackPending } from "./src/utils/feedback";
 
 let passed = 0;
 let failed = 0;
@@ -245,6 +246,14 @@ console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");
   ];
   check("장난 신고로 처리된 기기는 보류", evaluateReporter("bad", [], blocked, now).hold);
   check("보류 기간이 지난 기기는 통과", !evaluateReporter("old", [], blocked, now).hold && activeBlock("old", blocked, now) === null);
+}
+
+console.log("\n=== 5) 만족도 재응답 ===\n");
+{
+  check("미완료 신고는 묻지 않음", !feedbackPending({ status: "reviewing", completedAt: null, feedback: null }));
+  check("완료 후 응답 전이면 물음", feedbackPending({ status: "completed", completedAt: "2026-10-01T00:00:00Z", feedback: null }));
+  check("이번 완료에 응답했으면 묻지 않음", !feedbackPending({ status: "completed", completedAt: "2026-10-01T00:00:00Z", feedback: { at: "2026-10-02T00:00:00Z" } }));
+  check("'아직 그대로예요' 뒤 다시 완료되면 다시 물음", feedbackPending({ status: "completed", completedAt: "2026-10-05T00:00:00Z", feedback: { at: "2026-10-02T00:00:00Z" } }));
 }
 
 console.log(`\n${"=".repeat(60)}`);
