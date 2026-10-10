@@ -371,7 +371,7 @@ export function UserHomeLandingView({
             <strong>현장 사진 촬영:</strong> 사진을 첨부해주시면 시설 관리자가 필요한 수리 공구와 부품을 미리 준비할 수 있습니다.
           </li>
           <li>
-            <strong>익명성 철저 보장:</strong> 익명 체크 시 관리자 화면 및 공용 목록에서 제보자의 정보가 일체 숨겨집니다.
+            <strong>익명성 철저 보장:</strong> 모든 신고는 로그인 없이 익명으로 접수되며, 이름·학번·연락처를 수집하지 않습니다.
           </li>
         </ul>
       </div>

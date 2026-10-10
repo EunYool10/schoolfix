@@ -244,7 +244,13 @@ export function StudentReportView({
   }, [reportDraftKey]);
 
   useEffect(() => {
-    if (!draftReady || completedReport) return;
+    if (!draftReady) return;
+    if (completedReport) {
+      // 접수 직후 이전 렌더의 정리 함수가 방금 접수한 내용을 초안으로 다시 써 넣는다.
+      // 지우지 않으면 신고 화면에 다시 들어왔을 때 접수한 신고가 초안으로 복구돼 중복 접수된다.
+      clearSessionDraft(reportDraftKey);
+      return;
+    }
     const hasText = Boolean(title || location || locationDetail || locationId || buildingName || floor || department || grade || className || roomName || category || description);
     if (!hasText) {
       clearSessionDraft(reportDraftKey);
@@ -422,8 +428,10 @@ export function StudentReportView({
   // Called when user clicks an example recommendation button
   // Note: Form fields are auto-filled ONLY; NO database submission occurs.
   const handleApplyExample = (example: FormExampleItem) => {
+    const exampleLocation = availableLocationTypes.some((item) => item.type === example.location) ? example.location : "기타";
     setTitle(example.label);
-    setLocation(locations.some((item) => item.type === example.location) ? example.location : "기타");
+    setLocation(exampleLocation);
+    if (exampleLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
     setLocationId("");
     setLocationDetail(example.location);
     setCategory(example.category);
@@ -441,7 +449,7 @@ export function StudentReportView({
     const errors: FieldErrors = {};
 
     // 1. Location Validation
-    const hasManualLocation = [locationDetail, buildingName, floor, className, roomName].some((value) => value.trim());
+    const hasManualLocation = [locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].some((value) => value.trim());
     if (!location || !location.trim() || (!locationId && !hasManualLocation)) {
       errors.location = "위치 유형을 선택하고 세부 위치를 선택하거나 직접 입력해주세요.";
     }
@@ -482,6 +490,8 @@ export function StudentReportView({
 
   /** 실제 접수. 사전 확인이 끝난 뒤에만 호출된다 (§16) */
   const submitReport = async (sessionId: string | null) => {
+    // 학과·학년·반은 교실 신고에만 허용된다(서버도 거부한다). 다른 위치로 바꾼 뒤 남은 값은 보내지 않는다.
+    const isClassroom = location.trim() === "교실";
     const res = await onSubmitReport({
       schoolId: school.id,
       title: title.trim() || undefined,
@@ -490,9 +500,9 @@ export function StudentReportView({
       locationDetail: (locations.find((item) => item.id === locationId)?.name || locationDetail).trim() || null,
       buildingName: buildingName.trim() || null,
       floor: floor.trim() || null,
-      department: department || null,
-      grade: grade || null,
-      className: className.trim() || null,
+      department: (isClassroom && department) || null,
+      grade: (isClassroom && grade) || null,
+      className: (isClassroom && className.trim()) || null,
       roomName: roomName.trim() || null,
       category: category.trim(),
       description: description.trim(),
@@ -942,6 +952,7 @@ export function StudentReportView({
                 if (locationNeedsReview) window.setTimeout(() => setShowLocationInfoModal(true), 0);
                 setLocationId("");
                 setLocationDetail("");
+                if (newLoc !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
                 clearFieldError("location");
                 setAutoFillNotice(false);
                 setSelectedExampleKey(null);

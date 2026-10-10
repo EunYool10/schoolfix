@@ -39,7 +39,8 @@ export function ReportDetailModal({
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // 사진 뷰어가 열려 있으면 ESC 는 뷰어만 닫는다. 상세 창까지 함께 닫히지 않게 한다.
+      if (e.key === "Escape" && !isLightboxOpen) onClose();
     };
     document.body.classList.add("modal-open");
     window.addEventListener("keydown", onKey);
@@ -47,7 +48,7 @@ export function ReportDetailModal({
       document.body.classList.remove("modal-open");
       window.removeEventListener("keydown", onKey);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, isLightboxOpen]);
 
   if (!isOpen || !report) return null;
 

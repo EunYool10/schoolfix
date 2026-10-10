@@ -74,7 +74,12 @@ export function ReportListView({
    * "내 신고" 탭에서 학교 전체 통계를 보여주면 내 신고 건수처럼 읽히므로,
    * 전체 신고 탭에서만 조회한다.
    */
-  const locationStats = useLocationStats(filters, tab === "ALL", schoolId, allReports.length);
+  // 건수만 보면 운영진이 처리 상태를 바꿨을 때 통계가 갱신되지 않는다. 마지막 수정 시각도 함께 본다.
+  const statsRevision = useMemo(
+    () => `${allReports.length}:${allReports.reduce((latest, r) => (r.updatedAt > latest ? r.updatedAt : latest), "")}`,
+    [allReports]
+  );
+  const locationStats = useLocationStats(filters, tab === "ALL", schoolId, statsRevision);
 
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const [summaryData, setSummaryData] = useState<AiSummaryResponse | null>(null);

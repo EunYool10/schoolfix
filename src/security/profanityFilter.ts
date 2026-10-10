@@ -48,7 +48,13 @@ const BLOCKED_TERMS: BlockedTerm[] = [
   { term: "지랄", category: "severe_profanity" },
   { term: "개새끼", category: "severe_profanity" },
   { term: "새끼", category: "severe_profanity", ambiguous: true, exceptions: [/(강아지|고양이|짐승|동물|사자|호랑이)\s*새끼/] },
-  { term: "꺼져", category: "severe_profanity" },
+  {
+    term: "꺼져",
+    category: "severe_profanity",
+    ambiguous: true,
+    // "전등이 꺼져 있어요", "컴퓨터가 꺼져서" 처럼 시설 상태를 설명하는 표현은 정상이다.
+    exceptions: [/[이가은는도]\s*꺼져/, /꺼져\s*(있|서|버|요|도|가|나)/],
+  },
   // --- English profanity (case-insensitive; spaces and punctuation between letters are also caught) ---
   { term: "fuck", category: "severe_profanity" },
   { term: "shit", category: "severe_profanity" },
@@ -104,6 +110,17 @@ const BLOCKED_TERMS: BlockedTerm[] = [
 
 /** 금지어 글자 사이에 끼워 넣어 우회하는 데 쓰이는 문자들 */
 const SEPARATOR_CLASS = "[\\s.\\-_*~^'\"`|/\\\\+=,:;!?()\\[\\]{}<>]";
+
+/**
+ * 글자 사이 공백을 허용하다 보니 단어 경계에 걸리는 경우를 걸러낸다.
+ * "아저씨 발", "형광등 신고", "있으니 미끄러워요" 는 앞 단어의 마지막 글자와
+ * 다음 단어의 첫 글자가 이어져 금지어처럼 보일 뿐이다.
+ * 일치 구간에 공백이 있고 첫 글자가 앞 음절에 붙어 있으면(= 단어 중간에서 시작) 무시한다.
+ * "씨 발" 처럼 단어 첫머리에서 시작하는 우회는 그대로 잡힌다.
+ */
+function spansWordBoundary(text: string, index: number, match: string): boolean {
+  return /\s/.test(match) && index > 0 && /[가-힣]/.test(text[index - 1]);
+}
 
 /** 정규식 메타문자 이스케이프 */
 function escapeRegExp(s: string): string {
@@ -183,8 +200,10 @@ export function checkProfanity(input: string | null | undefined): ProfanityResul
   const found = new Set<ProfanityCategory>();
 
   for (const entry of COMPILED) {
-    entry.regex.lastIndex = 0;
-    if (!entry.regex.test(normalized)) continue;
+    const hit = Array.from(normalized.matchAll(entry.regex)).some(
+      (m) => !spansWordBoundary(normalized, m.index ?? 0, m[0])
+    );
+    if (!hit) continue;
 
     // 모호한 표현은 예외 패턴에 걸리면 정상으로 본다.
     if (entry.ambiguous && entry.exceptions?.some((ex) => ex.test(normalized))) {
@@ -238,7 +257,8 @@ export function maskProfanity(input: string | null | undefined): MaskResult {
     if (entry.ambiguous && entry.exceptions?.some((ex) => ex.test(text))) continue;
 
     entry.regex.lastIndex = 0;
-    text = text.replace(entry.regex, () => {
+    text = text.replace(entry.regex, (match: string, offset: number, source: string) => {
+      if (spansWordBoundary(source, offset, match)) return match;
       count += 1;
       categories.add(entry.category);
       return MASK_TOKEN;

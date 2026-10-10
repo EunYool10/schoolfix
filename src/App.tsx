@@ -96,24 +96,34 @@ export default function App() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   }, []);
 
+  // 학교를 바꾼 뒤 늦게 도착한 이전 학교의 응답이 새 학교 목록을 덮어쓰지 않도록,
+  // 응답을 반영하기 전에 지금 선택된 학교와 같은지 확인한다.
+  const currentSchoolIdRef = useRef<string | null>(null);
+  currentSchoolIdRef.current = selectedSchool?.id ?? null;
+
   /** 전체 신고 + 서버 계산 통계 */
   const fetchReports = useCallback(async (silent = false) => {
     if (!selectedSchool) { setIsLoading(false); return; }
+    const schoolId = selectedSchool.id;
     if (!silent) setIsLoading(true);
     setIsRefreshing(true);
     try {
-      const res = await fetch(`/api/reports?schoolId=${encodeURIComponent(selectedSchool.id)}`);
+      const res = await fetch(`/api/reports?schoolId=${encodeURIComponent(schoolId)}`);
       if (!res.ok) throw new Error("신고 목록을 불러오지 못했습니다.");
       const json = await res.json();
+      if (currentSchoolIdRef.current !== schoolId) return;
       if (json.ok) {
         setReports(json.data || []);
       }
     } catch (err) {
+      if (currentSchoolIdRef.current !== schoolId) return;
       console.error(err);
       showToast("error", "신고 목록을 불러오지 못했습니다.");
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (currentSchoolIdRef.current === schoolId) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [showToast, selectedSchool]);
 
@@ -132,6 +142,7 @@ export default function App() {
         body: JSON.stringify({ tokens, schoolId: selectedSchool.id }),
       });
       const json = await res.json();
+      if (currentSchoolIdRef.current !== selectedSchool.id) return;
       if (json.ok) setMyReports(json.data || []);
     } catch (err) {
       console.error("내 신고를 불러오지 못했습니다.", err);
