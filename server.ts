@@ -381,6 +381,19 @@ async function moderateReport(title: string, description: string, image: string 
   }
 }
 
+/**
+ * 신고 목록의 "읽기 → 수정 → 저장" 구간을 한 번에 하나씩만 실행한다.
+ * 저장은 전체 목록을 통째로 덮어쓰므로, 두 요청이 같은 스냅샷을 읽고 각자 저장하면
+ * 먼저 저장한 쪽의 변경(새 신고·상태 변경)이 사라지고 접수번호도 중복된다.
+ * 잠금 안에서는 OpenAI 호출처럼 오래 걸리는 작업을 하지 않는다.
+ */
+let reportsLock: Promise<unknown> = Promise.resolve();
+function withReportsLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = reportsLock.then(task, task);
+  reportsLock = run.catch(() => undefined);
+  return run;
+}
+
 async function saveReports(reports: StoredReport[]) {
   if (useSupabaseStore) {
     await queueSupabaseDocument("reports", reports);
@@ -545,18 +558,22 @@ async function backfillMissingRiskAnalysis() {
     );
 
     // 채점 중 다른 요청이 DB 를 바꿨을 수 있으므로 매번 다시 읽고 해당 건만 갱신한다.
-    const all = loadAllReports();
-    const idx = all.findIndex((r) => r.id === target.id);
-    if (idx === -1) continue;
+    const updated = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const idx = all.findIndex((r) => r.id === target.id);
+      if (idx === -1) return false;
 
-    if (analysis) {
-      all[idx].riskAnalysis = analysis;
-      all[idx].riskAnalysisError = null;
-      done += 1;
-    } else {
-      all[idx].riskAnalysisError = error;
-    }
-    await saveReports(all);
+      if (analysis) {
+        all[idx].riskAnalysis = analysis;
+        all[idx].riskAnalysisError = null;
+      } else {
+        all[idx].riskAnalysisError = error;
+      }
+      await saveReports(all);
+      return true;
+    });
+    if (!updated) continue;
+    if (analysis) done += 1;
 
     // 집합이 바뀌었으니 요약 캐시를 버린다.
     summaryCache = null;
@@ -773,22 +790,27 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const action = req.body?.action;
   if (action !== "approve" && action !== "reject") return safeError(res, 400, "검토 작업이 올바르지 않습니다.");
-  const all = loadAllReports();
-  const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt && item.moderationStatus === "held");
-  if (!report) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
-  const now = new Date().toISOString();
-  if (action === "approve") {
-    report.moderationStatus = "approved";
-    report.moderationReason = null;
-  } else {
-    report.deletedAt = now;
-  }
-  report.updatedAt = now;
+  let found: boolean;
   try {
-    await saveReports(all);
+    found = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt && item.moderationStatus === "held");
+      if (!report) return false;
+      const now = new Date().toISOString();
+      if (action === "approve") {
+        report.moderationStatus = "approved";
+        report.moderationReason = null;
+      } else {
+        report.deletedAt = now;
+      }
+      report.updatedAt = now;
+      await saveReports(all);
+      return true;
+    });
   } catch (err) {
     return safeError(res, 500, "신고 검토 상태를 저장하지 못했습니다.", err);
   }
+  if (!found) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
   summaryCache = null;
   return res.json({ ok: true });
 });
@@ -808,28 +830,37 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
   if (assignee.length > 100 || resolutionNote.length > 1000) {
     return safeError(res, 400, "담당자 또는 처리 메모가 너무 깁니다.");
   }
-  const all = loadAllReports();
-  const report = all.find((item) => item.id === id && item.schoolId === school.id && !item.deletedAt);
-  if (!report) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
-  if (report.moderationStatus === "held") return safeError(res, 409, "먼저 안전성 검토에서 신고를 승인해주세요.");
-
-  const now = new Date().toISOString();
-  report.status = body.status;
-  report.assignee = assignee || null;
-  report.resolutionNote = resolutionNote || null;
-  report.updatedAt = now;
-  if (body.status === "reviewing" && !report.reviewedAt) report.reviewedAt = now;
-  if (body.status === "assigned" && !report.assignedAt) report.assignedAt = now;
-  if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
-  if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
-  if (body.status === "completed" && !report.completedAt) report.completedAt = now;
+  let outcome: { error: 404 | 409 } | { report: StoredReport };
   try {
-    await saveReports(all);
+    outcome = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === id && item.schoolId === school.id && !item.deletedAt);
+      if (!report) return { error: 404 as const };
+      if (report.moderationStatus === "held") return { error: 409 as const };
+
+      const now = new Date().toISOString();
+      report.status = body.status;
+      report.assignee = assignee || null;
+      report.resolutionNote = resolutionNote || null;
+      report.updatedAt = now;
+      if (body.status === "reviewing" && !report.reviewedAt) report.reviewedAt = now;
+      if (body.status === "assigned" && !report.assignedAt) report.assignedAt = now;
+      if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
+      if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
+      if (body.status === "completed" && !report.completedAt) report.completedAt = now;
+      await saveReports(all);
+      return { report };
+    });
   } catch (err) {
     return safeError(res, 500, "신고 처리 상태를 저장하지 못했습니다.", err);
   }
+  if ("error" in outcome) {
+    return outcome.error === 404
+      ? safeError(res, 404, "해당 신고를 찾을 수 없습니다.")
+      : safeError(res, 409, "먼저 안전성 검토에서 신고를 승인해주세요.");
+  }
   summaryCache = null;
-  return res.json({ ok: true, data: toPublicReport(report) });
+  return res.json({ ok: true, data: toPublicReport(outcome.report) });
 });
 
 app.get("/api/reports/location-statistics", (req, res) => {
@@ -1039,18 +1070,9 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
 
   try {
+    // 반복 신고 집계용 스냅샷. 저장은 아래에서 잠금을 잡고 최신 목록을 다시 읽어 수행한다.
     const reports = loadAllReports();
     const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-
-    // 당일 발급된 최대 일련번호 + 1 (삭제가 있어도 중복되지 않는다)
-    const prefix = `REP-${dateStr}-`;
-    const lastSerial = reports.reduce((max, r) => {
-      if (!r.id.startsWith(prefix)) return max;
-      const n = Number.parseInt(r.id.slice(prefix.length), 10);
-      return Number.isFinite(n) && n > max ? n : max;
-    }, 0);
-    const reportId = `${prefix}${String(lastSerial + 1).padStart(4, "0")}`;
 
     // 1차 마스킹이 적용된 텍스트를 기준으로 삼는다.
     let description = maskedDescription.text.trim();
@@ -1092,7 +1114,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
 
     const newReport: StoredReport = {
-      id: reportId,
+      id: "",
       schoolId: school.id,
       schoolName: school.schoolName,
       locationId: selectedLocation?.id ?? null,
@@ -1123,8 +1145,21 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       updatedAt: now.toISOString(),
     };
 
-    reports.unshift(newReport);
-    await saveReports(reports);
+    // 위험도 분석·검사를 기다리는 동안 다른 신고가 저장됐을 수 있다.
+    // 접수번호는 저장 직전의 최신 목록에서 매겨야 중복되지 않는다.
+    await withReportsLock(async () => {
+      const latest = loadAllReports();
+      const prefix = `REP-${now.toISOString().slice(0, 10).replace(/-/g, "")}-`;
+      // 당일 발급된 최대 일련번호 + 1 (삭제가 있어도 중복되지 않는다)
+      const lastSerial = latest.reduce((max, r) => {
+        if (!r.id.startsWith(prefix)) return max;
+        const n = Number.parseInt(r.id.slice(prefix.length), 10);
+        return Number.isFinite(n) && n > max ? n : max;
+      }, 0);
+      newReport.id = `${prefix}${String(lastSerial + 1).padStart(4, "0")}`;
+      latest.unshift(newReport);
+      await saveReports(latest);
+    });
 
     // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
     if (clarity.session) dropClarifySession(clarity.session.id);
@@ -1384,19 +1419,24 @@ app.delete("/api/reports/:id", async (req, res) => {
     return safeError(res, 401, "삭제 권한이 확인되지 않았습니다. 다시 시도해주세요.");
   }
 
-  const reports = loadAllReports();
-  const target = reports.find((r) => r.id === id && !r.deletedAt);
-  if (!target) {
-    return safeError(res, 404, "삭제할 신고를 찾을 수 없습니다.");
-  }
-
-  // Soft Delete — 기록은 남기되 모든 공개 기능에서 제외된다 (§11, §12)
-  target.deletedAt = new Date().toISOString();
-  target.updatedAt = target.deletedAt;
+  let found: boolean;
   try {
-    await saveReports(reports);
+    found = await withReportsLock(async () => {
+      const reports = loadAllReports();
+      const target = reports.find((r) => r.id === id && !r.deletedAt);
+      if (!target) return false;
+
+      // Soft Delete — 기록은 남기되 모든 공개 기능에서 제외된다 (§11, §12)
+      target.deletedAt = new Date().toISOString();
+      target.updatedAt = target.deletedAt;
+      await saveReports(reports);
+      return true;
+    });
   } catch (err) {
     return safeError(res, 500, "신고를 삭제하지 못했습니다.", err);
+  }
+  if (!found) {
+    return safeError(res, 404, "삭제할 신고를 찾을 수 없습니다.");
   }
 
   // 삭제로 집합이 바뀌었으므로 AI 요약 캐시를 무효화한다

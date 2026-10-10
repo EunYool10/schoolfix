@@ -105,6 +105,16 @@ expectAllowed("도서관 열람실 형광등이 계속 깜빡거리며 미세한
 expectAllowed("급식실 배식 대기 줄 공간이 협소하여 혼잡하고 식수대 수압이 약해 이용하기 불편합니다.");
 expectAllowed("체육관 벽면 안전 보호 쿠션이 일부 분리되어 떨어져 있습니다.");
 
+console.log("\n-- '꺼져' 가 시설 상태 설명인 경우 --");
+expectAllowed("복도 전등 하나가 꺼져 있어요.");
+expectAllowed("수업 중에 컴퓨터가 자꾸 꺼져서 불편해요.");
+expectBlocked("야 꺼져", "명령형 욕설은 계속 차단");
+
+console.log("\n-- '니미' 가 단어 경계에 걸린 경우 --");
+expectAllowed("바닥에 물이 고여 있으니 미끄러워요.");
+expectAllowed("언니 미술실 앞 복도 조명이 나갔어요.");
+expectBlocked("니미 뭐하냐");
+
 console.log("\n-- 빈 값 처리 --");
 expectAllowed("");
 expectAllowed("   ");

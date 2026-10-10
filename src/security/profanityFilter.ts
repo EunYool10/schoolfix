@@ -48,7 +48,13 @@ const BLOCKED_TERMS: BlockedTerm[] = [
   { term: "지랄", category: "severe_profanity" },
   { term: "개새끼", category: "severe_profanity" },
   { term: "새끼", category: "severe_profanity", ambiguous: true, exceptions: [/(강아지|고양이|짐승|동물|사자|호랑이)\s*새끼/] },
-  { term: "꺼져", category: "severe_profanity" },
+  {
+    term: "꺼져",
+    category: "severe_profanity",
+    ambiguous: true,
+    // "전등이 꺼져 있어요", "컴퓨터가 꺼져서" 처럼 시설 상태를 설명하는 표현은 정상이다.
+    exceptions: [/[이가은는도]\s*꺼져/, /꺼져\s*(있|서|버|요|도|가|나)/],
+  },
   // --- English profanity (case-insensitive; spaces and punctuation between letters are also caught) ---
   { term: "fuck", category: "severe_profanity" },
   { term: "shit", category: "severe_profanity" },
@@ -69,7 +75,13 @@ const BLOCKED_TERMS: BlockedTerm[] = [
   { term: "느그애미", category: "family_insult" },
   { term: "엄마뒤짐", category: "family_insult" },
   { term: "애미뒤", category: "family_insult" },
-  { term: "니미", category: "family_insult" },
+  {
+    term: "니미",
+    category: "family_insult",
+    ambiguous: true,
+    // 글자 사이 공백을 허용하므로 "있으니 미끄러워요", "언니 미술실" 처럼 단어 경계에 걸린다.
+    exceptions: [/[가-힣]니\s+미/],
+  },
 
   // --- 노골적인 성적 비속어 ---
   { term: "섹스", category: "sexual" },
