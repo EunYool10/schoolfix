@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Header } from "./components/Header";
 import { UserHomeLandingView } from "./components/UserHomeLandingView";
 import {
@@ -72,6 +72,8 @@ export default function App() {
   const [schoolLoading, setSchoolLoading] = useState(true);
   const [schoolError, setSchoolError] = useState("");
   const [reportsTab, setReportsTab] = useState<"MINE" | "ALL">("ALL");
+  const riskRefreshAttempts = useRef(0);
+  const riskRefreshSchoolId = useRef("");
 
   const [reports, setReports] = useState<SchoolReport[]>([]);
   const [myReports, setMyReports] = useState<SchoolReport[]>([]);
@@ -185,12 +187,12 @@ export default function App() {
    */
   useEffect(() => {
     const pending = reports.filter((r) => !r.riskLevel).length;
-    if (pending === 0) return;
+    
 
-    let attempts = 0;
+    if (!selectedSchool || pending === 0) { riskRefreshAttempts.current = 0; riskRefreshSchoolId.current = selectedSchool?.id || ""; return; } if (riskRefreshSchoolId.current !== selectedSchool.id) { riskRefreshSchoolId.current = selectedSchool.id; riskRefreshAttempts.current = 0; } if (riskRefreshAttempts.current >= 10) return;
     const timer = setInterval(() => {
-      attempts += 1;
-      if (attempts > 10) {
+      riskRefreshAttempts.current += 1;
+      if (riskRefreshAttempts.current > 10) {
         clearInterval(timer);
         return;
       }
@@ -199,7 +201,7 @@ export default function App() {
     }, 6000);
 
     return () => clearInterval(timer);
-  }, [reports, fetchReports, fetchMyReports]);
+  }, [reports, fetchReports, fetchMyReports, selectedSchool]);
 
   const refreshAll = useCallback(() => {
     fetchReports(true);
