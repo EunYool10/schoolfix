@@ -9,7 +9,8 @@
 
 import { computeSla, slaLabel } from "./src/utils/sla";
 import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
-import { buildNotificationText, buildWebhookPayload, shouldNotify, type UrgentNotice } from "./notify";
+import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "./notify";
+import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 let passed = 0;
@@ -116,6 +117,72 @@ console.log("\n=== 3) 긴급 신고 알림 ===\n");
   check("Slack 형식은 text", typeof slack.text === "string" && !("content" in slack));
   const generic = buildWebhookPayload("https://hook.example.com/abc", notice);
   check("일반 웹훅은 text·content·report", "text" in generic && "content" in generic && "report" in generic);
+}
+
+console.log("\n=== 3-2) 학교 신청·월간 보고 알림 ===\n");
+{
+  check("Discord 웹훅 인식", webhookChannel("https://discord.com/api/webhooks/1/abc") === "discord");
+  check("Slack 웹훅 인식", webhookChannel("https://hooks.slack.com/services/x") === "slack");
+  check("HTTP 주소는 거부", webhookChannel("http://discord.com/api/webhooks/1/abc") === null);
+  check("빈 값은 null", webhookChannel(undefined) === null && webhookChannel("not a url") === null);
+  const long = buildTextPayload("https://discord.com/api/webhooks/1/abc", "가".repeat(3000));
+  check("Discord 본문은 2000자 제한 안으로 자름", String(long.content).length <= 1900);
+
+  const application = buildApplicationText({
+    schoolName: "새학교고등학교",
+    address: "경기도 광명시",
+    website: "https://new-h.goegm.kr",
+    reason: "우리 학교도 쓰고 싶어요",
+    hasReplyEmail: true,
+    link: "https://schoolfix.example",
+  });
+  check("학교 신청 알림에 학교·주소·사유", application.includes("새학교고등학교") && application.includes("경기도 광명시") && application.includes("우리 학교도"));
+  check("회신 이메일 주소는 싣지 않고 유무만", application.includes("회신 이메일: 있음") && !application.includes("@"));
+
+  const monthly = buildMonthlyText("2026-09", [
+    { schoolName: "가학교", received: 12, completedInMonth: 9, completionRate: 75, avgResolutionHours: 30, completedLate: 1, overdueOpen: 2, topCategory: "시설 고장", topLocation: "화장실" },
+  ], "https://schoolfix.example");
+  check("월간 보고에 월·학교·수치", monthly.includes("2026년 9월") && monthly.includes("가학교") && monthly.includes("접수 12건") && monthly.includes("완료율 75%"));
+  check("평균 처리 30시간 → 1.3일", monthly.includes("평균 처리 1.3일"));
+  check("신고가 없는 달 안내", buildMonthlyText("2026-08", [], null).includes("신고가 없습니다"));
+  const many = buildMonthlyText("2026-09", Array.from({ length: 60 }, (_, i) => ({ schoolName: `학교${i}`, received: 1, completedInMonth: 0, completionRate: 0, avgResolutionHours: null, completedLate: 0, overdueOpen: 0, topCategory: null, topLocation: null })), null);
+  check("학교가 많아도 1900자 안으로 줄임", many.length <= 1900 && many.includes("일부 생략"));
+}
+
+console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\n");
+{
+  // 1x1 투명 PNG
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const base: NewReportNotice = {
+    schoolName: "테스트고", reportId: "REP-20261010-0007", title: "복도 전등", location: "복도 · 본관 2층",
+    category: "시설 고장", riskLevel: "중간", riskScore: 40, description: "가".repeat(2000),
+    held: false, heldReason: null, attachment: { dataUrl: png, name: "사진.png", size: 68 }, link: null,
+  };
+  const discordUrl = "https://discord.com/api/webhooks/1/abc";
+
+  const normal = buildNewReportText(base, false);
+  check("일반 신고는 🆕 + 위험도 + 접수번호", normal.startsWith("🆕 새 신고 [중간 40점] 테스트고") && normal.includes("REP-20261010-0007"));
+  check("일반 신고 내용은 300자로 요약", normal.includes("…") && !normal.includes("가".repeat(301)));
+  check("긴급 신고는 🚨", buildNewReportText({ ...base, riskLevel: "긴급", riskScore: 90 }, false).startsWith("🚨"));
+  check("분석 전 신고 표시", buildNewReportText({ ...base, riskLevel: null, riskScore: null }, false).includes("[분석 전]"));
+  const normalPayload = buildNewReportPayload(discordUrl, base);
+  check("일반 신고는 사진 없이 텍스트로", !(normalPayload instanceof FormData) && typeof (normalPayload as Record<string, unknown>).content === "string");
+
+  const held = { ...base, held: true, heldReason: "부적절한 표현 자동 감지" };
+  const heldText = buildNewReportText(held, true);
+  check("보류 신고는 ⏸️ + 보류 사유 + 검토 안내", heldText.startsWith("⏸️ 공개 보류 신고") && heldText.includes("보류 사유: 부적절한 표현 자동 감지") && heldText.includes("승인하거나 삭제"));
+  check("보류 신고 내용은 1200자까지", heldText.includes("가".repeat(1200)) && !heldText.includes("가".repeat(1201)));
+  const heldPayload = buildNewReportPayload(discordUrl, held);
+  check("Discord 보류 신고는 사진을 multipart 로 첨부", heldPayload instanceof FormData && (heldPayload as FormData).has("files[0]") && (heldPayload as FormData).has("payload_json"));
+  const payloadJson = heldPayload instanceof FormData ? JSON.parse(String(heldPayload.get("payload_json"))) : {};
+  check("첨부 메시지에도 멘션 차단·파일명은 접수번호", JSON.stringify(payloadJson.allowed_mentions) === '{"parse":[]}' && payloadJson.attachments?.[0]?.filename === "REP-20261010-0007.png", payloadJson);
+  check("Slack 은 사진 없이 '운영진 화면에서 확인' 안내", String((buildNewReportPayload("https://hooks.slack.com/services/x", held) as Record<string, unknown>).text).includes("운영진 화면에서 확인"));
+
+  check("PNG 데이터 → 파일 변환", attachmentToFile(base.attachment!, "REP-1")?.blob.type === "image/png");
+  check("이미지가 아닌 data URL 은 거부", attachmentToFile({ dataUrl: "data:text/html;base64,PGgxPg==", name: null, size: null }, "REP-1") === null);
+  const huge = "data:image/jpeg;base64," + "A".repeat(13 * 1024 * 1024);
+  check("9MB 를 넘는 사진은 첨부하지 않음", attachmentToFile({ dataUrl: huge, name: null, size: null }, "REP-1") === null);
+  check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachment: { dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 } }) instanceof FormData));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");

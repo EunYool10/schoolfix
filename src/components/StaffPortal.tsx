@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { BarChart3, Ban, Check, Clock, Download, HandHeart, History, Inbox, Loader2, LockKeyhole, LogOut, Save, School as SchoolIcon, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
+import { BarChart3, Ban, BellRing, Check, Clock, Download, HandHeart, History, Inbox, Loader2, LockKeyhole, LogOut, Save, School as SchoolIcon, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
 import { StaffStatsPanel } from "./StaffStatsPanel";
+import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 
 interface StaffPortalProps {
   schoolId: string;
@@ -44,7 +45,7 @@ interface BlockedDevice {
   createdAt: string;
 }
 
-type Section = "reports" | "stats" | "applications" | "blocked";
+type Section = "reports" | "stats" | "applications" | "blocked" | "notifications";
 
 const ACTOR_LABEL: Record<ReportHistoryEntry["actor"], string> = { staff: "운영진", teacher: "교사", reporter: "신고자", system: "시스템" };
 
@@ -411,12 +412,15 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
         {sectionButton("stats", "월별 통계", BarChart3)}
         {role === "staff" && sectionButton("applications", "학교 신청 메일함", Inbox, schoolApplications.filter((item) => item.status === "new").length)}
         {role === "staff" && sectionButton("blocked", "검토 대상 기기", Ban, blockedDevices.length)}
+        {role === "staff" && sectionButton("notifications", "알림", BellRing)}
       </div>
 
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
 
-      {activeSection === "stats" && <StaffStatsPanel schoolName={schoolName} reports={displayedReports} />}
+      {activeSection === "stats" && <StaffStatsPanel schoolId={schoolId} schoolName={schoolName} reports={displayedReports} canNotify={role === "staff"} />}
+
+      {role === "staff" && activeSection === "notifications" && <NotificationSettingsPanel schoolId={schoolId} schoolName={schoolName} />}
 
       {role === "staff" && activeSection === "blocked" && <div className="space-y-3">
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">장난 신고로 처리한 신고의 접수 기기입니다. 이 기기에서 오는 신고는 막지 않고 <strong>공개 전에 운영진 검토</strong>를 거칩니다. 짧은 시간에 여러 건을 보낸 기기의 신고도 자동으로 검토 대기가 됩니다.</p>
