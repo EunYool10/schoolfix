@@ -81,7 +81,7 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
-import { buildApplicationText, buildMonthlyText, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { buildApplicationText, buildMonthlyText, sendNewReportNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
@@ -430,6 +430,9 @@ let cachedSettings: NotificationSettings[] = [];
 
 /** 운영진 화면 "알림" 탭에서 켜고 끄는 알림 종류와, 월간 보고 중복 발송 방지 기록 */
 interface NotificationSettings {
+  /** 모든 새 신고(공개 보류 포함). 보류 신고는 사유·전체 내용·사진까지 보낸다. */
+  allReports: boolean;
+  /** 긴급 신고. 모든 신고 알림이 꺼져 있을 때와, 접수 뒤 백그라운드 채점에서 긴급으로 판정됐을 때 쓴다. */
   urgent: boolean;
   applications: boolean;
   monthly: boolean;
@@ -437,7 +440,7 @@ interface NotificationSettings {
   lastMonthlyReport: string | null;
 }
 
-const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = { urgent: true, applications: true, monthly: true, lastMonthlyReport: null };
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = { allReports: true, urgent: true, applications: true, monthly: true, lastMonthlyReport: null };
 
 function loadNotificationSettings(): NotificationSettings {
   const list = useSupabaseStore ? cachedSettings : readLocalArray<NotificationSettings>(SETTINGS_FILE, "settings");
@@ -745,6 +748,33 @@ const BACKFILL_MAX_PER_RUN = 20;
 function publicBaseUrl(): string | null {
   const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
   return base && /^https:\/\//i.test(base) ? base : null;
+}
+
+/**
+ * 새 신고 알림. "모든 신고" 알림이 켜져 있으면 공개 보류 신고까지 모두 보내고,
+ * 보류 신고에는 보류 사유·전체 내용·첨부 사진을 싣는다. 꺼져 있으면 기존처럼 긴급 신고만 보낸다.
+ */
+function notifyNewReport(report: StoredReport) {
+  if (!process.env.NOTIFY_WEBHOOK_URL) return;
+  if (!loadNotificationSettings().allReports) {
+    notifyIfUrgent(report);
+    return;
+  }
+  const held = report.moderationStatus === "held";
+  void sendNewReportNotification({
+    schoolName: report.schoolName ?? "",
+    reportId: report.id,
+    title: maskProfanity(report.title ?? "").text || `${report.location} ${report.category}`,
+    location: [report.locationType ?? report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · "),
+    category: report.category,
+    riskLevel: report.riskAnalysis?.risk_level ?? null,
+    riskScore: report.riskAnalysis?.risk_score ?? null,
+    description: maskProfanity(report.description).text,
+    held,
+    heldReason: held ? report.moderationReason ?? null : null,
+    attachment: report.attachmentUrl ? { dataUrl: report.attachmentUrl, name: report.attachmentName ?? null, size: report.attachmentSize ?? null } : null,
+    link: publicBaseUrl(),
+  });
 }
 
 function notifyIfUrgent(report: StoredReport) {
@@ -1232,6 +1262,7 @@ app.get("/api/staff/notifications", (req, res) => {
       channel: webhookChannel(process.env.NOTIFY_WEBHOOK_URL),
       minRisk: ["긴급", "높음", "중간", "낮음"].includes(process.env.NOTIFY_MIN_RISK || "") ? process.env.NOTIFY_MIN_RISK : "긴급",
       linkConfigured: Boolean(publicBaseUrl()),
+      allReports: settings.allReports,
       urgent: settings.urgent,
       applications: settings.applications,
       monthly: settings.monthly,
@@ -1244,7 +1275,7 @@ app.patch("/api/staff/notifications", async (req, res) => {
   if (!requireStaff(req, res)) return;
   const body = req.body || {};
   const next = { ...loadNotificationSettings() };
-  for (const key of ["urgent", "applications", "monthly"] as const) {
+  for (const key of ["allReports", "urgent", "applications", "monthly"] as const) {
     if (typeof body[key] === "boolean") next[key] = body[key];
   }
   try {
@@ -1817,7 +1848,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
     if (clarity.session) dropClarifySession(clarity.session.id);
 
-    notifyIfUrgent(newReport);
+    notifyNewReport(newReport);
 
     return res.status(201).json({
       ok: true,

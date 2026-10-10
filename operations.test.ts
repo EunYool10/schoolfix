@@ -9,6 +9,7 @@
 
 import { computeSla, slaLabel } from "./src/utils/sla";
 import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
+import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "./notify";
 import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
@@ -146,6 +147,42 @@ console.log("\n=== 3-2) 학교 신청·월간 보고 알림 ===\n");
   check("신고가 없는 달 안내", buildMonthlyText("2026-08", [], null).includes("신고가 없습니다"));
   const many = buildMonthlyText("2026-09", Array.from({ length: 60 }, (_, i) => ({ schoolName: `학교${i}`, received: 1, completedInMonth: 0, completionRate: 0, avgResolutionHours: null, completedLate: 0, overdueOpen: 0, topCategory: null, topLocation: null })), null);
   check("학교가 많아도 1900자 안으로 줄임", many.length <= 1900 && many.includes("일부 생략"));
+}
+
+console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\n");
+{
+  // 1x1 투명 PNG
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const base: NewReportNotice = {
+    schoolName: "테스트고", reportId: "REP-20261010-0007", title: "복도 전등", location: "복도 · 본관 2층",
+    category: "시설 고장", riskLevel: "중간", riskScore: 40, description: "가".repeat(2000),
+    held: false, heldReason: null, attachment: { dataUrl: png, name: "사진.png", size: 68 }, link: null,
+  };
+  const discordUrl = "https://discord.com/api/webhooks/1/abc";
+
+  const normal = buildNewReportText(base, false);
+  check("일반 신고는 🆕 + 위험도 + 접수번호", normal.startsWith("🆕 새 신고 [중간 40점] 테스트고") && normal.includes("REP-20261010-0007"));
+  check("일반 신고 내용은 300자로 요약", normal.includes("…") && !normal.includes("가".repeat(301)));
+  check("긴급 신고는 🚨", buildNewReportText({ ...base, riskLevel: "긴급", riskScore: 90 }, false).startsWith("🚨"));
+  check("분석 전 신고 표시", buildNewReportText({ ...base, riskLevel: null, riskScore: null }, false).includes("[분석 전]"));
+  const normalPayload = buildNewReportPayload(discordUrl, base);
+  check("일반 신고는 사진 없이 텍스트로", !(normalPayload instanceof FormData) && typeof (normalPayload as Record<string, unknown>).content === "string");
+
+  const held = { ...base, held: true, heldReason: "부적절한 표현 자동 감지" };
+  const heldText = buildNewReportText(held, true);
+  check("보류 신고는 ⏸️ + 보류 사유 + 검토 안내", heldText.startsWith("⏸️ 공개 보류 신고") && heldText.includes("보류 사유: 부적절한 표현 자동 감지") && heldText.includes("승인하거나 삭제"));
+  check("보류 신고 내용은 1200자까지", heldText.includes("가".repeat(1200)) && !heldText.includes("가".repeat(1201)));
+  const heldPayload = buildNewReportPayload(discordUrl, held);
+  check("Discord 보류 신고는 사진을 multipart 로 첨부", heldPayload instanceof FormData && (heldPayload as FormData).has("files[0]") && (heldPayload as FormData).has("payload_json"));
+  const payloadJson = heldPayload instanceof FormData ? JSON.parse(String(heldPayload.get("payload_json"))) : {};
+  check("첨부 메시지에도 멘션 차단·파일명은 접수번호", JSON.stringify(payloadJson.allowed_mentions) === '{"parse":[]}' && payloadJson.attachments?.[0]?.filename === "REP-20261010-0007.png", payloadJson);
+  check("Slack 은 사진 없이 '운영진 화면에서 확인' 안내", String((buildNewReportPayload("https://hooks.slack.com/services/x", held) as Record<string, unknown>).text).includes("운영진 화면에서 확인"));
+
+  check("PNG 데이터 → 파일 변환", attachmentToFile(base.attachment!, "REP-1")?.blob.type === "image/png");
+  check("이미지가 아닌 data URL 은 거부", attachmentToFile({ dataUrl: "data:text/html;base64,PGgxPg==", name: null, size: null }, "REP-1") === null);
+  const huge = "data:image/jpeg;base64," + "A".repeat(13 * 1024 * 1024);
+  check("9MB 를 넘는 사진은 첨부하지 않음", attachmentToFile({ dataUrl: huge, name: null, size: null }, "REP-1") === null);
+  check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachment: { dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 } }) instanceof FormData));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");

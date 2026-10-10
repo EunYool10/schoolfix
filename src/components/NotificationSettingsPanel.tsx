@@ -6,11 +6,14 @@ interface NotificationState {
   channel: "discord" | "slack" | "webhook" | null;
   minRisk: string;
   linkConfigured: boolean;
+  allReports: boolean;
   urgent: boolean;
   applications: boolean;
   monthly: boolean;
   lastMonthlyReport: string | null;
 }
+
+type ToggleKey = "allReports" | "urgent" | "applications" | "monthly";
 
 const CHANNEL_LABEL: Record<NonNullable<NotificationState["channel"]>, string> = {
   discord: "Discord",
@@ -69,7 +72,7 @@ export function NotificationSettingsPanel({ schoolId, schoolName }: Props) {
     }
   };
 
-  const toggle = async (key: "urgent" | "applications" | "monthly", value: boolean) => {
+  const toggle = async (key: ToggleKey, value: boolean) => {
     if (!state) return;
     const previous = state;
     setState({ ...state, [key]: value });
@@ -91,8 +94,9 @@ export function NotificationSettingsPanel({ schoolId, schoolName }: Props) {
   }
 
   const connected = state.channel !== null;
-  const items: { key: "urgent" | "applications" | "monthly"; title: string; description: string }[] = [
-    { key: "urgent", title: "긴급 신고 알림", description: `위험도 "${state.minRisk}" 이상인 신고가 접수되면 바로 알립니다. 기준은 NOTIFY_MIN_RISK 환경변수로 바꿀 수 있습니다.` },
+  const items: { key: ToggleKey; title: string; description: string }[] = [
+    { key: "allReports", title: "모든 신고 알림 (공개 보류 포함)", description: "새 신고가 접수될 때마다 알립니다. 공개 보류 신고는 보류 사유, 전체 내용, 첨부 사진까지 함께 보냅니다(사진은 Discord만). 보류 사진은 부적절할 수 있으니 운영진 전용 비공개 채널을 쓰세요." },
+    { key: "urgent", title: "긴급 신고 알림", description: `위험도 "${state.minRisk}" 이상인 신고를 알립니다. 위 "모든 신고 알림"이 꺼져 있을 때와, 접수 뒤 위험도 분석에서 늦게 긴급으로 판정됐을 때 보냅니다.` },
     { key: "applications", title: "학교 신청 메일함 알림", description: "새 학교 추가 신청이 들어오면 알립니다. 회신 이메일은 개인정보라 메시지에 넣지 않습니다." },
     { key: "monthly", title: "월간 보고 자동 발송", description: "매달 1일 오전 9시 이후(한국 시간) 지난달 학교별 통계를 한 번 보냅니다. 서버가 잠들어 있었다면 깨어날 때 보냅니다." },
   ];
