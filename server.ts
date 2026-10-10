@@ -81,7 +81,7 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
-import { buildApplicationText, buildMonthlyText, lastNotifyResult, sendNewReportNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
@@ -854,7 +854,7 @@ async function maybeSendMonthlyReport(now = Date.now()) {
 
   monthlyInFlight = true;
   try {
-    const sent = await sendText(buildMonthlyText(target, summarizeMonth(target), publicBaseUrl()), process.env, "월간 보고");
+    const sent = await sendMonthlyNotification(target, summarizeMonth(target), publicBaseUrl());
     if (!sent) return;
     monthlySentInProcess = target;
     await saveNotificationSettings({ ...loadNotificationSettings(), lastMonthlyReport: target }).catch((err) => {
@@ -1013,14 +1013,14 @@ app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 
   }
   if (loadNotificationSettings().applications) {
     // 응답을 기다리지 않는다. 알림 실패가 신청 접수를 막지 않는다.
-    void sendText(buildApplicationText({
+    void sendApplicationNotification({
       schoolName: maskProfanity(schoolName).text,
       address: maskProfanity(address).text,
       website,
       reason: maskProfanity(reason).text,
       hasReplyEmail: Boolean(replyEmail),
       link: publicBaseUrl(),
-    }), process.env, "학교 신청 알림");
+    });
   }
   return res.status(201).json({ ok: true, data: { id: application.id, createdAt: application.createdAt } });
 });
@@ -1295,7 +1295,7 @@ app.patch("/api/staff/notifications", async (req, res) => {
 app.post("/api/staff/notifications/test", rateLimit("notifyTest", { windowMs: 10 * 60 * 1000, max: 5, message: "테스트 알림은 10분에 5번까지 보낼 수 있습니다." }), async (req, res) => {
   if (!requireStaff(req, res)) return;
   if (!webhookChannel(process.env.NOTIFY_WEBHOOK_URL)) return safeError(res, 400, "NOTIFY_WEBHOOK_URL 환경변수가 설정되지 않았습니다.");
-  const sent = await sendText("✅ SchoolFix 알림 연결 테스트입니다. 이 메시지가 보이면 긴급 신고·학교 신청·월간 보고 알림을 받을 수 있습니다.", process.env, "테스트 알림");
+  const sent = await sendTestNotification();
   if (sent) return res.json({ ok: true });
   const reason = lastNotifyResult()?.error;
   return safeError(res, 502, `알림을 보내지 못했습니다${reason ? ` (${reason})` : ""}. 웹훅 주소가 올바른지, 디스코드에서 웹훅이 삭제되지 않았는지 확인해주세요.`);
@@ -1309,7 +1309,7 @@ app.post("/api/staff/notifications/monthly", rateLimit("notifyMonthly", { window
   if (!month) return safeError(res, 400, "보낼 달을 확인해주세요.");
   const school = req.body?.schoolId ? findSchool(req.body.schoolId) : undefined;
   if (req.body?.schoolId && !school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-  const sent = await sendText(buildMonthlyText(month, summarizeMonth(month, school?.id), publicBaseUrl()), process.env, "월간 보고");
+  const sent = await sendMonthlyNotification(month, summarizeMonth(month, school?.id), publicBaseUrl());
   return sent ? res.json({ ok: true }) : safeError(res, 502, "알림을 보내지 못했습니다. 웹훅 주소를 확인해주세요.");
 });
 
