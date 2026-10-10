@@ -111,6 +111,7 @@ STAFF_PASSWORD_HASH="$2b$12$..."
 | `OPENAI_API_KEY` | AI 기능 사용 시 | 위험도 분석 + AI 요약 |
 | `ADMIN_PASSWORD_HASH` | 삭제 기능 사용 시 | bcrypt 해시. 없으면 삭제가 503 |
 | `STAFF_PASSWORD_HASH` | 운영진 기능 사용 시 | 운영진 로그인용 bcrypt 해시. 없으면 로그인 기능 비활성화 |
+| `SCHOOL_TEACHER_PASSWORD_HASHES` | 교사 로그인 사용 시 | 학교 ID별 비밀번호 bcrypt 해시를 담은 JSON 객체 |
 | `DATA_DIR` | 선택 | JSON 저장 경로. 영구 디스크용 |
 | `ALLOWED_ORIGINS` | 선택 | 교차 출처 허용 도메인 |
 | `PORT` | 선택 | 기본 3000. 호스팅이 자동 주입 |
@@ -178,10 +179,11 @@ data/                          JSON 저장소 (git 제외)
 | POST | `/api/reports` | 공개 | 신고 등록 (소유 토큰 발급). 내용이 애매하면 `422`와 함께 질문을 반환하고 저장하지 않음 |
 | POST | `/api/reports/mine` | 공개 | 소유 토큰으로 내 신고 조회 |
 | POST | `/api/ai/summary` | 공개 | 요청 본문 `schoolId`에 해당하는 학교 AI 요약 (Rate Limit + 캐시) |
-| GET | `/api/staff/session` | 공개 | 운영진 로그인 상태 확인 |
+| GET | `/api/staff/session` | 공개 | 운영진 또는 교사 로그인 상태 확인 |
 | POST | `/api/staff/login` | 비밀번호 | 운영진 로그인 (HttpOnly 세션 쿠키, 8시간) |
+| POST | `/api/staff/teacher-login` | 학교 ID + 학교 비밀번호 | 학교별 교사 세션 발급 (HttpOnly, 8시간) |
 | POST | `/api/staff/logout` | 세션 | 로그아웃 및 세션 폐기 |
-| PATCH | `/api/staff/reports/:id` | 운영진 세션 | 신고 상태·담당자·처리 메모 변경 |
+| PATCH | `/api/staff/reports/:id` | 운영진 또는 대상 학교 교사 세션 | 신고 상태·담당자·처리 메모 변경. 교사는 소속 학교 신고만 수정 가능 |
 | POST | `/api/admin/verify-delete` | 비밀번호 | 삭제 토큰 발급 |
 | DELETE | `/api/reports/:id` | 삭제 토큰 | Soft Delete |
 
@@ -213,6 +215,8 @@ node -e "console.log(require('bcryptjs').hashSync('운영진비밀번호', 12))"
 ```
 
 STAFF 비밀번호는 운영진 전체가 공유하는 단일 비밀번호입니다. 로그인 세션은 서버 메모리에 보관되며 8시간 뒤 만료됩니다. 서버가 재시작되면 기존 세션은 모두 로그아웃됩니다.
+
+교사 비밀번호는 학교별로 별도 발급합니다. `schools.seed.json`의 학교 `id`를 키로 하는 JSON 객체에 bcrypt 해시를 등록하세요. 예: `{"cem-h":"$2b$12$..."}`. Render 환경 변수 `SCHOOL_TEACHER_PASSWORD_HASHES`에 등록하기 전까지 해당 학교 교사 로그인은 비활성화됩니다. 교사는 소속 학교 신고의 상태·담당자·처리 메모만 관리하며, 운영진 검토 대기열과 학교 신청 메일함은 이용할 수 없습니다.
 
 배포 후 `https://<주소>/api/health`가 `{"status":"ok"}`를 반환하면 정상입니다.
 

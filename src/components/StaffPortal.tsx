@@ -5,6 +5,7 @@ import { RISK_LEVEL_MAP, STATUS_MAP, type SchoolReport } from "../types";
 
 interface StaffPortalProps {
   schoolId: string;
+  schoolName: string;
   reports: SchoolReport[];
   onRefresh: () => void;
 }
@@ -21,8 +22,10 @@ interface SchoolApplication {
   createdAt: string;
 }
 
-export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) {
+export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffPortalProps) {
   const [authenticated, setAuthenticated] = useState(false);
+  const [role, setRole] = useState<"staff" | "teacher">("staff");
+  const [loginRole, setLoginRole] = useState<"staff" | "teacher">("staff");
   const [checking, setChecking] = useState(true);
   const [password, setPassword] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -84,9 +87,12 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
 
   useEffect(() => {
     fetch("/api/staff/session").then((res) => res.json()).then((json) => {
-      setAuthenticated(Boolean(json.authenticated));
+      const sessionRole = json.role === "teacher" ? "teacher" : "staff";
+      setRole(sessionRole);
+      setLoginRole(sessionRole);
+      setAuthenticated(Boolean(json.authenticated) && (sessionRole === "staff" || json.schoolId === schoolId));
     }).catch(() => setError("로그인 상태를 확인하지 못했습니다.")).finally(() => setChecking(false));
-  }, []);
+  }, [schoolId]);
 
   const refreshHeld = async () => {
     try {
@@ -96,7 +102,7 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
     } catch { /* keep existing queue */ }
   };
 
-  useEffect(() => { if (authenticated) void refreshHeld(); }, [authenticated, schoolId]);
+  useEffect(() => { if (authenticated && role === "staff") void refreshHeld(); }, [authenticated, role, schoolId]);
 
   const refreshApplications = async () => {
     try {
@@ -106,7 +112,7 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
     } catch { /* keep the last loaded inbox */ }
   };
 
-  useEffect(() => { if (authenticated) void refreshApplications(); }, [authenticated]);
+  useEffect(() => { if (authenticated && role === "staff") void refreshApplications(); }, [authenticated, role]);
 
   const updateApplicationStatus = async (application: SchoolApplication) => {
     const action = application.status === "new" ? "mark-reviewed" : "mark-new";
@@ -151,13 +157,21 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
     setError("");
     setNotice("");
     try {
-      const res = await fetch("/api/staff/login", {
+      await fetch("/api/staff/logout", { method: "POST" });
+      const nextRole = loginRole;
+      const res = await fetch(nextRole === "teacher" ? "/api/staff/teacher-login" : "/api/staff/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(nextRole === "teacher" ? { password, schoolId } : { password }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "로그인하지 못했습니다.");
       setPassword("");
+      setRole(nextRole);
+      if (nextRole === "teacher") {
+        setHeldReports([]);
+        setSchoolApplications([]);
+        setActiveSection("reports");
+      }
       setAuthenticated(true);
       onRefresh();
     } catch (err) {
@@ -168,6 +182,7 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
   const logout = async () => {
     await fetch("/api/staff/logout", { method: "POST" });
     setAuthenticated(false);
+    setLoginRole(role);
   };
 
   const saveReport = async (event: FormEvent<HTMLFormElement>, report: SchoolReport) => {
@@ -201,8 +216,9 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
   if (!authenticated) return (
     <section className="sf-staff-login mx-auto max-w-md rounded-[1.75rem] border border-white bg-white/95 p-6 shadow-sm sm:p-9">
       <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><LockKeyhole /></div>
-      <h1 className="text-xl font-bold text-slate-900">운영진 로그인</h1>
-      <p className="mt-2 text-sm leading-relaxed text-slate-600">운영진 계정으로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다.</p>
+      <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => { setLoginRole("staff"); setError(""); }} aria-pressed={loginRole === "staff"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "staff" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}>운영진</button><button type="button" onClick={() => { setLoginRole("teacher"); setError(""); }} aria-pressed={loginRole === "teacher"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "teacher" ? "bg-white text-blue-800 shadow-sm" : "text-slate-600"}`}>교사 전용</button></div>
+      <h1 className="text-xl font-bold text-slate-900">{loginRole === "teacher" ? "교사 로그인" : "운영진 로그인"}</h1>
+      <p className="mt-2 text-sm leading-relaxed text-slate-600">{loginRole === "teacher" ? <><strong>{schoolName}</strong>의 학교별 비밀번호로 로그인합니다. 소속 학교 신고만 관리할 수 있습니다.</> : "운영진 계정으로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다."}</p>
       <form className="mt-6 space-y-4" onSubmit={login}>
         <label className="block text-sm font-semibold text-slate-700" htmlFor="staff-password">비밀번호</label>
         <input id="staff-password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3.5 py-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
@@ -215,11 +231,11 @@ export function StaffPortal({ schoolId, reports, onRefresh }: StaffPortalProps) 
   return (
     <section className="sf-staff-portal space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:p-5">
-        <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">운영진 신고 관리</h1><p className="text-sm text-slate-600">신고 상태, 담당자, 처리 메모를 관리합니다.</p></div></div>
+        <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">{role === "teacher" ? `${schoolName} 교사 신고 관리` : "운영진 신고 관리"}</h1><p className="text-sm text-slate-600">{role === "teacher" ? "소속 학교의 신고 상태, 담당자, 처리 메모를 관리합니다." : "신고 상태, 담당자, 처리 메모를 관리합니다."}</p></div></div>
         <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
       </div>
-      <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveSection("reports")} aria-pressed={activeSection === "reports"} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "reports" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>신고 관리</button><button type="button" onClick={() => { setActiveSection("applications"); void refreshApplications(); }} aria-pressed={activeSection === "applications"} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "applications" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-700"}`}><Inbox className="h-4 w-4" />학교 신청 메일함<span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === "applications" ? "bg-white/20 text-white" : "bg-blue-50 text-blue-800"}`}>{schoolApplications.filter((item) => item.status === "new").length}</span></button></div>
-      {activeSection === "applications" ? <div className="space-y-3">
+      {role === "staff" && <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setActiveSection("reports")} aria-pressed={activeSection === "reports"} className={`rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "reports" ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>신고 관리</button><button type="button" onClick={() => { setActiveSection("applications"); void refreshApplications(); }} aria-pressed={activeSection === "applications"} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === "applications" ? "bg-blue-700 text-white" : "border border-slate-200 bg-white text-slate-700"}`}><Inbox className="h-4 w-4" />학교 신청 메일함<span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === "applications" ? "bg-white/20 text-white" : "bg-blue-50 text-blue-800"}`}>{schoolApplications.filter((item) => item.status === "new").length}</span></button></div>}
+      {role === "staff" && activeSection === "applications" ? <div className="space-y-3">
         {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
         {schoolApplications.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">접수된 학교 추가 신청이 없습니다.</p> : schoolApplications.map((application) => <article key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{application.schoolName}</h2><span className={`rounded-full px-2 py-1 text-xs font-bold ${application.status === "new" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{application.status === "new" ? "새 신청" : "확인 완료"}</span></div><p className="mt-1 text-xs text-slate-500">{application.id} · {new Date(application.createdAt).toLocaleString("ko-KR")}</p></div><div className="flex gap-2"><button type="button" onClick={() => void updateApplicationStatus(application)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700">{application.status === "new" ? "확인 완료로 표시" : "새 신청으로 표시"}</button><button type="button" onClick={() => void deleteApplication(application)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">삭제</button></div></div>
