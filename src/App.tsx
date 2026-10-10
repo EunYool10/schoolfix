@@ -27,6 +27,7 @@ import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, Sh
  * userId 를 임의로 만들지 않으며(§9), 브라우저에는 원본 토큰만, 서버 DB 에는 해시만 존재한다.
  */
 import { getDeviceToken, loadOwnerTokens, saveOwnerToken } from "./utils/clientTokens";
+import { changesSince, loadSeen, markSeen, rememberNew, type UpdateKind } from "./utils/reportUpdates";
 
 type View = "SCHOOL_SELECT" | "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
 
@@ -279,6 +280,35 @@ export default function App() {
 
   const myReportsById = useMemo(() => new Map(myReports.map((r) => [r.id, r])), [myReports]);
 
+  /**
+   * 내 신고 새 소식 — 마지막으로 열어 본 뒤 상태가 바뀌었거나 학교 답변이 달린 신고.
+   * 무엇을 봤는지는 이 브라우저에만 기억한다(utils/reportUpdates).
+   */
+  const [seenVersion, setSeenVersion] = useState(0);
+  useEffect(() => {
+    if (rememberNew(myReports)) setSeenVersion((v) => v + 1);
+  }, [myReports]);
+  const myUpdates = useMemo(() => {
+    void seenVersion;
+    const seen = loadSeen();
+    const updates = new Map<string, UpdateKind[]>();
+    for (const r of myReports) {
+      const kinds = changesSince(seen[r.id], r);
+      if (kinds.length) updates.set(r.id, kinds);
+    }
+    return updates;
+  }, [myReports, seenVersion]);
+
+  /** 신고 상세 열기. 내 신고라면 새 소식을 확인한 것으로 기억한다. */
+  const openReport = (report: SchoolReport) => {
+    setDetailReport(report);
+    const mine = myReportsById.get(report.id);
+    if (mine) {
+      markSeen(mine);
+      setSeenVersion((v) => v + 1);
+    }
+  };
+
   // 전체 목록에도 "내 신고" 표시를 붙여 준다.
   // 내 신고에만 있는 정보(학교 답변·만족도 응답)도 함께 보이도록 내 신고 쪽 데이터로 바꿔 끼운다.
   const allReportsMarked = useMemo(
@@ -292,10 +322,15 @@ export default function App() {
   /** 상세 창에서 공감·만족도 응답으로 신고가 바뀌었을 때 */
   const handleReportUpdated = (updated: SchoolReport) => {
     setDetailReport(updated);
+    // 내가 보낸 만족도 응답으로 상태가 바뀐 것은 새 소식이 아니다.
+    if (updated.isMine) {
+      markSeen(updated);
+      setSeenVersion((v) => v + 1);
+    }
     refreshAll();
   };
 
-  const navButton = (target: View, label: string, Icon: typeof Home) => {
+  const navButton = (target: View, label: string, Icon: typeof Home, badge = 0) => {
     const active = view === target;
     return (
       <button
@@ -309,6 +344,11 @@ export default function App() {
       >
         <Icon className="h-4 w-4" />
         <span>{label}</span>
+        {badge > 0 && (
+          <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white" aria-label={`내 신고 새 소식 ${badge}건`}>
+            {badge}
+          </span>
+        )}
       </button>
     );
   };
@@ -347,7 +387,7 @@ export default function App() {
             <nav aria-label="주요 메뉴" className="sf-main-nav flex flex-wrap items-center gap-2 p-0.5 print:hidden">
               {navButton("HOME", "메인 홈", Home)}
               {navButton("NEW_REPORT", "신고하기", PlusCircle)}
-              {navButton("REPORTS", "신고 목록", ListFilter)}
+              {navButton("REPORTS", "신고 목록", ListFilter, myUpdates.size)}
               {navButton("STAFF", "운영진", UsersRound)}
             </nav>
 
@@ -356,7 +396,7 @@ export default function App() {
                 reports={allReportsMarked}
                 onNavigateNewReport={() => setView("NEW_REPORT")}
                 onNavigateReports={(tab) => { setReportsTab(tab ?? "ALL"); setView("REPORTS"); }}
-                onOpenReportDetail={(r) => setDetailReport(r)}
+                onOpenReportDetail={openReport}
               />
             )}
 
@@ -373,6 +413,9 @@ export default function App() {
                     isSubmitting={isSubmitting}
                     onSuccessNavToMyReports={() => setView("REPORTS")}
                     onDirtyChange={setIsFormDirty}
+                    existingReports={allReportsMarked}
+                    onOpenReport={openReport}
+                    onReportsChanged={refreshAll}
                   />
                 </section>
 
@@ -408,9 +451,10 @@ export default function App() {
                 isLoading={isLoading}
                 onRefresh={refreshAll}
                 isRefreshing={isRefreshing}
-                onOpenReport={(r) => setDetailReport(r)}
+                onOpenReport={openReport}
                 onNavigateNewReport={() => setView("NEW_REPORT")}
                 initialTab={reportsTab}
+                updates={myUpdates}
               />
             )}
             {view === "STAFF" && (

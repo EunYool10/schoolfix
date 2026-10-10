@@ -250,19 +250,37 @@ export interface NewReportNotice {
   description: string;
   held: boolean;
   heldReason: string | null;
-  attachment: ReportAttachment | null;
+  /** 첨부 사진 (여러 장). 공개 보류 신고만 실제 파일을 올린다. */
+  attachments: ReportAttachment[];
   link: string | null;
 }
 
-/** Discord 웹훅 첨부 한도(10MB)보다 여유 있게 잡는다. 넘으면 사진 없이 보낸다. */
+/** Discord 웹훅 첨부 한도(메시지당 10MB)보다 여유 있게 잡는다. 사진들을 합친 크기 기준이다. */
 const MAX_ATTACHMENT_BYTES = 9 * 1024 * 1024;
+/** Discord 는 메시지 하나에 파일 10개까지 받는다. */
+const MAX_ATTACHMENT_FILES = 10;
+
+function totalSize(list: ReportAttachment[]): number | null {
+  const sizes = list.map((a) => a.size).filter((s): s is number => typeof s === "number" && s > 0);
+  return sizes.length ? sizes.reduce((sum, s) => sum + s, 0) : null;
+}
+
+/** "사진 3장 (1.2MB) — 아래 사진" 같은 첨부 안내. includedCount 는 실제로 함께 올린 장수 */
+function attachmentLine(n: NewReportNotice, includedCount: number): string {
+  const count = n.attachments.length;
+  const head = count === 1 ? clip(n.attachments[0].name || "첨부 사진", 80) : `사진 ${count}장`;
+  const where = includedCount === 0
+    ? "운영진 화면에서 확인"
+    : includedCount < count ? `아래 ${includedCount}장, 나머지는 운영진 화면에서 확인` : "아래 사진";
+  return `${head}${sizeLabel(totalSize(n.attachments))} — ${where}`;
+}
 
 function sizeLabel(bytes: number | null): string {
   if (!bytes) return "";
   return bytes < 1024 * 1024 ? ` (${Math.round(bytes / 1024)}KB)` : ` (${(bytes / 1024 / 1024).toFixed(1)}MB)`;
 }
 
-export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boolean): string {
+export function buildNewReportText(n: NewReportNotice, includedCount: number): string {
   const risk = n.riskLevel ? `${n.riskLevel}${n.riskScore !== null ? ` ${n.riskScore}점` : ""}` : "분석 전";
   const urgent = n.riskLevel === "긴급";
   const head = n.held
@@ -273,14 +291,7 @@ export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boole
   lines.push(`위치: ${n.location}`, `분류: ${n.category}`, `제목: ${clip(n.title, 100)}`);
   // 보류 신고는 운영진이 디스코드에서 바로 판단할 수 있도록 내용을 길게 싣는다.
   lines.push(`내용: ${clip(n.description, n.held ? 1200 : 300)}`);
-  if (n.attachment) {
-    const name = clip(n.attachment.name || "첨부 사진", 80);
-    lines.push(
-      attachmentIncluded
-        ? `첨부: ${name}${sizeLabel(n.attachment.size)} — 아래 사진`
-        : `첨부: ${name}${sizeLabel(n.attachment.size)} — 운영진 화면에서 확인`
-    );
-  }
+  if (n.attachments.length) lines.push(`첨부: ${attachmentLine(n, includedCount)}`);
   lines.push(`접수번호: ${n.reportId}`);
   if (n.held) lines.push("운영진 화면 → 신고 관리에서 승인하거나 삭제할 수 있습니다.");
   if (n.link) lines.push(n.link);
@@ -288,7 +299,7 @@ export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boole
 }
 
 /** data URL → 파일. 형식이 맞지 않거나 너무 크면 null */
-export function attachmentToFile(attachment: ReportAttachment, reportId: string): { blob: Blob; filename: string } | null {
+export function attachmentToFile(attachment: ReportAttachment, reportId: string, index = 0): { blob: Blob; filename: string } | null {
   const match = /^data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(attachment.dataUrl);
   if (!match) return null;
   const bytes = Buffer.from(match[2], "base64");
@@ -296,7 +307,8 @@ export function attachmentToFile(attachment: ReportAttachment, reportId: string)
   const ext = match[1] === "jpeg" ? "jpg" : match[1];
   const type = `image/${match[1] === "jpg" ? "jpeg" : match[1]}`;
   // 파일 이름은 접수번호로 정한다. 사용자가 올린 원래 이름은 본문에만 쓴다.
-  return { blob: new Blob([bytes], { type }), filename: `${reportId.replace(/[^A-Za-z0-9-]/g, "")}.${ext}` };
+  const base = reportId.replace(/[^A-Za-z0-9-]/g, "");
+  return { blob: new Blob([bytes], { type }), filename: `${index > 0 ? `${base}-${index + 1}` : base}.${ext}` };
 }
 
 /** 푸시 알림 미리보기에 뜨는 한 줄 */
@@ -310,7 +322,7 @@ export function newReportHeadline(n: NewReportNotice): string {
  * 색상은 보류면 황색, 아니면 위험도별(긴급 빨강 · 높음 주황 · 중간 노랑 · 낮음 회색).
  * @param imageFilename 함께 올리는 사진 파일 이름. 있으면 카드 안에 크게 보여 준다.
  */
-export function buildNewReportEmbed(n: NewReportNotice, imageFilename: string | null): DiscordEmbed {
+export function buildNewReportEmbed(n: NewReportNotice, imageFilename: string | null, includedCount = imageFilename ? 1 : 0): DiscordEmbed {
   const urgent = n.riskLevel === "긴급";
   const fields: DiscordEmbedField[] = [];
   if (n.held) fields.push(embedField("🛑 보류 사유", escapeMarkdown(n.heldReason || "자동 검사에서 검토 대상으로 분류"), false));
@@ -320,10 +332,7 @@ export function buildNewReportEmbed(n: NewReportNotice, imageFilename: string | 
     embedField("⚠️ 위험도", riskLabel(n.riskLevel, n.riskScore)),
     embedField("🔖 접수번호", `\`${n.reportId.replace(/`/g, "")}\``)
   );
-  if (n.attachment) {
-    const name = escapeMarkdown(clip(n.attachment.name || "첨부 사진", 80));
-    fields.push(embedField("📎 첨부", imageFilename ? `${name}${sizeLabel(n.attachment.size)} — 아래 사진` : `${name}${sizeLabel(n.attachment.size)} — 운영진 화면에서 확인`, false));
-  }
+  if (n.attachments.length) fields.push(embedField("📎 첨부", escapeMarkdown(attachmentLine(n, includedCount)), false));
   if (n.held) fields.push(embedField("👉 처리", "운영진 화면 → 신고 관리에서 승인하거나 삭제할 수 있습니다.", false));
 
   return {
@@ -346,13 +355,24 @@ export function buildNewReportEmbed(n: NewReportNotice, imageFilename: string | 
  */
 export function buildNewReportPayload(url: string, n: NewReportNotice): Record<string, unknown> | FormData {
   const channel = webhookChannel(url);
-  if (channel !== "discord") return buildTextPayload(url, buildNewReportText(n, false));
-  const file = n.held && n.attachment ? attachmentToFile(n.attachment, n.reportId) : null;
-  const payload = discordPayload(newReportHeadline(n), [buildNewReportEmbed(n, file?.filename ?? null)]);
-  if (!file) return payload;
+  if (channel !== "discord") return buildTextPayload(url, buildNewReportText(n, 0));
+  // 보류 신고만 사진 파일을 올린다. 합친 크기와 개수가 Discord 한도를 넘지 않는 만큼만 싣는다.
+  const files: Array<{ blob: Blob; filename: string }> = [];
+  if (n.held) {
+    let bytes = 0;
+    n.attachments.forEach((attachment, index) => {
+      if (files.length >= MAX_ATTACHMENT_FILES) return;
+      const file = attachmentToFile(attachment, n.reportId, index);
+      if (!file || bytes + file.blob.size > MAX_ATTACHMENT_BYTES) return;
+      bytes += file.blob.size;
+      files.push(file);
+    });
+  }
+  const payload = discordPayload(newReportHeadline(n), [buildNewReportEmbed(n, files[0]?.filename ?? null, files.length)]);
+  if (files.length === 0) return payload;
   const form = new FormData();
-  form.append("payload_json", JSON.stringify({ ...payload, attachments: [{ id: 0, filename: file.filename }] }));
-  form.append("files[0]", file.blob, file.filename);
+  form.append("payload_json", JSON.stringify({ ...payload, attachments: files.map((file, id) => ({ id, filename: file.filename })) }));
+  files.forEach((file, id) => form.append(`files[${id}]`, file.blob, file.filename));
   return form;
 }
 
@@ -504,7 +524,7 @@ export function buildWebhookPayload(url: string, n: UrgentNotice): Record<string
   const channel = webhookChannel(url);
   if (channel === "discord") {
     // 접수 뒤 위험도 분석에서 긴급으로 판정된 신고 — 새 신고와 같은 카드 모양으로 보낸다.
-    const notice: NewReportNotice = { ...n, held: n.held, heldReason: null, attachment: null };
+    const notice: NewReportNotice = { ...n, held: n.held, heldReason: null, attachments: [] };
     return discordPayload(`🚨 긴급 신고 · ${n.schoolName}`, [{ ...buildNewReportEmbed(notice, null), title: "🚨 긴급 신고 (위험도 분석 결과)" }]);
   }
   if (channel === "slack") return buildTextPayload(url, text);

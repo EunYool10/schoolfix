@@ -45,7 +45,7 @@ export function ReportEngagement({ report, schoolId, onReportUpdated }: Props) {
   );
 }
 
-function MeTooButton({ report, schoolId, onReportUpdated }: Props) {
+export function MeTooButton({ report, schoolId, onReportUpdated, compact = false }: Props & { compact?: boolean }) {
   const [joined, setJoined] = useState(() => loadMeTooIds().has(report.id));
   const [count, setCount] = useState(report.meTooCount ?? 0);
   const [busy, setBusy] = useState(false);
@@ -75,7 +75,7 @@ function MeTooButton({ report, schoolId, onReportUpdated }: Props) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+    <div className={compact ? "flex flex-wrap items-center gap-2" : "flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"}>
       <button
         type="button"
         onClick={toggle}
@@ -87,9 +87,11 @@ function MeTooButton({ report, schoolId, onReportUpdated }: Props) {
         {joined ? "나도 겪었어요 ✓" : "나도 겪었어요"}
         <span className="tabular-nums">{count}</span>
       </button>
-      <p className="text-[11px] leading-relaxed text-slate-500">
-        같은 문제를 겪었다면 새로 신고하지 말고 눌러 주세요. 많은 학생이 겪는 문제를 먼저 확인할 수 있어요.
-      </p>
+      {!compact && (
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          같은 문제를 겪었다면 새로 신고하지 말고 눌러 주세요. 많은 학생이 겪는 문제를 먼저 확인할 수 있어요.
+        </p>
+      )}
       {error && <p role="alert" className="w-full text-xs text-rose-700">{error}</p>}
     </div>
   );

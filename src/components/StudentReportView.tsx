@@ -4,7 +4,6 @@ import {
   X,
   CheckCircle,
   AlertCircle,
-  Paperclip,
   Lock,
   Info,
   RotateCw,
@@ -32,6 +31,8 @@ import {
 import { FormExampleItem, getRandomFormExamples } from "../data/formExamples";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
+import { formatBytes, PHOTO_LIMITS, preparePhoto, type PreparedPhoto } from "../utils/imageCompress";
+import { SimilarReportsPanel } from "./SimilarReportsPanel";
 
 const REPORT_DRAFT_KEY = "schoolfix_report_draft_session_v2";
 function clearSessionDraft(key: string) {
@@ -63,9 +64,8 @@ export interface SubmitReportPayload {
   locationDetail?: string | null;
   category: string;
   description: string;
-  attachmentUrl?: string | null;
-  attachmentName?: string | null;
-  attachmentSize?: number | null;
+  /** 브라우저에서 줄인 사진들 */
+  photos?: Array<{ dataUrl: string; name: string }>;
   /** AI 사전 확인을 마친 세션 id. 있으면 서버가 확인을 다시 하지 않는다. */
   clarifySessionId?: string | null;
 }
@@ -91,6 +91,10 @@ interface StudentReportViewProps {
   isSubmitting: boolean;
   onSuccessNavToMyReports?: () => void;
   onDirtyChange?: (isDirty: boolean) => void;
+  /** 비슷한 신고를 찾을 우리 학교 공개 신고 목록 */
+  existingReports?: SchoolReport[];
+  onOpenReport?: (report: SchoolReport) => void;
+  onReportsChanged?: () => void;
 }
 
 /** AI 사전 확인 진행 상태 (§8, §19) */
@@ -118,6 +122,9 @@ export function StudentReportView({
   isSubmitting,
   onSuccessNavToMyReports,
   onDirtyChange,
+  existingReports = [],
+  onOpenReport,
+  onReportsChanged,
 }: StudentReportViewProps) {
   // Problem fields
   const [title, setTitle] = useState<string>("");
@@ -149,10 +156,9 @@ export function StudentReportView({
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [clarifyConfirmed, setClarifyConfirmed] = useState<boolean>(false);
 
-  // Attachment state
-  const [attachmentName, setAttachmentName] = useState<string | null>(null);
-  const [attachmentSize, setAttachmentSize] = useState<number | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // 첨부 사진 — 고르는 즉시 브라우저에서 줄여 둔다.
+  const [photos, setPhotos] = useState<PreparedPhoto[]>([]);
+  const [preparingCount, setPreparingCount] = useState(0);
 
   // Client-side validation errors per field
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -294,8 +300,7 @@ export function StudentReportView({
         buildingName.trim().length > 0 || floor.trim().length > 0 || department.length > 0 || grade.length > 0 || className.trim().length > 0 || roomName.trim().length > 0 ||
         category.length > 0 ||
         description.trim().length > 0 ||
-        previewUrl !== null ||
-        attachmentName !== null)
+        photos.length > 0)
   );
 
   // Notify parent component of dirty state changes
@@ -342,58 +347,59 @@ export function StudentReportView({
     }
   };
 
-  // 서버가 허용하는 형식과 반드시 일치해야 한다(serverSecurity.validateReportInput).
-  // 목록이 어긋나면 사용자는 첨부가 된 줄 알았는데 조용히 사라지거나 400 을 받는다.
-  const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+  /**
+   * 사진 여러 장을 받는다. 고르는 즉시 한 장씩 줄여 두고(utils/imageCompress),
+   * 남은 칸보다 많이 고르면 앞에서부터 채우고 나머지는 알린다.
+   */
+  const handleFiles = async (fileList?: FileList | File[] | null) => {
+    const files = Array.from(fileList ?? []);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (files.length === 0) return;
 
-  const handleFile = (file?: File) => {
-    if (!file) return;
-
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        attachment: "사진은 PNG, JPG, GIF, WEBP 형식만 첨부할 수 있습니다.",
-      }));
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    if (file.size > 8 * 1024 * 1024) {
-      setFieldErrors((prev) => ({
-        ...prev,
-        attachment:
-          "파일 크기는 8MB 이하만 첨부 가능합니다. (선택된 파일: " +
-          formatFileSize(file.size) +
-          ")",
-      }));
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    setAttachmentName(file.name);
-    setAttachmentSize(file.size);
+    const room = PHOTO_LIMITS.maxPhotos - photos.length - preparingCount;
+    const accepted = files.slice(0, Math.max(0, room));
+    const problems: string[] = [];
+    if (files.length > accepted.length) problems.push(`사진은 ${PHOTO_LIMITS.maxPhotos}장까지 첨부할 수 있어 ${files.length - accepted.length}장은 빼고 올렸습니다.`);
     clearFieldError("attachment");
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPreviewUrl(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setPreparingCount((n) => n + accepted.length);
+    for (const file of accepted) {
+      try {
+        const prepared = await preparePhoto(file);
+        setPhotos((prev) => (prev.length >= PHOTO_LIMITS.maxPhotos ? prev : [...prev, prepared]));
+      } catch (err) {
+        problems.push(err instanceof Error ? err.message : `${file.name}: 사진을 준비하지 못했습니다.`);
+      } finally {
+        setPreparingCount((n) => n - 1);
+      }
+    }
+    if (problems.length) setFieldErrors((prev) => ({ ...prev, attachment: problems.join(" ") }));
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleFile(e.target.files?.[0]);
+    void handleFiles(e.target.files);
+  };
+
+  const removePhoto = (key: string) => {
+    setPhotos((prev) => prev.filter((photo) => photo.key !== key));
+    clearFieldError("attachment");
   };
 
   const handleRemoveFile = () => {
-    setAttachmentName(null);
-    setAttachmentSize(null);
-    setPreviewUrl(null);
+    setPhotos([]);
     clearFieldError("attachment");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
+
+  /** 비슷한 신고 찾기에 쓰는 지금까지 적은 위치·문제 종류 */
+  const similarDraft = useMemo(() => ({
+    locationType: location,
+    locationId: locationId || null,
+    category: category || null,
+    placeText: [locations.find((item) => item.id === locationId)?.name, locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].filter(Boolean).join(" "),
+  }), [location, locationId, category, locations, locationDetail, buildingName, floor, className, roomName]);
 
   // "다른 예시 보기 ↻" 버튼 클릭 시 새로운 예시 조합 랜덤 선택 (DB 저장 없음)
   const handleRefreshExamples = () => {
@@ -506,9 +512,7 @@ export function StudentReportView({
       roomName: roomName.trim() || null,
       category: category.trim(),
       description: description.trim(),
-      attachmentUrl: previewUrl || null,
-      attachmentName: attachmentName || null,
-      attachmentSize: attachmentSize || null,
+      photos: photos.map((photo) => ({ dataUrl: photo.dataUrl, name: photo.name })),
       clarifySessionId: sessionId,
     });
 
@@ -590,6 +594,10 @@ export function StudentReportView({
     e.preventDefault();
     if (isChecking || isSubmitting) return; // 중복 제출 방지 (§20)
     setSubmitError(null);
+    if (preparingCount > 0) {
+      setSubmitError("사진을 준비하는 중입니다. 잠시 후 다시 눌러주세요.");
+      return;
+    }
 
     // Run detailed client-side field validation before sending to backend
     const isValid = validateForm();
@@ -635,11 +643,6 @@ export function StudentReportView({
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
 
   // Clean completion screen
   if (completedReport) {
@@ -1088,6 +1091,8 @@ export function StudentReportView({
             )}
           </div>
 
+          <SimilarReportsPanel draft={similarDraft} reports={existingReports} schoolId={school.id} onOpenReport={onOpenReport} onReportsChanged={onReportsChanged} />
+
           {/* 3. Problem Description */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -1137,19 +1142,25 @@ export function StudentReportView({
             )}
           </div>
 
-          {/* 4. Attachment */}
+          {/* 4. 사진 — 여러 장, 고르는 즉시 브라우저에서 줄인다 */}
           <div>
-            <label className="block text-sm font-semibold text-slate-900 mb-1">
-              사진이나 파일이 있나요?
-            </label>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <label className="block text-sm font-semibold text-slate-900">
+                현장 사진이 있나요?
+              </label>
+              <span className="text-xs font-mono text-slate-400">{photos.length + preparingCount}/{PHOTO_LIMITS.maxPhotos}장</span>
+            </div>
             <p className="text-xs text-slate-500 mb-2">
-              현장 사진을 첨부해주시면 상태 파악과 빠른 조치에 도움이 됩니다. (선택사항, 최대 8MB)
+              여러 각도에서 찍은 사진은 상태 파악과 빠른 조치에 도움이 됩니다. (선택사항, 최대 {PHOTO_LIMITS.maxPhotos}장 · 한 장에 {PHOTO_LIMITS.maxOriginalBytes / 1024 / 1024}MB까지)
+              <br />
+              <span className="text-slate-400">사진은 올리기 전에 자동으로 줄이며, 이때 촬영 위치 같은 사진 속 정보도 지워집니다. 얼굴·이름표는 나오지 않게 찍어 주세요.</span>
             </p>
 
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp"
+              accept="image/*"
+              multiple
               onChange={handleFileSelect}
               className="hidden"
             />
@@ -1164,55 +1175,45 @@ export function StudentReportView({
             <div
               onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
               onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDraggingFile(false); }}
-              onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); handleFile(event.dataTransfer.files?.[0]); }}
+              onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); void handleFiles(event.dataTransfer.files); }}
               className={`rounded-2xl border-2 border-dashed p-3 transition ${isDraggingFile ? "border-blue-500 bg-blue-50 ring-4 ring-blue-100" : "border-slate-200 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/40"}`}
             >
-            {attachmentName ? (
-              <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  {previewUrl ? (
-                    <img
-                      src={previewUrl}
-                      alt="첨부 미리보기"
-                      className="h-12 w-12 rounded object-cover border border-slate-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="h-10 w-10 rounded bg-slate-200 flex items-center justify-center text-slate-600 shrink-0">
-                      <Paperclip className="h-5 w-5" />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-800 truncate">
-                      {attachmentName}
-                    </p>
-                    {attachmentSize && (
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        {formatFileSize(attachmentSize)}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
+              {photos.length + preparingCount > 0 && (
+                <ul className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {photos.map((photo, index) => (
+                    <li key={photo.key} className="group relative overflow-hidden rounded-lg border border-slate-200 bg-white">
+                      <img src={photo.dataUrl} alt={`첨부 사진 ${index + 1}`} className="aspect-square w-full object-cover" />
+                      <span className="absolute bottom-0 left-0 right-0 truncate bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-medium text-white" title={`원본 ${formatBytes(photo.originalSize)} → ${formatBytes(photo.size)}`}>
+                        {formatBytes(photo.size)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.key)}
+                        aria-label={`사진 ${index + 1} 빼기`}
+                        className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white hover:bg-rose-600"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                  {Array.from({ length: preparingCount }, (_, i) => (
+                    <li key={`preparing-${i}`} className="flex aspect-square items-center justify-center rounded-lg border border-slate-200 bg-white text-[11px] text-slate-500">
+                      <RotateCw className="mr-1 h-3.5 w-3.5 animate-spin" /> 줄이는 중
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {photos.length + preparingCount < PHOTO_LIMITS.maxPhotos && (
                 <button
                   type="button"
-                  onClick={handleRemoveFile}
-                  className="rounded-md p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition cursor-pointer"
-                  title="첨부 해제"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`flex w-full flex-col items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-700 transition hover:text-blue-800 ${photos.length ? "min-h-14 py-3" : "min-h-24 py-5"}`}
                 >
-                  <X className="h-4 w-4" />
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-700 shadow-sm"><Upload className="h-5 w-5" /></span>
+                  <span>{isDraggingFile ? "여기에 놓아 첨부하세요" : photos.length ? "사진 더 추가하기" : "사진을 끌어 놓거나 눌러서 선택 (여러 장 가능)"}</span>
+                  <span className="text-[11px] font-medium text-slate-500">JPG, PNG, WEBP, GIF 등 · 최대 {PHOTO_LIMITS.maxPhotos}장</span>
                 </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex min-h-24 w-full flex-col items-center justify-center gap-2 rounded-xl px-4 py-5 text-sm font-bold text-slate-700 transition hover:text-blue-800"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-700 shadow-sm"><Upload className="h-5 w-5" /></span>
-                <span>{isDraggingFile ? "여기에 놓아 첨부하세요" : "사진을 끌어 놓거나 눌러서 선택"}</span>
-                <span className="text-[11px] font-medium text-slate-500">PNG, JPG, GIF, WEBP · 최대 8MB</span>
-              </button>
-            )}
+              )}
             </div>
           </div>
 

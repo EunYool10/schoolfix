@@ -14,6 +14,9 @@ import { buildApplicationEmbed, buildMonthlyEmbed, buildNewReportEmbed, EMBED_CO
 import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 import { feedbackPending } from "./src/utils/feedback";
+import { decodePhotoDataUrl, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache } from "./photoStore";
+import { findSimilarReports } from "./src/utils/similarReports";
+import { changesSince, snapshotOf } from "./src/utils/reportUpdates";
 
 let passed = 0;
 let failed = 0;
@@ -158,20 +161,20 @@ console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\
   const base: NewReportNotice = {
     schoolName: "테스트고", reportId: "REP-20261010-0007", title: "복도 전등", location: "복도 · 본관 2층",
     category: "시설 고장", riskLevel: "중간", riskScore: 40, description: "가".repeat(2000),
-    held: false, heldReason: null, attachment: { dataUrl: png, name: "사진.png", size: 68 }, link: null,
+    held: false, heldReason: null, attachments: [{ dataUrl: png, name: "사진.png", size: 68 }], link: null,
   };
   const discordUrl = "https://discord.com/api/webhooks/1/abc";
 
-  const normal = buildNewReportText(base, false);
+  const normal = buildNewReportText(base, 0);
   check("일반 신고는 🆕 + 위험도 + 접수번호", normal.startsWith("🆕 새 신고 [중간 40점] 테스트고") && normal.includes("REP-20261010-0007"));
   check("일반 신고 내용은 300자로 요약", normal.includes("…") && !normal.includes("가".repeat(301)));
-  check("긴급 신고는 🚨", buildNewReportText({ ...base, riskLevel: "긴급", riskScore: 90 }, false).startsWith("🚨"));
-  check("분석 전 신고 표시", buildNewReportText({ ...base, riskLevel: null, riskScore: null }, false).includes("[분석 전]"));
+  check("긴급 신고는 🚨", buildNewReportText({ ...base, riskLevel: "긴급", riskScore: 90 }, 0).startsWith("🚨"));
+  check("분석 전 신고 표시", buildNewReportText({ ...base, riskLevel: null, riskScore: null }, 0).includes("[분석 전]"));
   const normalPayload = buildNewReportPayload(discordUrl, base);
   check("일반 신고는 사진 없이 텍스트로", !(normalPayload instanceof FormData) && typeof (normalPayload as Record<string, unknown>).content === "string");
 
   const held = { ...base, held: true, heldReason: "부적절한 표현 자동 감지" };
-  const heldText = buildNewReportText(held, true);
+  const heldText = buildNewReportText(held, 1);
   check("보류 신고는 ⏸️ + 보류 사유 + 검토 안내", heldText.startsWith("⏸️ 공개 보류 신고") && heldText.includes("보류 사유: 부적절한 표현 자동 감지") && heldText.includes("승인하거나 삭제"));
   check("보류 신고 내용은 1200자까지", heldText.includes("가".repeat(1200)) && !heldText.includes("가".repeat(1201)));
   const heldPayload = buildNewReportPayload(discordUrl, held);
@@ -180,11 +183,39 @@ console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\
   check("첨부 메시지에도 멘션 차단·파일명은 접수번호", JSON.stringify(payloadJson.allowed_mentions) === '{"parse":[]}' && payloadJson.attachments?.[0]?.filename === "REP-20261010-0007.png", payloadJson);
   check("Slack 은 사진 없이 '운영진 화면에서 확인' 안내", String((buildNewReportPayload("https://hooks.slack.com/services/x", held) as Record<string, unknown>).text).includes("운영진 화면에서 확인"));
 
-  check("PNG 데이터 → 파일 변환", attachmentToFile(base.attachment!, "REP-1")?.blob.type === "image/png");
+  check("PNG 데이터 → 파일 변환", attachmentToFile(base.attachments[0], "REP-1")?.blob.type === "image/png");
   check("이미지가 아닌 data URL 은 거부", attachmentToFile({ dataUrl: "data:text/html;base64,PGgxPg==", name: null, size: null }, "REP-1") === null);
   const huge = "data:image/jpeg;base64," + "A".repeat(13 * 1024 * 1024);
   check("9MB 를 넘는 사진은 첨부하지 않음", attachmentToFile({ dataUrl: huge, name: null, size: null }, "REP-1") === null);
-  check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachment: { dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 } }) instanceof FormData));
+  check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachments: [{ dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 }] }) instanceof FormData));
+
+  // 사진 여러 장
+  const three = { ...held, attachments: [1, 2, 3].map((i) => ({ dataUrl: png, name: `p${i}.png`, size: 68 })) };
+  const multi = buildNewReportPayload(discordUrl, three) as FormData;
+  const multiJson = JSON.parse(String(multi.get("payload_json")));
+  check("보류 사진 3장은 모두 파일로 첨부", multi.has("files[0]") && multi.has("files[1]") && multi.has("files[2]") && multiJson.attachments.length === 3);
+  check("두 번째 사진부터 파일명에 번호", multiJson.attachments[1].filename === "REP-20261010-0007-2.png", multiJson.attachments);
+  check("여러 장 안내 문구", buildNewReportText(three, 3).includes("사진 3장") && buildNewReportText(three, 3).includes("아래 사진"));
+  check("일부만 실린 경우 나머지 안내", buildNewReportText(three, 1).includes("아래 1장, 나머지는 운영진 화면에서 확인"));
+  const many = { ...held, attachments: Array.from({ length: 12 }, () => ({ dataUrl: png, name: null, size: 68 })) };
+  check("Discord 파일은 10개까지만", JSON.parse(String((buildNewReportPayload(discordUrl, many) as FormData).get("payload_json"))).attachments.length === 10);
+}
+
+console.log("\n=== 3-5) 사진 저장소 ===\n");
+{
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const ok = decodePhotoDataUrl(png);
+  check("PNG data URL 해독 + 실제 형식 확인", ok.ok && ok.type === "image/png");
+  check("이미지 형식이 아니면 거부", !decodePhotoDataUrl("data:text/html;base64,PGgxPg==").ok);
+  check("확장자만 이미지인 가짜 파일은 거부", !decodePhotoDataUrl("data:image/png;base64," + Buffer.from("<script>alert(1)</script>").toString("base64")).ok);
+  check("5MB 넘는 사진은 거부", !decodePhotoDataUrl("data:image/jpeg;base64," + Buffer.alloc(PHOTO_RULES.maxBytes + 10, 0xff).toString("base64")).ok);
+  const id = newPhotoId("image/jpeg", new Date("2026-10-10T00:00:00Z"));
+  check("사진 id 형식 (월/무작위.jpg)", PHOTO_ID_PATTERN.test(id) && id.startsWith("202610/"), id);
+  check("경로 이동 id 는 거부", !PHOTO_ID_PATTERN.test("202610/../../etc/passwd") && !PHOTO_ID_PATTERN.test("202610/abc.jpg"));
+  const cache = new PhotoCache(1000);
+  cache.set("a", Buffer.alloc(200)); cache.set("b", Buffer.alloc(200)); cache.get("a");
+  cache.set("c", Buffer.alloc(200)); cache.set("d", Buffer.alloc(200)); cache.set("e", Buffer.alloc(200)); cache.set("f", Buffer.alloc(200));
+  check("사진 캐시는 용량을 넘으면 오래 안 쓴 것부터 버림", cache.get("b") === undefined && cache.get("a") !== undefined);
 }
 
 console.log("\n=== 3-4) 디스코드 카드 꾸미기 ===\n");
@@ -192,7 +223,7 @@ console.log("\n=== 3-4) 디스코드 카드 꾸미기 ===\n");
   const notice: NewReportNotice = {
     schoolName: "테스트고", reportId: "REP-20261010-0010", title: "복도 **전등** 깜빡임", location: "복도 · 본관 2층",
     category: "시설 고장", riskLevel: "긴급", riskScore: 88, description: "[여기를 눌러요](https://evil.example) 전등이 깜빡여요 @everyone",
-    held: false, heldReason: null, attachment: null, link: "https://schoolfix.example",
+    held: false, heldReason: null, attachments: [], link: "https://schoolfix.example",
   };
   const urgent = buildNewReportEmbed(notice, null);
   check("긴급 신고 카드는 빨간 띠 + 🚨 제목", urgent.color === EMBED_COLORS.긴급 && urgent.title === "🚨 긴급 신고");
@@ -206,7 +237,7 @@ console.log("\n=== 3-4) 디스코드 카드 꾸미기 ===\n");
   check("위험도별 색: 높음 주황 · 중간 노랑 · 낮음 회색 · 분석 전 연회색", colorOf("높음") === EMBED_COLORS.높음 && colorOf("중간") === EMBED_COLORS.중간 && colorOf("낮음") === EMBED_COLORS.낮음 && colorOf(null) === EMBED_COLORS.unanalyzed);
 
   const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-  const held: NewReportNotice = { ...notice, riskLevel: null, riskScore: null, held: true, heldReason: "이미지 안전성 검사 실패", attachment: { dataUrl: png, name: "photo.png", size: 68 } };
+  const held: NewReportNotice = { ...notice, riskLevel: null, riskScore: null, held: true, heldReason: "이미지 안전성 검사 실패", attachments: [{ dataUrl: png, name: "photo.png", size: 68 }] };
   const heldPayload = buildNewReportPayload("https://discord.com/api/webhooks/1/abc", held);
   const heldJson = heldPayload instanceof FormData ? JSON.parse(String(heldPayload.get("payload_json"))) : {};
   const heldEmbed: DiscordEmbed = heldJson.embeds?.[0] ?? {};
@@ -254,6 +285,41 @@ console.log("\n=== 5) 만족도 재응답 ===\n");
   check("완료 후 응답 전이면 물음", feedbackPending({ status: "completed", completedAt: "2026-10-01T00:00:00Z", feedback: null }));
   check("이번 완료에 응답했으면 묻지 않음", !feedbackPending({ status: "completed", completedAt: "2026-10-01T00:00:00Z", feedback: { at: "2026-10-02T00:00:00Z" } }));
   check("'아직 그대로예요' 뒤 다시 완료되면 다시 물음", feedbackPending({ status: "completed", completedAt: "2026-10-05T00:00:00Z", feedback: { at: "2026-10-02T00:00:00Z" } }));
+}
+
+console.log("\n=== 6) 비슷한 신고 찾기 ===\n");
+{
+  const base = { status: "pending", moderationStatus: "approved", location: "화장실", locationType: "화장실", category: "시설 고장", createdAt: "2026-10-01T00:00:00Z" };
+  const reports = [
+    { ...base, id: "same-place", locationId: "wc-3f", locationDetail: "본관 3층 남자 화장실" },
+    { ...base, id: "same-category", locationDetail: "별관 1층" },
+    { ...base, id: "other-category", category: "위생 문제", locationDetail: "체육관 옆" },
+    { ...base, id: "done", status: "completed", locationId: "wc-3f" },
+    { ...base, id: "held", moderationStatus: "held", locationId: "wc-3f" },
+    { ...base, id: "other-type", location: "복도", locationType: "복도", locationId: "wc-3f" },
+    { ...base, id: "popular", locationDetail: "별관 1층", meTooCount: 9 },
+  ];
+  const found = findSimilarReports({ locationType: "화장실", locationId: "wc-3f", category: "시설 고장", placeText: "본관 3층" }, reports).map((r) => r.id);
+  check("같은 세부 장소가 맨 앞", found[0] === "same-place", found.join());
+  check("처리 완료·공개 보류·다른 위치 유형은 제외", !found.includes("done") && !found.includes("held") && !found.includes("other-type"), found.join());
+  check("최대 3건", found.length === 3, found.join());
+  check("점수가 같으면 공감 많은 순", found.indexOf("popular") < found.indexOf("same-category"), found.join());
+  const byText = findSimilarReports({ locationType: "화장실", category: null, placeText: "본관 3층 남자" }, reports).map((r) => r.id);
+  check("문제 종류를 안 골라도 장소 단어가 2개 겹치면 찾음", byText.join() === "same-place", byText.join());
+  const weak = findSimilarReports({ locationType: "화장실", category: null, placeText: "체육관 옆" }, reports).map((r) => r.id);
+  check("장소 단어 1개만 겹치면 보여 주지 않음", weak.length === 0, weak.join());
+  check("위치 유형을 안 고르면 찾지 않음", findSimilarReports({ locationType: "" }, reports).length === 0);
+}
+
+console.log("\n=== 7) 내 신고 새 소식 ===\n");
+{
+  const r = { id: "R1", status: "reviewing", moderationStatus: "approved", reporterReplyAt: null };
+  const seen = snapshotOf(r);
+  check("처음 보는 신고는 새 소식 아님", changesSince(undefined, r).length === 0);
+  check("바뀐 게 없으면 새 소식 아님", changesSince(seen, r).length === 0);
+  check("상태가 바뀌면 '상태 변경'", changesSince(seen, { ...r, status: "completed" }).join() === "status");
+  check("학교 답변이 달리면 '학교 답변'", changesSince(seen, { ...r, reporterReplyAt: "2026-10-10T01:00:00Z" }).join() === "reply");
+  check("보류 신고가 공개되면 '공개됨'", changesSince(snapshotOf({ ...r, moderationStatus: "held" }), r).join() === "published");
 }
 
 console.log(`\n${"=".repeat(60)}`);

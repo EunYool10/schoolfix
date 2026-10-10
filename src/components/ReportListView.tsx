@@ -28,6 +28,8 @@ import { AiSummaryModal } from "./AiSummaryModal";
 import { LocationStatsPanel } from "./LocationStatsPanel";
 import { useLocationStats } from "../hooks/useLocationStats";
 import { buildReportHtml } from "../utils/reportDocument";
+import { feedbackPending } from "../utils/feedback";
+import { UPDATE_LABEL, type UpdateKind } from "../utils/reportUpdates";
 
 export type ReportTab = "MINE" | "ALL";
 
@@ -42,6 +44,8 @@ interface ReportListViewProps {
   onNavigateNewReport: () => void;
   /** 홈 카드에서 특정 탭으로 바로 들어올 때 사용 */
   initialTab?: ReportTab;
+  /** 내 신고 중 마지막으로 본 뒤 바뀐 것 (신고 id → 바뀐 내용) */
+  updates?: Map<string, UpdateKind[]>;
 }
 
 const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
@@ -57,6 +61,7 @@ export function ReportListView({
   onOpenReport,
   onNavigateNewReport,
   initialTab = "ALL",
+  updates,
 }: ReportListViewProps) {
   const [tab, setTab] = useState<ReportTab>(initialTab);
 
@@ -229,7 +234,7 @@ export function ReportListView({
     }
   };
 
-  const tabButton = (value: ReportTab, label: string, count: number) => {
+  const tabButton = (value: ReportTab, label: string, count: number, fresh = 0) => {
     const active = tab === value;
     return (
       <button
@@ -250,6 +255,11 @@ export function ReportListView({
         >
           {count}
         </span>
+        {fresh > 0 && (
+          <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white">
+            새 소식 {fresh}
+          </span>
+        )}
       </button>
     );
   };
@@ -259,7 +269,7 @@ export function ReportListView({
       {/* 상단: 탭 + 액션 버튼 */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 border-b border-slate-200 print:hidden">
         <div className="flex items-center overflow-x-auto">
-          {tabButton("MINE", "내 신고", myReports.length)}
+          {tabButton("MINE", "내 신고", myReports.length, updates?.size ?? 0)}
           {tabButton("ALL", "전체 신고", allReports.length)}
         </div>
 
@@ -478,7 +488,12 @@ export function ReportListView({
                         학교 답변 있음
                       </span>
                     )}
-                    {r.isMine && r.status === "completed" && !r.feedback && (
+                    {updates?.get(r.id) && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-extrabold">
+                        NEW · {updates.get(r.id)!.map((kind) => UPDATE_LABEL[kind]).join(" · ")}
+                      </span>
+                    )}
+                    {r.isMine && feedbackPending(r) && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
                         해결됐는지 알려주세요
                       </span>

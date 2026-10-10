@@ -260,6 +260,7 @@ Render 배포 흐름은 그대로 유지하고, 신고 및 학교 추가 신청 
 2. Supabase 프로젝트의 **Project URL**과 서버 전용 Secret key(`sb_secret_...`)를 확인합니다. 이 키는 브라우저나 저장소에 절대 올리지 마세요. 구형 `service_role` JWT도 지원하지만 새 프로젝트에서는 Secret key를 권장합니다.
 3. Render의 `schoolfix` 서비스 **Environment**에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`를 추가하고 저장합니다. `SUPABASE_SERVICE_ROLE_KEY`를 쓸 경우에는 `SUPABASE_SECRET_KEY`와 동시에 설정하지 마세요.
 4. Render가 재배포된 뒤 `/api/health` 응답의 `dataStore`가 `supabase`인지 확인합니다.
+5. 신고 사진은 신고 기록과 따로 **비공개 Storage 버킷**(`report-photos`, `SUPABASE_PHOTO_BUCKET`으로 변경 가능)에 저장됩니다. 서버가 시작할 때 버킷이 없으면 Secret key로 직접 만들므로 따로 할 일은 없습니다. `/api/health`의 `photos`가 `{ "store": "supabase", "ready": true }`이면 정상입니다. 버킷을 공개로 바꾸지 마세요. 공개 보류 신고의 사진은 서버가 운영진에게만 보여 줍니다.
 
 두 환경변수는 반드시 함께 설정해야 합니다. 둘 중 하나만 있거나 테이블 접근에 실패하면 서버는 시작되지 않아 로컬 JSON 저장소로 조용히 되돌아가지 않습니다. Supabase 문서가 없을 때만 해당 종류의 로컬 JSON을 초기 가져옵니다. 이미 존재하는 문서는 자동으로 덮어쓰지 않으며, 문서 내용이 예상한 배열 형식이 아니면 서버가 시작을 거부해 잘못된 데이터 덮어쓰기를 막습니다. 배포 환경에 기존 JSON 파일이 없거나 별도 백업이 있다면 연결 전에 Supabase SQL Editor의 `schoolfix_store`에 가져오거나 운영자에게 데이터 이관을 요청해야 합니다.
 

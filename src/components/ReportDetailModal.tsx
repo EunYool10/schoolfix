@@ -4,14 +4,13 @@ import {
   MapPin,
   Tag,
   Clock,
-  Paperclip,
   Trash2,
   UserCog,
 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
 import { ReportTimeline } from "./ReportTimeline";
 import { RiskAnalysisPanel } from "./RiskAnalysisPanel";
-import { ImageLightboxModal } from "./ImageLightboxModal";
+import { PhotoGallery } from "./PhotoGallery";
 import { ReportEngagement } from "./ReportEngagement";
 
 interface ReportDetailModalProps {
@@ -126,25 +125,7 @@ export function ReportDetailModal({
               </div>
             </div>
 
-            {report.attachmentUrl && (
-              <div className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Paperclip className="h-3.5 w-3.5 text-slate-400" />
-                  현장 첨부 사진
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsLightboxOpen(true)}
-                  className="block w-full rounded-xl overflow-hidden border border-slate-200 cursor-zoom-in"
-                >
-                  <img
-                    src={report.attachmentUrl}
-                    alt="신고 현장 사진"
-                    className="w-full max-h-72 object-contain bg-slate-100"
-                  />
-                </button>
-              </div>
-            )}
+            <PhotoGallery photos={report.photos ?? []} locked={report.moderationStatus === "held"} onViewerChange={setIsLightboxOpen} />
 
             <ReportEngagement key={report.id} report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
 
@@ -194,14 +175,6 @@ export function ReportDetailModal({
           </div>
         </div>
       </div>
-
-      {report.attachmentUrl && (
-        <ImageLightboxModal
-          isOpen={isLightboxOpen}
-          onClose={() => setIsLightboxOpen(false)}
-          imageUrl={report.attachmentUrl}
-        />
-      )}
     </>
   );
 }
