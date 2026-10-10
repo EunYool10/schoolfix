@@ -9,7 +9,7 @@
 
 import { computeSla, slaLabel } from "./src/utils/sla";
 import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
-import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "./notify";
+import { attachmentToFile, buildNewReportPayload, buildNewReportText, lastNotifyResult, sendNewReportNotification, summarizeWebhookError, type NewReportNotice } from "./notify";
 import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
@@ -183,6 +183,37 @@ console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\
   const huge = "data:image/jpeg;base64," + "A".repeat(13 * 1024 * 1024);
   check("9MB 를 넘는 사진은 첨부하지 않음", attachmentToFile({ dataUrl: huge, name: null, size: null }, "REP-1") === null);
   check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachment: { dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 } }) instanceof FormData));
+}
+
+console.log("\n=== 3-4) 디스코드가 사진을 거절할 때 ===\n");
+{
+  const discordBody = JSON.stringify({ message: "Explicit content cannot be sent to the desired recipient(s)", code: 20009, attachments: [{ id: "1", filename: "REP-1.jpg", url: "https://cdn.discordapp.com/attachments/x/y/REP-1.jpg?ex=abc" }] });
+  const summary = summarizeWebhookError(discordBody);
+  check("오류 요약은 message·code 만", summary.includes("Explicit content") && summary.includes("code 20009"), summary);
+  check("첨부 파일 이름·주소는 남기지 않음", !summary.includes("cdn.discordapp") && !summary.includes("REP-1.jpg"), summary);
+  check("JSON 이 아닌 응답의 주소도 지움", summarizeWebhookError("error at https://example.com/secret").includes("[url]"));
+
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const heldNotice: NewReportNotice = {
+    schoolName: "테스트고", reportId: "REP-20261010-0009", title: "제목", location: "복도", category: "기타",
+    riskLevel: null, riskScore: null, description: "내용", held: true, heldReason: "안전성 검사에서 검토 필요 판정",
+    attachment: { dataUrl: png, name: "photo.jpg", size: 1000 }, link: null,
+  };
+  const calls: { form: boolean; body: string }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const form = init?.body instanceof FormData;
+    calls.push({ form, body: form ? "" : String(init?.body) });
+    return form ? new Response(discordBody, { status: 400 }) : new Response(null, { status: 204 });
+  }) as typeof fetch;
+  const originalError = console.error;
+  console.error = () => {};
+  const sent = await sendNewReportNotification(heldNotice, { NOTIFY_WEBHOOK_URL: "https://discord.com/api/webhooks/1/abc" });
+  console.error = originalError;
+  globalThis.fetch = realFetch;
+  check("사진 업로드가 거절되면 사진 없이 다시 보내 알림은 전달", sent === true && calls.length === 2 && calls[0].form && !calls[1].form, JSON.stringify(calls.map((c) => c.form)));
+  check("다시 보낸 메시지에 '민감한 이미지' 안내", calls[1]?.body.includes("민감한 이미지로 판단") ?? false, calls[1]?.body);
+  check("마지막 결과는 성공(사진 제외)으로 기록", lastNotifyResult()?.ok === true && lastNotifyResult()?.label.includes("사진 제외"));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");

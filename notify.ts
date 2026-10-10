@@ -95,6 +95,28 @@ export function lastNotifyResult(): NotifyResult | null {
   return lastResult;
 }
 
+/** Discord 가 이미지를 민감한 콘텐츠로 판단해 거절했을 때의 오류 코드 */
+export const DISCORD_EXPLICIT_CONTENT = 20009;
+
+/**
+ * 웹훅 오류 응답을 짧게 줄인다.
+ * Discord 는 {"message":"Unknown Webhook","code":10015} 처럼 원인을 알려 주지만,
+ * 응답에 첨부 파일 이름·주소가 섞여 올 수 있어 message 와 code 만 남긴다.
+ * 이 값은 /api/health 로 공개되므로 주소처럼 보이는 문자열은 지운다.
+ */
+export function summarizeWebhookError(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; code?: unknown };
+    const message = typeof parsed.message === "string" ? parsed.message.slice(0, 120) : "";
+    const code = typeof parsed.code === "number" ? ` (code ${parsed.code})` : "";
+    if (message || code) return ` ${message}${code}`;
+  } catch {
+    // JSON 이 아니면 아래에서 일반 문자열로 다룬다.
+  }
+  const text = body.replace(/https?:\/\/\S+/g, "[url]").replace(/\s+/g, " ").trim().slice(0, 120);
+  return text ? ` ${text}` : "";
+}
+
 /**
  * 알림 전송 공통부. 실패해도 예외를 던지지 않고 false 를 돌려준다.
  * payload 가 FormData 면(사진 첨부) multipart 로 보낸다. Content-Type 은 fetch 가 경계값과 함께 정한다.
@@ -121,9 +143,7 @@ export async function postWebhook(
       signal: AbortSignal.timeout(isForm ? 30000 : 10000),
     });
     if (!response.ok) {
-      // Discord 는 {"message":"Unknown Webhook","code":10015} 처럼 원인을 알려 준다.
-      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
-      throw new Error(`status ${response.status}${detail ? ` ${detail}` : ""}`);
+      throw new Error(`status ${response.status}${summarizeWebhookError(await response.text().catch(() => ""))}`);
     }
     console.log(`[notify] ${label} 전송 완료`);
     lastResult = { at: new Date().toISOString(), label, ok: true, error: null };
@@ -181,7 +201,13 @@ function sizeLabel(bytes: number | null): string {
   return bytes < 1024 * 1024 ? ` (${Math.round(bytes / 1024)}KB)` : ` (${(bytes / 1024 / 1024).toFixed(1)}MB)`;
 }
 
-export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boolean): string {
+/**
+ * @param attachmentIncluded 사진을 함께 올리는지
+ * @param attachmentNote 사진을 올리려다 실패해 다시 보내는 경우의 사유
+ *   - "explicit": Discord 가 민감한 이미지로 판단해 거절
+ *   - "failed"  : 그 밖의 이유로 사진 업로드 실패
+ */
+export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boolean, attachmentNote?: "explicit" | "failed"): string {
   const risk = n.riskLevel ? `${n.riskLevel}${n.riskScore !== null ? ` ${n.riskScore}점` : ""}` : "분석 전";
   const urgent = n.riskLevel === "긴급";
   const head = n.held
@@ -197,7 +223,11 @@ export function buildNewReportText(n: NewReportNotice, attachmentIncluded: boole
     lines.push(
       attachmentIncluded
         ? `첨부: ${name}${sizeLabel(n.attachment.size)} — 아래 사진`
-        : `첨부: ${name}${sizeLabel(n.attachment.size)} — 운영진 화면에서 확인`
+        : attachmentNote === "explicit"
+          ? `첨부: ${name}${sizeLabel(n.attachment.size)} — ⚠️ 디스코드가 민감한 이미지로 판단해 사진을 보내지 못했습니다. 운영진 화면에서 확인하세요.`
+          : attachmentNote === "failed"
+            ? `첨부: ${name}${sizeLabel(n.attachment.size)} — 사진 업로드에 실패했습니다. 운영진 화면에서 확인하세요.`
+            : `첨부: ${name}${sizeLabel(n.attachment.size)} — 운영진 화면에서 확인`
     );
   }
   lines.push(`접수번호: ${n.reportId}`);
@@ -237,10 +267,16 @@ export function buildNewReportPayload(url: string, n: NewReportNotice): Record<s
   return form;
 }
 
-export function sendNewReportNotification(n: NewReportNotice, env: Record<string, string | undefined> = process.env): Promise<boolean> {
+export async function sendNewReportNotification(n: NewReportNotice, env: Record<string, string | undefined> = process.env): Promise<boolean> {
   const url = env.NOTIFY_WEBHOOK_URL;
-  if (!url) return Promise.resolve(false);
-  return postWebhook(buildNewReportPayload(url, n), env, n.held ? "보류 신고 알림" : "새 신고 알림");
+  if (!url) return false;
+  const label = n.held ? "보류 신고 알림" : "새 신고 알림";
+  const payload = buildNewReportPayload(url, n);
+  if (await postWebhook(payload, env, label)) return true;
+  if (!(payload instanceof FormData)) return false;
+  // 사진 때문에 거절됐을 수 있다(Discord 민감 콘텐츠 필터 등). 알림 자체가 사라지지 않도록 사진을 빼고 다시 보낸다.
+  const explicit = lastNotifyResult()?.error?.includes(`code ${DISCORD_EXPLICIT_CONTENT}`) ?? false;
+  return postWebhook(buildTextPayload(url, buildNewReportText(n, false, explicit ? "explicit" : "failed")), env, `${label} (사진 제외)`);
 }
 
 export interface ApplicationNotice {
