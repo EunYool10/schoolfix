@@ -644,8 +644,21 @@ export function StudentReportView({
   // Clean completion screen
   if (completedReport) {
     return (
-      <div className="w-full rounded-[2rem] bg-gradient-to-br from-emerald-50 via-white to-blue-50 p-3 sm:p-8">
-        <div className="mx-auto max-w-2xl rounded-[1.6rem] border border-white bg-white/90 p-7 text-center shadow-[0_24px_70px_rgba(20,38,73,0.12)] sm:p-12">
+      <div className="relative isolate w-full py-4 sm:py-8">
+        {/*
+          카드 뒤의 은은한 빛. 모서리가 있는 배경 상자 대신 가장자리가 투명해지는 원형 그라데이션을 써서
+          페이지 배경과 경계 없이 자연스럽게 섞인다. 좌우로는 넘치지 않게 해 가로 스크롤이 생기지 않는다.
+        */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 -inset-y-8 -z-10"
+          style={{
+            background:
+              // 각 빛은 영역 안에서 완전히 투명해지도록 반지름을 잡는다. 영역 끝에서 잘리면 직선 경계가 보인다.
+              "radial-gradient(34% 40% at 38% 44%, rgba(16,185,129,0.17), transparent 100%), radial-gradient(32% 38% at 64% 58%, rgba(59,130,246,0.15), transparent 100%)",
+          }}
+        />
+        <div className="mx-auto max-w-2xl rounded-[1.6rem] border border-white/80 bg-white/85 p-7 text-center shadow-[0_24px_70px_rgba(20,38,73,0.10)] backdrop-blur-sm sm:p-12">
           <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700 ring-8 ring-emerald-50">
             <CheckCircle className="h-8 w-8" strokeWidth={2.5} />
           </div>
