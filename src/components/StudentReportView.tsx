@@ -29,11 +29,7 @@ import {
   ISSUE_CATEGORIES,
   SCHOOL_LOCATIONS,
 } from "../types";
-import {
-  FORM_EXAMPLE_LIST,
-  FormExampleItem,
-  getRandomFormExamples,
-} from "../data/formExamples";
+import { FormExampleItem, getRandomFormExamples } from "../data/formExamples";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 
@@ -186,9 +182,10 @@ export function StudentReportView({
   const [autoFillNotice, setAutoFillNotice] = useState<boolean>(false);
 
   // 33. 예시 추천 값 랜덤 제공 (화면 UI 전용, 실제 신고 DB와 완전히 분리)
-  // 페이지 진입 시 미리 정의된 예시 중 4개를 무작위 중복 없이 선택
+  // 학교별 등록 위치와 학교급에 맞는 문항 중 4개를 추천
+  const exampleLocationTypes = [...new Set([...locationTypes.map((item) => item.type), ...locations.map((item) => item.type)])];
   const [displayedExamples, setDisplayedExamples] = useState<FormExampleItem[]>(() =>
-    getRandomFormExamples(4)
+    getRandomFormExamples(4, undefined, [], school, exampleLocationTypes)
   );
   // 현재 선택/적용된 추천 버튼 상태 추적
   const [selectedExampleKey, setSelectedExampleKey] = useState<string | null>(null);
@@ -201,6 +198,11 @@ export function StudentReportView({
   const reportDraftKey = `${REPORT_DRAFT_KEY}_${school.id}`;
   const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set([...locations.map((item) => item.type), ...SCHOOL_LOCATIONS])].map((type) => ({ type, verificationStatus: type === "기타" ? "user_entered" as const : "needs_review" as const })), [locationTypes, locations]);
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
+
+  useEffect(() => {
+    setDisplayedExamples(getRandomFormExamples(4, undefined, [], school, exampleLocationTypes));
+    setSelectedExampleKey(null);
+  }, [school.id]);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
   useEffect(() => {
@@ -390,7 +392,7 @@ export function StudentReportView({
   // "다른 예시 보기 ↻" 버튼 클릭 시 새로운 예시 조합 랜덤 선택 (DB 저장 없음)
   const handleRefreshExamples = () => {
     const currentKeys = displayedExamples.map((ex) => ex.key);
-    const nextExamples = getRandomFormExamples(4, location, currentKeys);
+    const nextExamples = getRandomFormExamples(4, location, currentKeys, school, exampleLocationTypes);
     setDisplayedExamples(nextExamples);
   };
 
@@ -411,7 +413,7 @@ export function StudentReportView({
     setAutoFillNotice(false);
     setSelectedExampleKey(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
-    setDisplayedExamples(getRandomFormExamples(4));
+    setDisplayedExamples(getRandomFormExamples(4, undefined, [], school, exampleLocationTypes));
     clearSessionDraft(reportDraftKey);
     setDraftSavedAt(null);
     setDraftRestored(false);
@@ -773,7 +775,7 @@ export function StudentReportView({
             </button>
           </div>
           <p className="text-xs text-slate-500 mb-3">
-            자주 발생하는 상황을 선택하면 신고 내용이 자동으로 입력됩니다. (직접 수정 후 접수 가능)
+            {school.schoolName}에 맞는 예시입니다. 선택하면 내용이 입력되며, 실제 상황에 맞게 수정한 뒤 접수해 주세요.
           </p>
           <div className="flex flex-wrap gap-2">
             {displayedExamples.map((example) => {
@@ -946,7 +948,7 @@ export function StudentReportView({
                 resetClarify();
                 if (newLoc) {
                   // 위치 선택 시 해당 장소와 연관된 예시를 우선 배치하는 스마트 추천
-                  setDisplayedExamples(getRandomFormExamples(4, newLoc));
+                  setDisplayedExamples(getRandomFormExamples(4, newLoc, [], school, exampleLocationTypes));
                 }
               }}
               aria-invalid={Boolean(fieldErrors.location)}
