@@ -10,6 +10,7 @@
 import { computeSla, slaLabel } from "./src/utils/sla";
 import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
 import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "./notify";
+import { buildApplicationEmbed, buildMonthlyEmbed, buildNewReportEmbed, EMBED_COLORS, escapeMarkdown, type DiscordEmbed } from "./notify";
 import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
@@ -183,6 +184,46 @@ console.log("\n=== 3-3) 모든 신고 알림 · 보류 신고 사진 첨부 ===\
   const huge = "data:image/jpeg;base64," + "A".repeat(13 * 1024 * 1024);
   check("9MB 를 넘는 사진은 첨부하지 않음", attachmentToFile({ dataUrl: huge, name: null, size: null }, "REP-1") === null);
   check("너무 큰 사진은 텍스트로만 + 화면 확인 안내", !(buildNewReportPayload(discordUrl, { ...held, attachment: { dataUrl: huge, name: "큰사진.jpg", size: 9_900_000 } }) instanceof FormData));
+}
+
+console.log("\n=== 3-4) 디스코드 카드 꾸미기 ===\n");
+{
+  const notice: NewReportNotice = {
+    schoolName: "테스트고", reportId: "REP-20261010-0010", title: "복도 **전등** 깜빡임", location: "복도 · 본관 2층",
+    category: "시설 고장", riskLevel: "긴급", riskScore: 88, description: "[여기를 눌러요](https://evil.example) 전등이 깜빡여요 @everyone",
+    held: false, heldReason: null, attachment: null, link: "https://schoolfix.example",
+  };
+  const urgent = buildNewReportEmbed(notice, null);
+  check("긴급 신고 카드는 빨간 띠 + 🚨 제목", urgent.color === EMBED_COLORS.긴급 && urgent.title === "🚨 긴급 신고");
+  check("카드에 학교·위치·분류·위험도·접수번호 칸", urgent.author?.name.includes("테스트고") === true && ["📍 위치", "🏷️ 분류", "⚠️ 위험도", "🔖 접수번호"].every((n) => urgent.fields?.some((f) => f.name === n)));
+  check("위험도 칸은 아이콘·점수까지", urgent.fields?.find((f) => f.name === "⚠️ 위험도")?.value === "🔴 긴급 · 88점");
+  check("제목 클릭 시 사이트로 이동", urgent.url === "https://schoolfix.example");
+  check("사용자 글의 숨은 링크·굵게 표시는 무력화", (urgent.description ?? "").includes("\\[여기를 눌러요\\]\\(https") && (urgent.description ?? "").includes("\\*\\*전등\\*\\*"), urgent.description);
+  check("마크다운 이스케이프", escapeMarkdown("a*b_c`d") === "a\\*b\\_c\\`d");
+
+  const colorOf = (level: string | null) => buildNewReportEmbed({ ...notice, riskLevel: level, riskScore: null }, null).color;
+  check("위험도별 색: 높음 주황 · 중간 노랑 · 낮음 회색 · 분석 전 연회색", colorOf("높음") === EMBED_COLORS.높음 && colorOf("중간") === EMBED_COLORS.중간 && colorOf("낮음") === EMBED_COLORS.낮음 && colorOf(null) === EMBED_COLORS.unanalyzed);
+
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  const held: NewReportNotice = { ...notice, riskLevel: null, riskScore: null, held: true, heldReason: "이미지 안전성 검사 실패", attachment: { dataUrl: png, name: "photo.png", size: 68 } };
+  const heldPayload = buildNewReportPayload("https://discord.com/api/webhooks/1/abc", held);
+  const heldJson = heldPayload instanceof FormData ? JSON.parse(String(heldPayload.get("payload_json"))) : {};
+  const heldEmbed: DiscordEmbed = heldJson.embeds?.[0] ?? {};
+  check("보류 카드는 황색 띠 + 보류 사유 칸이 맨 위", heldEmbed.color === EMBED_COLORS.held && heldEmbed.fields?.[0]?.name === "🛑 보류 사유");
+  check("보류 사진은 카드 안에 크게 (attachment://)", heldEmbed.image?.url === "attachment://REP-20261010-0010.png", JSON.stringify(heldEmbed.image));
+  check("푸시 미리보기 한 줄 + 멘션 차단", heldJson.content === "⏸️ 공개 보류 신고 · 테스트고" && JSON.stringify(heldJson.allowed_mentions) === '{"parse":[]}');
+
+  const app = buildApplicationEmbed({ schoolName: "새학교", address: "광명", website: "https://new.example/path", reason: "신청", hasReplyEmail: false, link: null });
+  check("학교 신청 카드는 파란 띠 + 홈페이지는 링크 미리보기 없는 주소", app.color === EMBED_COLORS.application && app.fields?.find((f) => f.name === "🌐 홈페이지")?.value === "<https://new.example/path>");
+
+  const monthly = buildMonthlyEmbed("2026-09", [
+    { schoolName: "가학교", received: 12, completedInMonth: 9, completionRate: 75, avgResolutionHours: 30, completedLate: 1, overdueOpen: 2, topCategory: "시설 고장", topLocation: "화장실" },
+    { schoolName: "나학교", received: 3, completedInMonth: 1, completionRate: 33, avgResolutionHours: 5, completedLate: 0, overdueOpen: 0, topCategory: null, topLocation: null },
+  ], null);
+  check("월간 보고 카드는 초록 띠 + 전체 합계", monthly.color === EMBED_COLORS.monthly && (monthly.description ?? "").includes("접수 **15건**") && (monthly.description ?? "").includes("처리 완료 **10건**"), monthly.description);
+  check("학교마다 칸 하나", monthly.fields?.length === 2 && monthly.fields[0].name === "🏫 가학교");
+  const many = buildMonthlyEmbed("2026-09", Array.from({ length: 30 }, (_, i) => ({ schoolName: `학교${i}`, received: 1, completedInMonth: 0, completionRate: 0, avgResolutionHours: null, completedLate: 0, overdueOpen: 0, topCategory: null, topLocation: null })), null);
+  check("칸은 25개까지, 나머지는 '외 N개 학교'", many.fields?.length === 25 && (many.fields?.[24].value ?? "").includes("외 6개 학교"));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");

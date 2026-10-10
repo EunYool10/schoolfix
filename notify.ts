@@ -6,7 +6,7 @@
  *  - 새 학교 추가 신청
  *  - 지난달 월간 보고 (매달 초 자동, 운영진 화면에서 수동 발송도 가능)
  *
- *  - Discord 웹훅(discord.com/api/webhooks/...) : { content }
+ *  - Discord 웹훅(discord.com/api/webhooks/...) : { content, embeds } — 색상 띠·항목 칸이 있는 카드
  *  - Slack 호환 웹훅(hooks.slack.com/...)        : { text }
  *  - 그 밖의 주소                                 : { text, content, report } (자동화 도구 연동용)
  *
@@ -148,6 +148,87 @@ function clip(text: string, max: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Discord 카드(임베드)
+//
+// Discord 에는 글자만 늘어놓는 대신 색상 띠·제목·항목 칸·사진·시각이 있는 카드로 보낸다.
+// content 에는 휴대폰 푸시 미리보기용 한 줄만 둔다.
+// 신고 내용은 사용자가 쓴 글이므로 마크다운으로 해석되지 않게 이스케이프한다.
+// (그대로 두면 [여기](주소) 같은 숨은 링크를 운영진 채널에 심을 수 있다.)
+// ---------------------------------------------------------------------------
+
+export const EMBED_COLORS = {
+  긴급: 0xe11d48,
+  높음: 0xf97316,
+  중간: 0xeab308,
+  낮음: 0x64748b,
+  unanalyzed: 0x94a3b8,
+  held: 0xf59e0b,
+  application: 0x2563eb,
+  monthly: 0x10b981,
+  test: 0x22c55e,
+} as const;
+
+export interface DiscordEmbedField {
+  name: string;
+  value: string;
+  inline?: boolean;
+}
+
+export interface DiscordEmbed {
+  title?: string;
+  url?: string;
+  description?: string;
+  color?: number;
+  author?: { name: string };
+  fields?: DiscordEmbedField[];
+  image?: { url: string };
+  footer?: { text: string };
+  timestamp?: string;
+}
+
+const EMBED_FOOTER = "SchoolFix 학교 신고 알림";
+
+/** Discord 마크다운 기호를 글자 그대로 보이게 한다. */
+export function escapeMarkdown(text: string): string {
+  return text.replace(/[\\`*_~|>#[\]()]/g, "\\$&");
+}
+
+function embedField(name: string, value: string, inline = true): DiscordEmbedField {
+  return { name: name.slice(0, 256), value: (value || "-").slice(0, 1024), inline };
+}
+
+function riskColor(level: string | null): number {
+  return level && level in EMBED_COLORS ? EMBED_COLORS[level as keyof typeof EMBED_COLORS] : EMBED_COLORS.unanalyzed;
+}
+
+function riskLabel(level: string | null, score: number | null): string {
+  if (!level) return "분석 전";
+  const icon = level === "긴급" ? "🔴" : level === "높음" ? "🟠" : level === "중간" ? "🟡" : "⚪";
+  return `${icon} ${level}${score !== null ? ` · ${score}점` : ""}`;
+}
+
+export function discordPayload(content: string, embeds: DiscordEmbed[]): Record<string, unknown> {
+  return { content: content.slice(0, 1900), embeds: embeds.slice(0, 10), allowed_mentions: { parse: [] } };
+}
+
+export function buildTestEmbed(): DiscordEmbed {
+  return {
+    title: "✅ 알림 연결 테스트",
+    description: "이 카드가 보이면 SchoolFix 알림을 받을 수 있습니다.\n새 신고 · 공개 보류 신고 · 긴급 신고 · 학교 추가 신청 · 월간 보고가 이 채널로 옵니다.",
+    color: EMBED_COLORS.test,
+    footer: { text: EMBED_FOOTER },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function sendTestNotification(env: Record<string, string | undefined> = process.env): Promise<boolean> {
+  const url = env.NOTIFY_WEBHOOK_URL;
+  if (!url) return Promise.resolve(false);
+  const text = "✅ SchoolFix 알림 연결 테스트입니다. 이 메시지가 보이면 새 신고·긴급 신고·학교 신청·월간 보고 알림을 받을 수 있습니다.";
+  return postWebhook(webhookChannel(url) === "discord" ? discordPayload("✅ SchoolFix 알림 연결 테스트", [buildTestEmbed()]) : buildTextPayload(url, text), env, "테스트 알림");
+}
+
+// ---------------------------------------------------------------------------
 // 새 신고 알림 — 모든 신고. 공개 보류 신고는 보류 사유·전체 내용·첨부 사진까지 보낸다.
 // ---------------------------------------------------------------------------
 
@@ -218,21 +299,59 @@ export function attachmentToFile(attachment: ReportAttachment, reportId: string)
   return { blob: new Blob([bytes], { type }), filename: `${reportId.replace(/[^A-Za-z0-9-]/g, "")}.${ext}` };
 }
 
+/** 푸시 알림 미리보기에 뜨는 한 줄 */
+export function newReportHeadline(n: NewReportNotice): string {
+  if (n.held) return `⏸️ 공개 보류 신고 · ${n.schoolName}`;
+  return `${n.riskLevel === "긴급" ? "🚨 긴급 신고" : "🆕 새 신고"} · ${n.schoolName}`;
+}
+
 /**
- * 웹훅 요청 본문. Discord 이고 보류 신고에 사진이 있으면 multipart 로 사진을 함께 올린다.
- * Slack·일반 웹훅은 파일 업로드 방식이 달라 본문만 보낸다.
+ * 신고 카드.
+ * 색상은 보류면 황색, 아니면 위험도별(긴급 빨강 · 높음 주황 · 중간 노랑 · 낮음 회색).
+ * @param imageFilename 함께 올리는 사진 파일 이름. 있으면 카드 안에 크게 보여 준다.
+ */
+export function buildNewReportEmbed(n: NewReportNotice, imageFilename: string | null): DiscordEmbed {
+  const urgent = n.riskLevel === "긴급";
+  const fields: DiscordEmbedField[] = [];
+  if (n.held) fields.push(embedField("🛑 보류 사유", escapeMarkdown(n.heldReason || "자동 검사에서 검토 대상으로 분류"), false));
+  fields.push(
+    embedField("📍 위치", escapeMarkdown(clip(n.location, 200))),
+    embedField("🏷️ 분류", escapeMarkdown(n.category)),
+    embedField("⚠️ 위험도", riskLabel(n.riskLevel, n.riskScore)),
+    embedField("🔖 접수번호", `\`${n.reportId.replace(/`/g, "")}\``)
+  );
+  if (n.attachment) {
+    const name = escapeMarkdown(clip(n.attachment.name || "첨부 사진", 80));
+    fields.push(embedField("📎 첨부", imageFilename ? `${name}${sizeLabel(n.attachment.size)} — 아래 사진` : `${name}${sizeLabel(n.attachment.size)} — 운영진 화면에서 확인`, false));
+  }
+  if (n.held) fields.push(embedField("👉 처리", "운영진 화면 → 신고 관리에서 승인하거나 삭제할 수 있습니다.", false));
+
+  return {
+    title: n.held ? "⏸️ 공개 보류 신고 — 운영진 검토 필요" : urgent ? "🚨 긴급 신고" : "🆕 새 신고",
+    url: n.link ?? undefined,
+    author: { name: `🏫 ${clip(n.schoolName, 100)}` },
+    // 보류 신고는 운영진이 디스코드에서 바로 판단할 수 있도록 내용을 길게 싣는다.
+    description: `**${escapeMarkdown(clip(n.title, 100))}**\n${escapeMarkdown(clip(n.description, n.held ? 1200 : 300))}`,
+    color: n.held ? EMBED_COLORS.held : riskColor(n.riskLevel),
+    fields,
+    image: imageFilename ? { url: `attachment://${imageFilename}` } : undefined,
+    footer: { text: EMBED_FOOTER },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * 웹훅 요청 본문. Discord 는 카드로, 보류 신고에 사진이 있으면 multipart 로 사진을 함께 올린다.
+ * Slack·일반 웹훅은 파일 업로드 방식이 달라 글자로만 보낸다.
  */
 export function buildNewReportPayload(url: string, n: NewReportNotice): Record<string, unknown> | FormData {
   const channel = webhookChannel(url);
-  const file = channel === "discord" && n.held && n.attachment ? attachmentToFile(n.attachment, n.reportId) : null;
-  const text = buildNewReportText(n, Boolean(file));
-  if (!file) return buildTextPayload(url, text);
+  if (channel !== "discord") return buildTextPayload(url, buildNewReportText(n, false));
+  const file = n.held && n.attachment ? attachmentToFile(n.attachment, n.reportId) : null;
+  const payload = discordPayload(newReportHeadline(n), [buildNewReportEmbed(n, file?.filename ?? null)]);
+  if (!file) return payload;
   const form = new FormData();
-  form.append("payload_json", JSON.stringify({
-    content: text.slice(0, 1900),
-    allowed_mentions: { parse: [] },
-    attachments: [{ id: 0, filename: file.filename }],
-  }));
+  form.append("payload_json", JSON.stringify({ ...payload, attachments: [{ id: 0, filename: file.filename }] }));
   form.append("files[0]", file.blob, file.filename);
   return form;
 }
@@ -263,6 +382,34 @@ export function buildApplicationText(n: ApplicationNotice): string {
   ];
   if (n.link) lines.push(`운영진 화면 → 학교 신청 메일함에서 승인할 수 있습니다: ${n.link}`);
   return lines.join("\n");
+}
+
+export function buildApplicationEmbed(n: ApplicationNotice): DiscordEmbed {
+  return {
+    title: "📮 새 학교 추가 신청",
+    url: n.link ?? undefined,
+    description: `**신청 사유**\n${escapeMarkdown(clip(n.reason, 600))}`,
+    color: EMBED_COLORS.application,
+    fields: [
+      embedField("🏫 학교", escapeMarkdown(clip(n.schoolName, 100))),
+      embedField("📍 주소", escapeMarkdown(clip(n.address, 200))),
+      embedField("✉️ 회신 이메일", n.hasReplyEmail ? "있음 (메일함에서 확인)" : "없음"),
+      // 주소는 글자 그대로 보여 준다. 숨은 링크로 바뀌지 않도록 꺾쇠로 감싸 미리보기도 끈다.
+      embedField("🌐 홈페이지", `<${clip(n.website, 300).replace(/[<>\s]/g, "")}>`, false),
+      embedField("👉 처리", "운영진 화면 → 학교 신청 메일함에서 \"승인하고 학교 등록\"을 누르면 바로 지원 학교에 추가됩니다.", false),
+    ],
+    footer: { text: EMBED_FOOTER },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function sendApplicationNotification(n: ApplicationNotice, env: Record<string, string | undefined> = process.env): Promise<boolean> {
+  const url = env.NOTIFY_WEBHOOK_URL;
+  if (!url) return Promise.resolve(false);
+  const payload = webhookChannel(url) === "discord"
+    ? discordPayload(`📮 새 학교 추가 신청 · ${clip(n.schoolName, 100)}`, [buildApplicationEmbed(n)])
+    : buildTextPayload(url, buildApplicationText(n));
+  return postWebhook(payload, env, "학교 신청 알림");
 }
 
 export interface MonthlySchoolSummary {
@@ -308,10 +455,59 @@ export function buildMonthlyText(month: string, schools: MonthlySchoolSummary[],
   return text.length > 1900 ? `${text.slice(0, 1880)}\n… (일부 생략)` : text;
 }
 
+/** 카드 한 장에 넣을 수 있는 칸은 25개다. 학교가 더 많으면 마지막 칸에 나머지 수를 적는다. */
+const MAX_MONTHLY_FIELDS = 24;
+
+export function buildMonthlyEmbed(month: string, schools: MonthlySchoolSummary[], link: string | null): DiscordEmbed {
+  const [y, m] = month.split("-");
+  const totalReceived = schools.reduce((sum, s) => sum + s.received, 0);
+  const totalCompleted = schools.reduce((sum, s) => sum + s.completedInMonth, 0);
+  const totalOverdue = schools.reduce((sum, s) => sum + s.overdueOpen, 0);
+  const fields = schools.slice(0, MAX_MONTHLY_FIELDS).map((s) => embedField(
+    `🏫 ${clip(s.schoolName, 100)}`,
+    [
+      `📥 접수 **${s.received}건** · 완료율 **${s.completionRate === null ? "-" : `${s.completionRate}%`}**`,
+      `✅ 처리 완료 **${s.completedInMonth}건** · 평균 **${hoursLabel(s.avgResolutionHours)}**`,
+      `⏰ 기한 넘겨 완료 ${s.completedLate}건 · 현재 기한 초과 ${s.overdueOpen}건`,
+      s.topCategory || s.topLocation ? `🔝 ${escapeMarkdown(s.topCategory ?? "-")} · ${escapeMarkdown(clip(s.topLocation ?? "-", 60))}` : "",
+    ].filter(Boolean).join("\n"),
+    false
+  ));
+  if (schools.length > MAX_MONTHLY_FIELDS) {
+    fields.push(embedField("…", `외 ${schools.length - MAX_MONTHLY_FIELDS}개 학교는 운영진 화면 → 월별 통계에서 확인하세요.`, false));
+  }
+  return {
+    title: `📊 ${y}년 ${Number(m)}월 월간 보고`,
+    url: link ?? undefined,
+    description: schools.length === 0
+      ? "이 달에 접수되거나 처리된 신고가 없습니다."
+      : `학교 ${schools.length}곳 · 접수 **${totalReceived}건** · 처리 완료 **${totalCompleted}건** · 현재 기한 초과 **${totalOverdue}건**`,
+    color: EMBED_COLORS.monthly,
+    fields,
+    footer: { text: `${EMBED_FOOTER} · 자세한 내용은 운영진 → 월별 통계` },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function sendMonthlyNotification(month: string, schools: MonthlySchoolSummary[], link: string | null, env: Record<string, string | undefined> = process.env): Promise<boolean> {
+  const url = env.NOTIFY_WEBHOOK_URL;
+  if (!url) return Promise.resolve(false);
+  const [y, m] = month.split("-");
+  const payload = webhookChannel(url) === "discord"
+    ? discordPayload(`📊 ${y}년 ${Number(m)}월 월간 보고`, [buildMonthlyEmbed(month, schools, link)])
+    : buildTextPayload(url, buildMonthlyText(month, schools, link));
+  return postWebhook(payload, env, "월간 보고");
+}
+
 export function buildWebhookPayload(url: string, n: UrgentNotice): Record<string, unknown> {
   const text = buildNotificationText(n);
   const channel = webhookChannel(url);
-  if (channel === "discord" || channel === "slack") return buildTextPayload(url, text);
+  if (channel === "discord") {
+    // 접수 뒤 위험도 분석에서 긴급으로 판정된 신고 — 새 신고와 같은 카드 모양으로 보낸다.
+    const notice: NewReportNotice = { ...n, held: n.held, heldReason: null, attachment: null };
+    return discordPayload(`🚨 긴급 신고 · ${n.schoolName}`, [{ ...buildNewReportEmbed(notice, null), title: "🚨 긴급 신고 (위험도 분석 결과)" }]);
+  }
+  if (channel === "slack") return buildTextPayload(url, text);
   return {
     text,
     content: text,
