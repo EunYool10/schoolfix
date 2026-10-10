@@ -81,6 +81,20 @@ export function buildTextPayload(url: string, text: string): Record<string, unkn
   return { text, content: text };
 }
 
+/** 마지막 전송 결과 — 운영 중 알림이 안 올 때 원인을 바로 확인하기 위한 진단 정보 */
+export interface NotifyResult {
+  at: string;
+  label: string;
+  ok: boolean;
+  /** 실패 사유 (HTTP 상태와 서비스가 돌려준 짧은 오류). 웹훅 주소는 담지 않는다. */
+  error: string | null;
+}
+
+let lastResult: NotifyResult | null = null;
+export function lastNotifyResult(): NotifyResult | null {
+  return lastResult;
+}
+
 /**
  * 알림 전송 공통부. 실패해도 예외를 던지지 않고 false 를 돌려준다.
  * payload 가 FormData 면(사진 첨부) multipart 로 보낸다. Content-Type 은 fetch 가 경계값과 함께 정한다.
@@ -94,21 +108,30 @@ export async function postWebhook(
   if (!url) return false;
   if (!webhookChannel(url)) {
     console.error("[notify] NOTIFY_WEBHOOK_URL 은 HTTPS 주소여야 합니다.");
+    lastResult = { at: new Date().toISOString(), label, ok: false, error: "NOTIFY_WEBHOOK_URL 이 HTTPS 주소가 아님" };
     return false;
   }
   const isForm = typeof FormData !== "undefined" && payload instanceof FormData;
   try {
-    const response = await fetch(url, {
+    const response = await fetch(url.trim(), {
       method: "POST",
       headers: isForm ? undefined : { "Content-Type": "application/json" },
       body: isForm ? payload : JSON.stringify(payload),
       // 사진을 올릴 때는 시간이 더 걸린다.
       signal: AbortSignal.timeout(isForm ? 30000 : 10000),
     });
-    if (!response.ok) throw new Error(`status ${response.status}`);
+    if (!response.ok) {
+      // Discord 는 {"message":"Unknown Webhook","code":10015} 처럼 원인을 알려 준다.
+      const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200);
+      throw new Error(`status ${response.status}${detail ? ` ${detail}` : ""}`);
+    }
+    console.log(`[notify] ${label} 전송 완료`);
+    lastResult = { at: new Date().toISOString(), label, ok: true, error: null };
     return true;
   } catch (err) {
-    console.error(`[notify] ${label} 전송 실패:`, err instanceof Error ? err.message : err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[notify] ${label} 전송 실패:`, message);
+    lastResult = { at: new Date().toISOString(), label, ok: false, error: message.slice(0, 240) };
     return false;
   }
 }
