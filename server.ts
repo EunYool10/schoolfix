@@ -217,7 +217,9 @@ if (!fs.existsSync(DATA_DIR)) {
 // 저장소
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/+$/, "") || "";
+// Data API 화면의 "API URL"(…/rest/v1)을 그대로 붙여넣는 경우가 많다.
+// 서버가 /rest/v1 을 직접 붙이므로, 끝의 슬래시와 /rest/v1 은 떼고 프로젝트 주소만 남긴다.
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "").replace(/\/rest\/v1$/i, "");
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_API_KEY = SUPABASE_SECRET_KEY || SUPABASE_SERVICE_ROLE_KEY;
@@ -327,6 +329,20 @@ async function initializeDataStore() {
   }
   if (!/^https:\/\//i.test(SUPABASE_URL)) {
     throw new Error("SUPABASE_URL은 HTTPS 주소여야 합니다.");
+  }
+  // 대시보드 주소(supabase.com/dashboard/...)나 경로가 남은 주소는 REST 요청이 404(PGRST125)로 실패한다.
+  // 원인을 알 수 있도록 시작 단계에서 바로 알려 준다.
+  let supabaseUrl: URL;
+  try {
+    supabaseUrl = new URL(SUPABASE_URL);
+  } catch {
+    throw new Error("SUPABASE_URL 형식이 올바르지 않습니다. 예: https://abcd1234.supabase.co");
+  }
+  if (supabaseUrl.hostname === "supabase.com" || supabaseUrl.hostname.endsWith(".supabase.com")) {
+    throw new Error("SUPABASE_URL에 대시보드 주소가 들어 있습니다. Project URL(예: https://abcd1234.supabase.co)을 넣어 주세요.");
+  }
+  if (supabaseUrl.pathname !== "/" && supabaseUrl.pathname !== "") {
+    throw new Error(`SUPABASE_URL에는 경로 없이 프로젝트 주소만 넣어 주세요. 현재 경로: ${supabaseUrl.pathname} (예: https://abcd1234.supabase.co)`);
   }
 
   const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked] = await Promise.all([
