@@ -464,7 +464,7 @@ export default function App() {
           <p className="mt-1 text-slate-400">
             익명 신고를 이용할 수 있습니다. 학교 추가 신청의 개인정보 처리 안내를 확인해 주세요.
           </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">서비스 설명서</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button></div>
+          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button></div>
         </div>
       </footer>
       {policySection && <ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} />}
