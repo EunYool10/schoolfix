@@ -44,6 +44,14 @@ services:
       # 학교별 교사 비밀번호 bcrypt 해시 JSON. key 는 schools.seed.json 의 school.id.
       - key: SCHOOL_TEACHER_PASSWORD_HASHES
         sync: false
+      # Supabase 영구 저장소를 연결할 때 설정합니다. 둘 중 API 키는 하나만 입력합니다.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      # 구형 service_role JWT를 쓰는 경우에만 SUPABASE_SECRET_KEY 대신 사용하세요.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
 
       # ── 유료 플랜으로 올릴 때 활성화 (위 mountPath 와 일치시킬 것) ──
       # - key: DATA_DIR
