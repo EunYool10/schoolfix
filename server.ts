@@ -81,7 +81,9 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
-import { sendUrgentNotification } from "./notify";
+import { buildApplicationText, buildMonthlyText, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
+import { computeSla } from "./src/utils/sla";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 const app = express();
@@ -288,7 +290,7 @@ async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promi
   return response;
 }
 
-type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters";
+type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters" | "settings";
 
 async function readSupabaseDocument(key: StoreKey): Promise<unknown | null> {
   const query = new URLSearchParams({ select: "key,payload", key: `eq.${key}`, limit: "1" });
@@ -361,16 +363,18 @@ async function initializeDataStore() {
     }
   }
 
-  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked] = await Promise.all([
+  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked, remoteSettings] = await Promise.all([
     readSupabaseDocument("reports"),
     readSupabaseDocument("school_applications"),
     readSupabaseDocument("custom_schools"),
     readSupabaseDocument("blocked_reporters"),
+    readSupabaseDocument("settings"),
   ]);
-  // 새로 추가된 두 문서는 처음 쓸 때 만든다. 테이블 제약(supabase/schema.sql)을 아직 갱신하지 않은
+  // 나중에 추가된 문서들은 처음 쓸 때 만든다. 테이블 제약(supabase/schema.sql)을 아직 갱신하지 않은
   // 배포에서도 서버가 시작은 되도록, 시작 시점에는 쓰지 않는다.
   cachedCustomSchools = Array.isArray(remoteCustomSchools) ? (remoteCustomSchools as SchoolCatalogEntry[]) : [];
   cachedBlockedReporters = Array.isArray(remoteBlocked) ? (remoteBlocked as BlockedReporter[]) : [];
+  cachedSettings = Array.isArray(remoteSettings) ? (remoteSettings as NotificationSettings[]) : [];
   const reports = Array.isArray(remoteReports) ? remoteReports as StoredReport[] : localReports();
   const applications = Array.isArray(remoteApplications) ? remoteApplications as SchoolApplication[] : localSchoolApplications();
   const defaultSchool = loadSchools()[0];
@@ -418,8 +422,36 @@ function loadSchoolApplications(): SchoolApplication[] {
 
 const CUSTOM_SCHOOLS_FILE = path.join(DATA_DIR, "custom_schools.json");
 const BLOCKED_REPORTERS_FILE = path.join(DATA_DIR, "blocked_reporters.json");
+const SETTINGS_FILE = path.join(DATA_DIR, "settings.json");
 let cachedCustomSchools: SchoolCatalogEntry[] = [];
 let cachedBlockedReporters: BlockedReporter[] = [];
+/** 저장소 문서는 배열 형식이어야 하므로 설정 객체 하나를 배열에 담아 둔다. */
+let cachedSettings: NotificationSettings[] = [];
+
+/** 운영진 화면 "알림" 탭에서 켜고 끄는 알림 종류와, 월간 보고 중복 발송 방지 기록 */
+interface NotificationSettings {
+  urgent: boolean;
+  applications: boolean;
+  monthly: boolean;
+  /** 마지막으로 자동 발송한 월간 보고의 대상 월 "YYYY-MM" */
+  lastMonthlyReport: string | null;
+}
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = { urgent: true, applications: true, monthly: true, lastMonthlyReport: null };
+
+function loadNotificationSettings(): NotificationSettings {
+  const list = useSupabaseStore ? cachedSettings : readLocalArray<NotificationSettings>(SETTINGS_FILE, "settings");
+  return { ...DEFAULT_NOTIFICATION_SETTINGS, ...(list[0] ?? {}) };
+}
+
+async function saveNotificationSettings(settings: NotificationSettings) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("settings", [settings]);
+    cachedSettings = [{ ...settings }];
+    return;
+  }
+  writeLocalArray(SETTINGS_FILE, [settings]);
+}
 
 function readLocalArray<T>(file: string, label: string): T[] {
   try {
@@ -709,10 +741,15 @@ const BACKFILL_MAX_PER_RUN = 20;
  * 위험도가 알림 기준 이상이면 운영진에게 웹훅으로 알린다.
  * 응답을 기다리지 않는다 — 알림이 늦거나 실패해도 신고 처리에는 영향이 없다.
  */
+/** 알림 메시지에 붙일 사이트 주소. HTTPS 가 아니면 붙이지 않는다. */
+function publicBaseUrl(): string | null {
+  const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+  return base && /^https:\/\//i.test(base) ? base : null;
+}
+
 function notifyIfUrgent(report: StoredReport) {
   const analysis = report.riskAnalysis;
-  if (!analysis || !process.env.NOTIFY_WEBHOOK_URL) return;
-  const base = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
+  if (!analysis || !process.env.NOTIFY_WEBHOOK_URL || !loadNotificationSettings().urgent) return;
   void sendUrgentNotification({
     schoolName: report.schoolName ?? "",
     reportId: report.id,
@@ -723,8 +760,80 @@ function notifyIfUrgent(report: StoredReport) {
     riskScore: analysis.risk_score ?? null,
     description: maskProfanity(report.description).text,
     held: report.moderationStatus === "held",
-    link: base && /^https:\/\//i.test(base) ? base : null,
+    link: publicBaseUrl(),
   });
+}
+
+// ---------------------------------------------------------------------------
+// 월간 보고 알림
+//
+// 매달 초(한국 시간 1일 오전 9시 이후) 지난달 보고를 한 번 보낸다.
+// 무료 플랜은 서버가 잠들 수 있으므로 "정해진 시각에 한 번" 이 아니라
+// "아직 안 보냈으면 깨어 있을 때 보낸다" 로 동작한다. 보낸 달은 저장소에 기록해 중복을 막는다.
+// ---------------------------------------------------------------------------
+
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+/** 저장소 기록에 실패해도 같은 프로세스에서 같은 달을 반복해 보내지 않도록 기억한다. */
+let monthlySentInProcess: string | null = null;
+let monthlyInFlight = false;
+
+/** 학교별 월간 요약. 공개 보류·삭제된 신고는 제외한다. 접수나 완료가 있는 학교만 담는다. */
+function summarizeMonth(month: string, schoolId?: string): MonthlySchoolSummary[] {
+  const reports = loadReports().filter((r) => !schoolId || r.schoolId === schoolId);
+  const bySchool = new Map<string, StoredReport[]>();
+  for (const report of reports) {
+    const key = report.schoolId ?? "";
+    bySchool.set(key, [...(bySchool.get(key) ?? []), report]);
+  }
+  const summaries: MonthlySchoolSummary[] = [];
+  for (const [id, list] of bySchool) {
+    const inputs = list.map((r) => ({
+      createdAt: r.createdAt,
+      completedAt: r.completedAt,
+      status: r.status,
+      category: r.category,
+      location: [r.locationType ?? r.location, r.locationDetail].filter(Boolean).join(" · "),
+      riskLevel: r.riskAnalysis?.risk_level ?? null,
+    }));
+    const monthly = buildMonthlyReport(inputs, month);
+    if (monthly.received === 0 && monthly.completedInMonth === 0) continue;
+    summaries.push({
+      schoolName: list[0]?.schoolName || findSchool(id)?.schoolName || id,
+      received: monthly.received,
+      completedInMonth: monthly.completedInMonth,
+      completionRate: monthly.completionRate,
+      avgResolutionHours: monthly.avgResolutionHours,
+      completedLate: monthly.completedLate,
+      overdueOpen: inputs.filter((r) => r.status !== "completed" && computeSla(r).overdue).length,
+      topCategory: monthly.byCategory[0]?.[0] ?? null,
+      topLocation: monthly.byLocation[0]?.[0] ?? null,
+    });
+  }
+  return summaries.sort((a, b) => b.received - a.received);
+}
+
+async function maybeSendMonthlyReport(now = Date.now()) {
+  if (!process.env.NOTIFY_WEBHOOK_URL || monthlyInFlight) return;
+  const settings = loadNotificationSettings();
+  if (!settings.monthly) return;
+  const kst = new Date(now + KST_OFFSET_MS);
+  const target = shiftMonth(monthKey(new Date(now).toISOString()) as string, -1);
+  if (settings.lastMonthlyReport === target || monthlySentInProcess === target) return;
+  // 1일 오전 9시 전에는 보내지 않는다. 2일 이후에 깨어났다면 바로 보낸다.
+  if (kst.getUTCDate() === 1 && kst.getUTCHours() < 9) return;
+
+  monthlyInFlight = true;
+  try {
+    const sent = await sendText(buildMonthlyText(target, summarizeMonth(target), publicBaseUrl()), process.env, "월간 보고");
+    if (!sent) return;
+    monthlySentInProcess = target;
+    await saveNotificationSettings({ ...loadNotificationSettings(), lastMonthlyReport: target }).catch((err) => {
+      console.error("[notify] 월간 보고 발송 기록 저장 실패 (supabase/schema.sql 갱신 필요할 수 있음):", err instanceof Error ? err.message : err);
+    });
+    console.log(`[notify] ${target} 월간 보고를 보냈습니다.`);
+  } finally {
+    monthlyInFlight = false;
+  }
 }
 
 async function backfillMissingRiskAnalysis() {
@@ -863,10 +972,21 @@ app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 
   };
   try {
     await saveSchoolApplications([application, ...loadSchoolApplications()]);
-    return res.status(201).json({ ok: true, data: { id: application.id, createdAt: application.createdAt } });
   } catch {
     return safeError(res, 500, "신청을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
+  if (loadNotificationSettings().applications) {
+    // 응답을 기다리지 않는다. 알림 실패가 신청 접수를 막지 않는다.
+    void sendText(buildApplicationText({
+      schoolName: maskProfanity(schoolName).text,
+      address: maskProfanity(address).text,
+      website,
+      reason: maskProfanity(reason).text,
+      hasReplyEmail: Boolean(replyEmail),
+      link: publicBaseUrl(),
+    }), process.env, "학교 신청 알림");
+  }
+  return res.status(201).json({ ok: true, data: { id: application.id, createdAt: application.createdAt } });
 });
 
 /** 전체 신고 — 누구나 조회 가능. 개인정보 없음. */
@@ -1098,6 +1218,60 @@ app.delete("/api/staff/blocked-reporters/:id", async (req, res) => {
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+});
+
+// --- 운영진 화면 "알림" 탭 ------------------------------------------------------
+
+/** 알림 연결 상태와 설정. 웹훅 주소 자체는 비밀값이라 내보내지 않는다. */
+app.get("/api/staff/notifications", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const settings = loadNotificationSettings();
+  return res.json({
+    ok: true,
+    data: {
+      channel: webhookChannel(process.env.NOTIFY_WEBHOOK_URL),
+      minRisk: ["긴급", "높음", "중간", "낮음"].includes(process.env.NOTIFY_MIN_RISK || "") ? process.env.NOTIFY_MIN_RISK : "긴급",
+      linkConfigured: Boolean(publicBaseUrl()),
+      urgent: settings.urgent,
+      applications: settings.applications,
+      monthly: settings.monthly,
+      lastMonthlyReport: settings.lastMonthlyReport,
+    },
+  });
+});
+
+app.patch("/api/staff/notifications", async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const body = req.body || {};
+  const next = { ...loadNotificationSettings() };
+  for (const key of ["urgent", "applications", "monthly"] as const) {
+    if (typeof body[key] === "boolean") next[key] = body[key];
+  }
+  try {
+    await saveNotificationSettings(next);
+    return res.json({ ok: true });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+});
+
+app.post("/api/staff/notifications/test", rateLimit("notifyTest", { windowMs: 10 * 60 * 1000, max: 5, message: "테스트 알림은 10분에 5번까지 보낼 수 있습니다." }), async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  if (!webhookChannel(process.env.NOTIFY_WEBHOOK_URL)) return safeError(res, 400, "NOTIFY_WEBHOOK_URL 환경변수가 설정되지 않았습니다.");
+  const sent = await sendText("✅ SchoolFix 알림 연결 테스트입니다. 이 메시지가 보이면 긴급 신고·학교 신청·월간 보고 알림을 받을 수 있습니다.", process.env, "테스트 알림");
+  return sent ? res.json({ ok: true }) : safeError(res, 502, "알림을 보내지 못했습니다. 웹훅 주소가 올바른지, 디스코드에서 웹훅이 삭제되지 않았는지 확인해주세요.");
+});
+
+/** 선택한 달의 월간 보고를 지금 보낸다. 학교를 지정하면 그 학교만 담는다. */
+app.post("/api/staff/notifications/monthly", rateLimit("notifyMonthly", { windowMs: 10 * 60 * 1000, max: 10, message: "잠시 후 다시 시도해주세요." }), async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  if (!webhookChannel(process.env.NOTIFY_WEBHOOK_URL)) return safeError(res, 400, "NOTIFY_WEBHOOK_URL 환경변수가 설정되지 않았습니다.");
+  const month = typeof req.body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(req.body.month) ? req.body.month : null;
+  if (!month) return safeError(res, 400, "보낼 달을 확인해주세요.");
+  const school = req.body?.schoolId ? findSchool(req.body.schoolId) : undefined;
+  if (req.body?.schoolId && !school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const sent = await sendText(buildMonthlyText(month, summarizeMonth(month, school?.id), publicBaseUrl()), process.env, "월간 보고");
+  return sent ? res.json({ ok: true }) : safeError(res, 502, "알림을 보내지 못했습니다. 웹훅 주소를 확인해주세요.");
 });
 
 /** 운영진이 화면에서 등록한 학교 목록 */
@@ -1964,6 +2138,13 @@ async function startServer() {
     backfillMissingRiskAnalysis().catch((err) => {
       console.error("[risk] 자동 채점 실패:", err instanceof Error ? err.message : err);
     });
+
+    // 월간 보고: 깨어날 때 한 번, 이후 30분마다 아직 안 보냈는지 확인한다.
+    const checkMonthly = () => maybeSendMonthlyReport().catch((err) => {
+      console.error("[notify] 월간 보고 확인 실패:", err instanceof Error ? err.message : err);
+    });
+    setTimeout(checkMonthly, 15_000).unref?.();
+    setInterval(checkMonthly, 30 * 60 * 1000).unref?.();
   });
 }
 

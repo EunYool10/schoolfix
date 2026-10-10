@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Printer } from "lucide-react";
+import { Loader2, Printer, Send } from "lucide-react";
 import type { StaffReport } from "../types";
 import { STATUS_MAP } from "../types";
 import { escapeHtml } from "../utils/reportDocument";
@@ -7,8 +7,11 @@ import { buildMonthlyReport, formatHours, monthKey, monthlyTrend, shiftMonth, ty
 import { computeSla } from "../utils/sla";
 
 interface Props {
+  schoolId: string;
   schoolName: string;
   reports: StaffReport[];
+  /** 운영진만 디스코드로 월간 보고를 보낼 수 있다 */
+  canNotify?: boolean;
 }
 
 function toInput(r: StaffReport): MonthlyStatsInput {
@@ -31,12 +34,31 @@ function monthLabel(month: string) {
  * 월별 통계와 보고서 — 학교에 보고할 때 바로 쓸 수 있는 월간 수치.
  * 공개 보류 신고는 아직 처리 대상이 아니므로 제외한다.
  */
-export function StaffStatsPanel({ schoolName, reports }: Props) {
+export function StaffStatsPanel({ schoolId, schoolName, reports, canNotify = false }: Props) {
   const inputs = useMemo(() => reports.filter((r) => r.moderationStatus !== "held").map(toInput), [reports]);
   const currentMonth = monthKey(new Date().toISOString()) as string;
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, i) => shiftMonth(currentMonth, -i)), [currentMonth]);
   const [month, setMonth] = useState(currentMonth);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const sendToDiscord = async () => {
+    setSending(true); setError(""); setNotice("");
+    try {
+      const res = await fetch("/api/staff/notifications/monthly", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, schoolId }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "월간 보고를 보내지 못했습니다.");
+      setNotice(`${monthLabel(month)} 월간 보고를 디스코드로 보냈습니다.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "월간 보고를 보내지 못했습니다.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   const report = useMemo(() => buildMonthlyReport(inputs, month), [inputs, month]);
   const trend = useMemo(() => monthlyTrend(inputs, 6), [inputs]);
@@ -96,11 +118,19 @@ ${table("유형별 접수", report.byCategory)}${table("위치별 접수", repor
             {monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
         </label>
-        <button type="button" onClick={printReport} className="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
-          <Printer className="h-4 w-4" /> 보고서 인쇄·PDF
-        </button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {canNotify && (
+            <button type="button" onClick={sendToDiscord} disabled={sending} className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 disabled:opacity-60">
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} 디스코드로 보내기
+            </button>
+          )}
+          <button type="button" onClick={printReport} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
+            <Printer className="h-4 w-4" /> 보고서 인쇄·PDF
+          </button>
+        </div>
       </div>
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
+      {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         {cards.map((c) => (

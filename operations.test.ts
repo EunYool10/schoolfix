@@ -9,7 +9,7 @@
 
 import { computeSla, slaLabel } from "./src/utils/sla";
 import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
-import { buildNotificationText, buildWebhookPayload, shouldNotify, type UrgentNotice } from "./notify";
+import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
 import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 let passed = 0;
@@ -116,6 +116,36 @@ console.log("\n=== 3) 긴급 신고 알림 ===\n");
   check("Slack 형식은 text", typeof slack.text === "string" && !("content" in slack));
   const generic = buildWebhookPayload("https://hook.example.com/abc", notice);
   check("일반 웹훅은 text·content·report", "text" in generic && "content" in generic && "report" in generic);
+}
+
+console.log("\n=== 3-2) 학교 신청·월간 보고 알림 ===\n");
+{
+  check("Discord 웹훅 인식", webhookChannel("https://discord.com/api/webhooks/1/abc") === "discord");
+  check("Slack 웹훅 인식", webhookChannel("https://hooks.slack.com/services/x") === "slack");
+  check("HTTP 주소는 거부", webhookChannel("http://discord.com/api/webhooks/1/abc") === null);
+  check("빈 값은 null", webhookChannel(undefined) === null && webhookChannel("not a url") === null);
+  const long = buildTextPayload("https://discord.com/api/webhooks/1/abc", "가".repeat(3000));
+  check("Discord 본문은 2000자 제한 안으로 자름", String(long.content).length <= 1900);
+
+  const application = buildApplicationText({
+    schoolName: "새학교고등학교",
+    address: "경기도 광명시",
+    website: "https://new-h.goegm.kr",
+    reason: "우리 학교도 쓰고 싶어요",
+    hasReplyEmail: true,
+    link: "https://schoolfix.example",
+  });
+  check("학교 신청 알림에 학교·주소·사유", application.includes("새학교고등학교") && application.includes("경기도 광명시") && application.includes("우리 학교도"));
+  check("회신 이메일 주소는 싣지 않고 유무만", application.includes("회신 이메일: 있음") && !application.includes("@"));
+
+  const monthly = buildMonthlyText("2026-09", [
+    { schoolName: "가학교", received: 12, completedInMonth: 9, completionRate: 75, avgResolutionHours: 30, completedLate: 1, overdueOpen: 2, topCategory: "시설 고장", topLocation: "화장실" },
+  ], "https://schoolfix.example");
+  check("월간 보고에 월·학교·수치", monthly.includes("2026년 9월") && monthly.includes("가학교") && monthly.includes("접수 12건") && monthly.includes("완료율 75%"));
+  check("평균 처리 30시간 → 1.3일", monthly.includes("평균 처리 1.3일"));
+  check("신고가 없는 달 안내", buildMonthlyText("2026-08", [], null).includes("신고가 없습니다"));
+  const many = buildMonthlyText("2026-09", Array.from({ length: 60 }, (_, i) => ({ schoolName: `학교${i}`, received: 1, completedInMonth: 0, completionRate: 0, avgResolutionHours: null, completedLate: 0, overdueOpen: 0, topCategory: null, topLocation: null })), null);
+  check("학교가 많아도 1900자 안으로 줄임", many.length <= 1900 && many.includes("일부 생략"));
 }
 
 console.log("\n=== 4) 반복 신고자 걸러내기 ===\n");
