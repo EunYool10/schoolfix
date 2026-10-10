@@ -181,32 +181,27 @@ if (!fs.existsSync(DATA_DIR)) {
 // 저장소
 // ---------------------------------------------------------------------------
 
-function loadAllReports(): StoredReport[] {
+const SUPABASE_URL = process.env.SUPABASE_URL?.replace(/\/+$/, "") || "";
+const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const SUPABASE_API_KEY = SUPABASE_SECRET_KEY || SUPABASE_SERVICE_ROLE_KEY;
+const useSupabaseStore = Boolean(SUPABASE_URL && SUPABASE_API_KEY);
+let cachedReports: StoredReport[] = [];
+let cachedSchoolApplications: SchoolApplication[] = [];
+let storeWriteQueue: Promise<void> = Promise.resolve();
+
+function localReports(): StoredReport[] {
   try {
     if (fs.existsSync(DB_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
       if (Array.isArray(parsed)) {
-        const realReports = parsed.filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id));
-        if (realReports.length !== parsed.length) {
-          saveReports(realReports);
-          console.log(`[db] 테스트용 예시 신고 ${parsed.length - realReports.length}건을 제거했습니다.`);
-        }
-        const defaultSchool = loadSchools()[0];
-        return realReports.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+        return parsed;
       }
     }
   } catch (err) {
     console.error("[db] reports_db.json 읽기 실패:", err);
   }
   return [];
-}
-
-/**
- * 삭제되지 않은 신고만 반환한다.
- * 목록·검색·상세·통계·AI·PDF·인쇄 등 모든 공개 경로는 반드시 이 함수를 쓴다(§12).
- */
-function loadReports(): StoredReport[] {
-  return loadAllReports().filter((r) => !r.deletedAt && r.moderationStatus !== "held");
 }
 
 interface SchoolApplication {
@@ -222,7 +217,7 @@ interface SchoolApplication {
   updatedAt: string;
 }
 
-function loadSchoolApplications(): SchoolApplication[] {
+function localSchoolApplications(): SchoolApplication[] {
   try {
     if (!fs.existsSync(SCHOOL_APPLICATIONS_FILE)) return [];
     const parsed = JSON.parse(fs.readFileSync(SCHOOL_APPLICATIONS_FILE, "utf-8"));
@@ -233,7 +228,102 @@ function loadSchoolApplications(): SchoolApplication[] {
   }
 }
 
-function saveSchoolApplications(applications: SchoolApplication[]) {
+async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathname}`, {
+    ...init,
+    headers: {
+      apikey: SUPABASE_API_KEY,
+      // New sb_secret keys are API keys, not JWTs, and must not be sent as Bearer tokens.
+      ...(SUPABASE_SECRET_KEY ? {} : { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }),
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Supabase 저장소 요청 실패 (${response.status}): ${detail.slice(0, 300)}`);
+  }
+  return response;
+}
+
+async function readSupabaseDocument(key: "reports" | "school_applications"): Promise<unknown | null> {
+  const query = new URLSearchParams({ select: "payload", key: `eq.${key}`, limit: "1" });
+  const response = await supabaseStoreRequest(`schoolfix_store?${query.toString()}`);
+  const rows = await response.json() as Array<{ payload?: unknown }>;
+  return rows.length > 0 ? rows[0].payload ?? null : null;
+}
+
+function queueSupabaseDocument(key: "reports" | "school_applications", payload: unknown): Promise<void> {
+  const write = storeWriteQueue.then(async () => {
+    await supabaseStoreRequest("schoolfix_store?on_conflict=key", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ key, payload, updated_at: new Date().toISOString() }),
+    });
+  });
+  storeWriteQueue = write.catch(() => undefined);
+  return write;
+}
+
+async function initializeDataStore() {
+  if (Boolean(SUPABASE_URL) !== Boolean(SUPABASE_API_KEY) || (SUPABASE_SECRET_KEY && SUPABASE_SERVICE_ROLE_KEY)) {
+    throw new Error("SUPABASE_URL과 API 키를 함께 설정하고, SUPABASE_SECRET_KEY 또는 SUPABASE_SERVICE_ROLE_KEY 중 하나만 사용해야 합니다.");
+  }
+  if (!useSupabaseStore) {
+    console.log("[store] 로컬 JSON 파일 저장소를 사용합니다.");
+    return;
+  }
+  if (!/^https:\/\//i.test(SUPABASE_URL)) {
+    throw new Error("SUPABASE_URL은 HTTPS 주소여야 합니다.");
+  }
+
+  const [remoteReports, remoteApplications] = await Promise.all([
+    readSupabaseDocument("reports"),
+    readSupabaseDocument("school_applications"),
+  ]);
+  const reports = Array.isArray(remoteReports) ? remoteReports as StoredReport[] : localReports();
+  const applications = Array.isArray(remoteApplications) ? remoteApplications as SchoolApplication[] : localSchoolApplications();
+  const defaultSchool = loadSchools()[0];
+  const realReports = reports
+    .filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id))
+    .map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+  cachedReports = realReports;
+  cachedSchoolApplications = applications;
+
+  // 첫 연결 시에는 기존 data/ JSON을 가져오고, 이후에는 Supabase를 기준 저장소로 삼습니다.
+  if (!Array.isArray(remoteReports) || realReports.length !== reports.length) {
+    await queueSupabaseDocument("reports", realReports);
+  }
+  if (!Array.isArray(remoteApplications)) {
+    await queueSupabaseDocument("school_applications", applications);
+  }
+  console.log(`[store] Supabase 연결 완료: 신고 ${realReports.length}건, 학교 신청 ${applications.length}건`);
+}
+
+function loadAllReports(): StoredReport[] {
+  const stored = useSupabaseStore ? cachedReports : localReports();
+  const realReports = stored.filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id));
+  const defaultSchool = loadSchools()[0];
+  return realReports.map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
+}
+
+/** 삭제·검토 보류된 신고는 모든 공개 경로에서 제외한다. */
+function loadReports(): StoredReport[] {
+  return loadAllReports().filter((r) => !r.deletedAt && r.moderationStatus !== "held");
+}
+
+function loadSchoolApplications(): SchoolApplication[] {
+  const applications = useSupabaseStore ? cachedSchoolApplications : localSchoolApplications();
+  return applications.map((application) => ({ ...application }));
+}
+
+async function saveSchoolApplications(applications: SchoolApplication[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("school_applications", applications);
+    cachedSchoolApplications = applications.map((application) => ({ ...application }));
+    return;
+  }
   try {
     const tmp = `${SCHOOL_APPLICATIONS_FILE}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(applications, null, 2), "utf-8");
@@ -273,7 +363,12 @@ async function moderateReport(title: string, description: string, image: string 
   }
 }
 
-function saveReports(reports: StoredReport[]) {
+async function saveReports(reports: StoredReport[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("reports", reports);
+    cachedReports = reports.map((report) => ({ ...report }));
+    return;
+  }
   try {
     // 임시 파일에 쓴 뒤 교체한다. 쓰기 도중 중단돼도 기존 파일이 깨지지 않는다.
     const tmp = `${DB_FILE}.tmp`;
@@ -281,6 +376,7 @@ function saveReports(reports: StoredReport[]) {
     fs.renameSync(tmp, DB_FILE);
   } catch (err) {
     console.error("[db] reports_db.json 저장 실패:", err);
+    throw err;
   }
 }
 
@@ -442,7 +538,7 @@ async function backfillMissingRiskAnalysis() {
     } else {
       all[idx].riskAnalysisError = error;
     }
-    saveReports(all);
+    await saveReports(all);
 
     // 집합이 바뀌었으니 요약 캐시를 버린다.
     summaryCache = null;
@@ -482,7 +578,7 @@ function computeStatistics(reports: StoredReport[]): ReportStatistics {
 // ---------------------------------------------------------------------------
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", storedReportsCount: loadReports().length });
+  res.json({ status: "ok", dataStore: useSupabaseStore ? "supabase" : "local-json", storedReportsCount: loadReports().length });
 });
 
 app.get("/api/schools", (_req, res) => {
@@ -496,7 +592,7 @@ app.get("/api/schools/:schoolId/locations", (req, res) => {
 });
 
 /** 학교 추가 요청은 학생 화면에 공개하지 않고 DATA_DIR에 별도 보관한다. */
-app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 60 * 60 * 1000, max: 5, message: "신청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), (req, res) => {
+app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 60 * 60 * 1000, max: 5, message: "신청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), async (req, res) => {
   const body = req.body || {};
   const schoolName = typeof body.schoolName === "string" ? body.schoolName.trim() : "";
   const website = typeof body.website === "string" ? body.website.trim() : "";
@@ -522,7 +618,7 @@ app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 
     status: "new", createdAt: now, updatedAt: now,
   };
   try {
-    saveSchoolApplications([application, ...loadSchoolApplications()]);
+    await saveSchoolApplications([application, ...loadSchoolApplications()]);
     return res.status(201).json({ ok: true, data: { id: application.id, createdAt: application.createdAt } });
   } catch {
     return safeError(res, 500, "신청을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
@@ -606,7 +702,7 @@ app.get("/api/staff/school-applications", (req, res) => {
   return res.json({ ok: true, data: loadSchoolApplications() });
 });
 
-app.patch("/api/staff/school-applications/:id", (req, res) => {
+app.patch("/api/staff/school-applications/:id", async (req, res) => {
   if (!requireStaff(req, res)) return;
   const action = req.body?.action;
   if (action !== "mark-reviewed" && action !== "mark-new") return safeError(res, 400, "신청 처리 상태가 올바르지 않습니다.");
@@ -616,20 +712,20 @@ app.patch("/api/staff/school-applications/:id", (req, res) => {
   application.status = action === "mark-reviewed" ? "reviewed" : "new";
   application.updatedAt = new Date().toISOString();
   try {
-    saveSchoolApplications(applications);
+    await saveSchoolApplications(applications);
     return res.json({ ok: true });
   } catch {
     return safeError(res, 500, "신청 상태를 저장하지 못했습니다.");
   }
 });
 
-app.delete("/api/staff/school-applications/:id", (req, res) => {
+app.delete("/api/staff/school-applications/:id", async (req, res) => {
   if (!requireStaff(req, res)) return;
   const applications = loadSchoolApplications();
   const remaining = applications.filter((item) => item.id !== req.params.id);
   if (remaining.length === applications.length) return safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
   try {
-    saveSchoolApplications(remaining);
+    await saveSchoolApplications(remaining);
     return res.json({ ok: true });
   } catch {
     return safeError(res, 500, "학교 신청을 삭제하지 못했습니다.");
@@ -644,7 +740,7 @@ app.get("/api/staff/moderation", (req, res) => {
   return res.json({ ok: true, data: held.map((report) => ({ ...toPublicReport(report), moderationReason: report.moderationReason ?? null, attachmentName: report.attachmentName ?? null })) });
 });
 
-app.patch("/api/staff/reports/:id/moderation", (req, res) => {
+app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   if (!requireStaff(req, res)) return;
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
@@ -661,12 +757,16 @@ app.patch("/api/staff/reports/:id/moderation", (req, res) => {
     report.deletedAt = now;
   }
   report.updatedAt = now;
-  saveReports(all);
+  try {
+    await saveReports(all);
+  } catch (err) {
+    return safeError(res, 500, "신고 검토 상태를 저장하지 못했습니다.", err);
+  }
   summaryCache = null;
   return res.json({ ok: true });
 });
 
-app.patch("/api/staff/reports/:id", (req, res) => {
+app.patch("/api/staff/reports/:id", async (req, res) => {
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   if (!requireReportManager(req, res, school.id)) return;
@@ -696,7 +796,11 @@ app.patch("/api/staff/reports/:id", (req, res) => {
   if (body.status === "scheduled" && !report.scheduledAt) report.scheduledAt = now;
   if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
   if (body.status === "completed" && !report.completedAt) report.completedAt = now;
-  saveReports(all);
+  try {
+    await saveReports(all);
+  } catch (err) {
+    return safeError(res, 500, "신고 처리 상태를 저장하지 못했습니다.", err);
+  }
   summaryCache = null;
   return res.json({ ok: true, data: toPublicReport(report) });
 });
@@ -993,7 +1097,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     };
 
     reports.unshift(newReport);
-    saveReports(reports);
+    await saveReports(reports);
 
     // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
     if (clarity.session) dropClarifySession(clarity.session.id);
@@ -1245,7 +1349,7 @@ app.post("/api/admin/verify-delete", rateLimit("adminVerify", LIMITS.adminVerify
  * 삭제 API 자체가 권한을 검사하므로, 프론트엔드 상태를 조작하거나
  * 개발자도구에서 직접 호출해도 토큰 없이는 삭제할 수 없다 (§7, §8).
  */
-app.delete("/api/reports/:id", (req, res) => {
+app.delete("/api/reports/:id", async (req, res) => {
   const { id } = req.params;
   const token = req.headers["x-delete-token"];
 
@@ -1262,7 +1366,11 @@ app.delete("/api/reports/:id", (req, res) => {
   // Soft Delete — 기록은 남기되 모든 공개 기능에서 제외된다 (§11, §12)
   target.deletedAt = new Date().toISOString();
   target.updatedAt = target.deletedAt;
-  saveReports(reports);
+  try {
+    await saveReports(reports);
+  } catch (err) {
+    return safeError(res, 500, "신고를 삭제하지 못했습니다.", err);
+  }
 
   // 삭제로 집합이 바뀌었으므로 AI 요약 캐시를 무효화한다
   summaryCache = null;
@@ -1281,6 +1389,7 @@ app.use("/api", (_req, res) => {
 // ---------------------------------------------------------------------------
 
 async function startServer() {
+  await initializeDataStore();
   const isProduction =
     process.env.NODE_ENV === "production" || process.argv[1]?.endsWith("server.cjs");
 

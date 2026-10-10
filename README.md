@@ -78,7 +78,7 @@ AI가 보낸 점수와 등급은 신뢰하지 않고 공식으로 다시 계산�
 |---|---|
 | 프론트엔드 | React 19, TypeScript, Tailwind CSS 4, Vite 8 |
 | 백엔드 | Express 4 (`server.ts`) |
-| 저장소 | JSON 파일 (`data/reports_db.json`) |
+| 저장소 | Supabase REST API (`schoolfix_store`) 또는 로컬 JSON 파일 |
 | AI | OpenAI `gpt-5.6-terra` → `gpt-5.6-luna` 폴백, **서버에서만 호출** |
 | 인증 | 없음 (삭제만 bcrypt 비밀번호 검증) |
 | PDF / 인쇄 | 별도 라이브러리 없이 `@media print` + `window.print()` |
@@ -220,12 +220,23 @@ STAFF 비밀번호는 운영진 전체가 공유하는 단일 비밀번호입니
 
 배포 후 `https://<주소>/api/health`가 `{"status":"ok"}`를 반환하면 정상입니다.
 
+### Supabase로 신고 데이터 영구 보관하기
+
+Render 배포 흐름은 그대로 유지하고, 신고 및 학교 추가 신청 데이터만 Supabase에 저장할 수 있습니다.
+
+1. Supabase에서 프로젝트를 만들고, **SQL Editor**에서 [`supabase/schema.sql`](./supabase/schema.sql)을 실행합니다.
+2. Supabase 프로젝트의 **Project URL**과 서버 전용 Secret key(`sb_secret_...`)를 확인합니다. 이 키는 브라우저나 저장소에 절대 올리지 마세요. 구형 `service_role` JWT도 지원하지만 새 프로젝트에서는 Secret key를 권장합니다.
+3. Render의 `schoolfix` 서비스 **Environment**에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`를 추가하고 저장합니다. `SUPABASE_SERVICE_ROLE_KEY`를 쓸 경우에는 `SUPABASE_SECRET_KEY`와 동시에 설정하지 마세요.
+4. Render가 재배포된 뒤 `/api/health` 응답의 `dataStore`가 `supabase`인지 확인합니다.
+
+두 환경변수는 반드시 함께 설정해야 합니다. 둘 중 하나만 있거나 테이블 접근에 실패하면 서버는 시작되지 않아 로컬 JSON 저장소로 조용히 되돌아가지 않습니다. 첫 연결 시 Supabase에 신고 문서가 아직 없으면 서버가 배포 환경의 기존 `data/reports_db.json` 및 학교 신청 JSON을 가져옵니다. 이후에는 Supabase가 기준 저장소가 됩니다. 배포 환경에 기존 JSON 파일이 없거나 별도 백업이 있다면 연결 전에 Supabase SQL Editor의 `schoolfix_store`에 가져오거나 운영자에게 데이터 이관을 요청해야 합니다.
+
 ### 무료 플랜을 쓸 때
 
 - 15분간 요청이 없으면 잠들고, 다음 접속에 30~60초가 걸립니다.
-- 영구 디스크를 쓸 수 없어 **재시작·재배포 시 신고가 초기화됩니다.** 신고가 없으면 빈 목록과 안내 문구가 표시됩니다.
+- Supabase 환경변수를 설정하지 않으면 기존 JSON 파일 저장소를 쓰므로 재시작·재배포 시 데이터가 초기화될 수 있습니다.
 
-데이터를 계속 보관하려면 유료 플랜에서 영구 디스크를 붙이거나(`render.yaml` 주석 참고), JSON 파일 대신 외부 데이터베이스를 연결해야 합니다.
+데이터를 계속 보관하려면 위 안내에 따라 Supabase를 연결하거나 유료 플랜에서 영구 디스크를 붙이세요(`render.yaml` 주석 참고).
 
 ---
 
