@@ -229,7 +229,9 @@ Render 배포 흐름은 그대로 유지하고, 신고 및 학교 추가 신청 
 3. Render의 `schoolfix` 서비스 **Environment**에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`를 추가하고 저장합니다. `SUPABASE_SERVICE_ROLE_KEY`를 쓸 경우에는 `SUPABASE_SECRET_KEY`와 동시에 설정하지 마세요.
 4. Render가 재배포된 뒤 `/api/health` 응답의 `dataStore`가 `supabase`인지 확인합니다.
 
-두 환경변수는 반드시 함께 설정해야 합니다. 둘 중 하나만 있거나 테이블 접근에 실패하면 서버는 시작되지 않아 로컬 JSON 저장소로 조용히 되돌아가지 않습니다. 첫 연결 시 Supabase에 신고 문서가 아직 없으면 서버가 배포 환경의 기존 `data/reports_db.json` 및 학교 신청 JSON을 가져옵니다. 이후에는 Supabase가 기준 저장소가 됩니다. 배포 환경에 기존 JSON 파일이 없거나 별도 백업이 있다면 연결 전에 Supabase SQL Editor의 `schoolfix_store`에 가져오거나 운영자에게 데이터 이관을 요청해야 합니다.
+두 환경변수는 반드시 함께 설정해야 합니다. 둘 중 하나만 있거나 테이블 접근에 실패하면 서버는 시작되지 않아 로컬 JSON 저장소로 조용히 되돌아가지 않습니다. Supabase 문서가 없을 때만 해당 종류의 로컬 JSON을 초기 가져옵니다. 이미 존재하는 문서는 자동으로 덮어쓰지 않으며, 문서 내용이 예상한 배열 형식이 아니면 서버가 시작을 거부해 잘못된 데이터 덮어쓰기를 막습니다. 배포 환경에 기존 JSON 파일이 없거나 별도 백업이 있다면 연결 전에 Supabase SQL Editor의 `schoolfix_store`에 가져오거나 운영자에게 데이터 이관을 요청해야 합니다.
+
+**영구 저장 강제 안전장치:** Supabase 환경변수 설정 후 Render에 `REQUIRE_SUPABASE_STORE=true`를 추가하세요. 이 값이 켜져 있으면 Supabase 연결 설정이 빠진 배포는 시작되지 않습니다. 설정 전에는 `/api/health`가 `dataStore: "local-json"` 및 `persistence.durable: false`와 경고를 반환하므로 영구 저장 여부를 확인할 수 있습니다. Supabase 연결이 정상이라면 `dataStore: "supabase"`, `persistence.durable: true`가 표시됩니다.
 
 ### 무료 플랜을 쓸 때
 
