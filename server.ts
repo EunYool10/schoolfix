@@ -45,6 +45,13 @@ import {
   revokeStaffSession,
   setStaffSessionCookie,
   clearStaffSessionCookie,
+  isTeacherPasswordConfigured,
+  verifyTeacherPassword,
+  createTeacherSession,
+  getTeacherSessionSchoolId,
+  revokeTeacherSession,
+  setTeacherSessionCookie,
+  clearTeacherSessionCookie,
   issueDeleteToken,
   consumeDeleteToken,
   issueOwnerToken,
@@ -550,8 +557,16 @@ function requireStaff(req: express.Request, res: express.Response): boolean {
   return false;
 }
 
+function requireReportManager(req: express.Request, res: express.Response, schoolId: string): boolean {
+  if (getStaffSession(req) || getTeacherSessionSchoolId(req) === schoolId) return true;
+  safeError(res, 401, "해당 학교의 교사 또는 운영진 로그인이 필요합니다.");
+  return false;
+}
+
 app.get("/api/staff/session", (req, res) => {
-  res.json({ ok: true, authenticated: Boolean(getStaffSession(req)) });
+  if (getStaffSession(req)) return res.json({ ok: true, authenticated: true, role: "staff", schoolId: null });
+  const schoolId = getTeacherSessionSchoolId(req);
+  return res.json({ ok: true, authenticated: Boolean(schoolId), role: schoolId ? "teacher" : null, schoolId });
 });
 
 app.post("/api/staff/login", rateLimit("staffLogin", LIMITS.staffLogin), async (req, res) => {
@@ -566,9 +581,21 @@ app.post("/api/staff/login", rateLimit("staffLogin", LIMITS.staffLogin), async (
   return res.json({ ok: true });
 });
 
+app.post("/api/staff/teacher-login", rateLimit("staffLogin", LIMITS.staffLogin), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  if (!isTeacherPasswordConfigured(school.id)) return safeError(res, 503, "이 학교의 교사 로그인이 아직 설정되지 않았습니다.");
+  if (!await verifyTeacherPassword(req.body?.password, school.id)) return safeError(res, 401, "학교 비밀번호가 올바르지 않습니다.");
+  const token = createTeacherSession(school.id);
+  setTeacherSessionCookie(res, token);
+  return res.json({ ok: true, schoolId: school.id });
+});
+
 app.post("/api/staff/logout", (req, res) => {
   revokeStaffSession(getStaffSession(req));
+  revokeTeacherSession(req);
   clearStaffSessionCookie(res);
+  clearTeacherSessionCookie(res);
   return res.json({ ok: true });
 });
 
@@ -638,9 +665,9 @@ app.patch("/api/staff/reports/:id/moderation", (req, res) => {
 });
 
 app.patch("/api/staff/reports/:id", (req, res) => {
-  if (!requireStaff(req, res)) return;
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  if (!requireReportManager(req, res, school.id)) return;
   const { id } = req.params;
   const body = req.body || {};
   const allowedStatuses = ["pending", "reviewing", "assigned", "scheduled", "in_progress", "completed"];

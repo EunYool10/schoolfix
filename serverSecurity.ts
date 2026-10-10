@@ -157,11 +157,16 @@ export const LIMITS = {
 const STAFF_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const staffSessions = new Map<string, number>();
 const STAFF_SESSION_COOKIE = "schoolfix_staff_session";
+const teacherSessions = new Map<string, { expiresAt: number; schoolId: string }>();
+const TEACHER_SESSION_COOKIE = "schoolfix_teacher_session";
 
 setInterval(() => {
   const now = Date.now();
   for (const [token, expiresAt] of staffSessions) {
     if (expiresAt <= now) staffSessions.delete(token);
+  }
+  for (const [token, session] of teacherSessions) {
+    if (session.expiresAt <= now) teacherSessions.delete(token);
   }
 }, 10 * 60 * 1000).unref?.();
 
@@ -213,6 +218,60 @@ export function setStaffSessionCookie(res: express.Response, token: string): voi
 export function clearStaffSessionCookie(res: express.Response): void {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   res.setHeader("Set-Cookie", `${STAFF_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
+
+function teacherPasswordHashes(): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(process.env.SCHOOL_TEACHER_PASSWORD_HASHES || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([schoolId, hash]) =>
+      Boolean(schoolId) && typeof hash === "string" && hash.startsWith("$2")
+    ));
+  } catch { return {}; }
+}
+
+export function isTeacherPasswordConfigured(schoolId: string): boolean {
+  return Boolean(teacherPasswordHashes()[schoolId]);
+}
+
+export async function verifyTeacherPassword(password: unknown, schoolId: string): Promise<boolean> {
+  const hash = teacherPasswordHashes()[schoolId];
+  if (!hash || typeof password !== "string" || !password) return false;
+  try { return await bcrypt.compare(password, hash); } catch { return false; }
+}
+
+export function createTeacherSession(schoolId: string): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  teacherSessions.set(token, { expiresAt: Date.now() + STAFF_SESSION_TTL_MS, schoolId });
+  return token;
+}
+
+export function getTeacherSessionSchoolId(req: express.Request): string | null {
+  const raw = (req.headers.cookie || "").split(";").map((part) => part.trim())
+    .find((part) => part.startsWith(`${TEACHER_SESSION_COOKIE}=`))
+    ?.slice(TEACHER_SESSION_COOKIE.length + 1);
+  if (!raw) return null;
+  const session = teacherSessions.get(raw);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) { teacherSessions.delete(raw); return null; }
+  return session.schoolId;
+}
+
+export function revokeTeacherSession(req: express.Request): void {
+  const raw = (req.headers.cookie || "").split(";").map((part) => part.trim())
+    .find((part) => part.startsWith(`${TEACHER_SESSION_COOKIE}=`))
+    ?.slice(TEACHER_SESSION_COOKIE.length + 1);
+  if (raw) teacherSessions.delete(raw);
+}
+
+export function setTeacherSessionCookie(res: express.Response, token: string): void {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `${TEACHER_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${STAFF_SESSION_TTL_MS / 1000}${secure}`);
+}
+
+export function clearTeacherSessionCookie(res: express.Response): void {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.append("Set-Cookie", `${TEACHER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 
 // ---------------------------------------------------------------------------

@@ -417,7 +417,7 @@ export default function App() {
               />
             )}
             {view === "STAFF" && (
-              <StaffPortal schoolId={selectedSchool.id} reports={allReportsMarked} onRefresh={refreshAll} />
+              <StaffPortal schoolId={selectedSchool.id} schoolName={selectedSchool.schoolName} reports={allReportsMarked} onRefresh={refreshAll} />
             )}
             </>}
           </div>
