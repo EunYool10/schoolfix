@@ -344,6 +344,22 @@ async function initializeDataStore() {
   if (supabaseUrl.pathname !== "/" && supabaseUrl.pathname !== "") {
     throw new Error(`SUPABASE_URL에는 경로 없이 프로젝트 주소만 넣어 주세요. 현재 경로: ${supabaseUrl.pathname} (예: https://abcd1234.supabase.co)`);
   }
+  // 공개용 키(publishable / anon)를 넣으면 테이블 권한 오류(42501)로 실패한다.
+  // 테이블을 anon 에 열어 주는 잘못된 "해결"로 이어지지 않도록 원인을 분명히 알려 준다.
+  if (SUPABASE_SECRET_KEY && !SUPABASE_SECRET_KEY.startsWith("sb_secret_")) {
+    throw new Error("SUPABASE_SECRET_KEY에는 Supabase > Project Settings > API Keys 의 Secret key(sb_secret_...)를 넣어야 합니다. Publishable key(sb_publishable_...)나 anon 키는 사용할 수 없습니다.");
+  }
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    let role = "";
+    try {
+      role = JSON.parse(Buffer.from(SUPABASE_SERVICE_ROLE_KEY.split(".")[1] || "", "base64url").toString("utf-8")).role || "";
+    } catch {
+      // 형식을 해석할 수 없으면 서버가 실제 요청으로 확인한다.
+    }
+    if (role && role !== "service_role") {
+      throw new Error(`SUPABASE_SERVICE_ROLE_KEY에 ${role} 키가 들어 있습니다. service_role 키 또는 SUPABASE_SECRET_KEY(sb_secret_...)를 사용해 주세요.`);
+    }
+  }
 
   const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked] = await Promise.all([
     readSupabaseDocument("reports"),
