@@ -1,10 +1,16 @@
 import { useMemo, useState } from "react";
-import { Loader2, Printer, Send } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Inbox, Loader2, Printer, Send, Table2 } from "lucide-react";
 import type { StaffReport } from "../types";
 import { STATUS_MAP } from "../types";
 import { escapeHtml } from "../utils/reportDocument";
 import { buildMonthlyReport, formatHours, monthKey, monthlyTrend, shiftMonth, type MonthlyStatsInput } from "../utils/monthlyStats";
 import { computeSla } from "../utils/sla";
+import { BreakdownBars, CHART, ChartLegend, MonthlyTrendChart, RISK_COLORS, StageStack, StatTile, type BreakdownRow } from "./StatsCharts";
+
+const RISK_ORDER = ["긴급", "높음", "중간", "낮음", "미분석"];
+const OPEN_STAGES = ["pending", "reviewing", "assigned", "scheduled", "in_progress"] as const;
+/** 위치는 종류가 많아 상위 몇 곳만 막대로 보이고 나머지는 한 줄로 묶는다 */
+const TOP_LOCATIONS = 6;
 
 interface Props {
   schoolId: string;
@@ -61,10 +67,24 @@ export function StaffStatsPanel({ schoolId, schoolName, reports, canNotify = fal
   };
 
   const report = useMemo(() => buildMonthlyReport(inputs, month), [inputs, month]);
+  const previous = useMemo(() => buildMonthlyReport(inputs, shiftMonth(month, -1)), [inputs, month]);
   const trend = useMemo(() => monthlyTrend(inputs, 6), [inputs]);
-  const maxTrend = Math.max(1, ...trend.map((p) => Math.max(p.received, p.completed)));
+  const trend12 = useMemo(() => monthlyTrend(inputs, 12).map((p) => ({ ...p, label: `${Number(p.month.slice(5))}월` })), [inputs]);
+  const [showTable, setShowTable] = useState(false);
   const openNow = reports.filter((r) => r.moderationStatus !== "held" && r.status !== "completed");
   const overdueNow = openNow.filter((r) => computeSla(r).overdue).length;
+  const monthIndex = monthOptions.indexOf(month);
+  const stages = OPEN_STAGES.map((status) => ({ label: STATUS_MAP[status].label, value: openNow.filter((r) => r.status === status).length }));
+  const riskRows: BreakdownRow[] = RISK_ORDER
+    .map((level) => ({ label: level, value: report.byRisk.find(([k]) => k === level)?.[1] ?? 0, color: RISK_COLORS[level] }))
+    .filter((row) => row.value > 0);
+  const locationRows: BreakdownRow[] = [
+    ...report.byLocation.slice(0, TOP_LOCATIONS).map(([label, value]) => ({ label, value })),
+    ...(report.byLocation.length > TOP_LOCATIONS
+      ? [{ label: `그 외 ${report.byLocation.length - TOP_LOCATIONS}곳`, value: report.byLocation.slice(TOP_LOCATIONS).reduce((sum, [, v]) => sum + v, 0), color: CHART.muted }]
+      : []),
+  ];
+  const deltaOf = (a: number | null, b: number | null) => (a === null || b === null ? null : Math.round((a - b) * 10) / 10);
 
   const cards = [
     { label: "접수", value: `${report.received}건` },
@@ -111,13 +131,22 @@ ${table("유형별 접수", report.byCategory)}${table("위치별 접수", repor
 
   return (
     <div className="space-y-4">
+      {/* 필터는 한 줄, 화면 맨 위 — 아래 모든 숫자와 차트가 이 달 기준으로 바뀐다 */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
-        <label className="text-sm font-semibold text-slate-700">
-          보고 월{" "}
-          <select value={month} onChange={(e) => setMonth(e.target.value)} className="ml-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+        <div className="flex items-center gap-1" role="group" aria-label="보고 월 선택">
+          <button type="button" aria-label="이전 달" disabled={monthIndex >= monthOptions.length - 1} onClick={() => setMonth(monthOptions[monthIndex + 1])} className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="보고 월" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold">
             {monthOptions.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
           </select>
-        </label>
+          <button type="button" aria-label="다음 달" disabled={monthIndex <= 0} onClick={() => setMonth(monthOptions[monthIndex - 1])} className="rounded-lg border border-slate-300 p-2 text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          {month !== currentMonth && (
+            <button type="button" onClick={() => setMonth(currentMonth)} className="ml-1 rounded-lg px-2.5 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">이번 달</button>
+          )}
+        </div>
         <div className="ml-auto flex flex-wrap gap-2">
           {canNotify && (
             <button type="button" onClick={sendToDiscord} disabled={sending} className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 disabled:opacity-60">
@@ -132,44 +161,79 @@ ${table("유형별 접수", report.byCategory)}${table("위치별 접수", repor
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-4">
-            <p className="text-xs font-semibold text-slate-500">{c.label}</p>
-            <p className="mt-1 text-xl font-bold text-slate-900">{c.value}</p>
-          </div>
-        ))}
+      {inputs.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
+          <Inbox className="mx-auto h-8 w-8 text-slate-300" aria-hidden />
+          <p className="mt-3 text-sm font-semibold text-slate-700">아직 통계를 낼 신고가 없어요</p>
+          <p className="mt-1 text-xs text-slate-500">신고가 접수되면 월별 접수·처리 현황이 여기에 자동으로 집계됩니다.</p>
+        </div>
+      ) : <>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <StatTile label="접수" value={`${report.received}건`} delta={deltaOf(report.received, previous.received)} formatDelta={(v) => `${v}건`} upIsGood={null} />
+        <StatTile label="접수분 완료율" value={report.completionRate === null ? "-" : `${report.completionRate}%`} delta={deltaOf(report.completionRate, previous.completionRate)} formatDelta={(v) => `${v}%p`} upIsGood hint="이 달 접수된 신고 중 처리 완료 비율" />
+        <StatTile label="처리 완료" value={`${report.completedInMonth}건`} delta={deltaOf(report.completedInMonth, previous.completedInMonth)} formatDelta={(v) => `${v}건`} upIsGood hint="이 달에 완료 처리한 신고" />
+        <StatTile label="평균 처리 시간" value={formatHours(report.avgResolutionHours)} delta={deltaOf(report.avgResolutionHours, previous.avgResolutionHours)} formatDelta={(v) => formatHours(v)} upIsGood={false} hint="접수부터 완료까지" />
+        <StatTile label="기한 넘겨 완료" value={`${report.completedLate}건`} delta={deltaOf(report.completedLate, previous.completedLate)} formatDelta={(v) => `${v}건`} upIsGood={false} />
+        <StatTile label="지금 기한 초과" value={`${overdueNow}건`} status={overdueNow > 0 ? "alert" : "ok"} hint={overdueNow > 0 ? "신고 관리 → '기한 초과' 필터로 확인" : "기한을 넘긴 미완료 신고가 없어요"} />
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-bold text-slate-900">최근 6개월 추이</h2>
-        <div className="mt-3 space-y-2">
-          {trend.map((p) => (
-            <div key={p.month} className="grid grid-cols-[4.5rem_1fr] items-center gap-3 text-xs">
-              <span className="font-semibold text-slate-600">{monthLabel(p.month).replace(/^\d+년 /, "")}</span>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2"><div className="h-2.5 rounded-full bg-blue-600" style={{ width: `${(p.received / maxTrend) * 100}%`, minWidth: p.received ? 6 : 0 }} /><span className="tabular-nums text-slate-600">접수 {p.received}</span></div>
-                <div className="flex items-center gap-2"><div className="h-2.5 rounded-full bg-emerald-500" style={{ width: `${(p.completed / maxTrend) * 100}%`, minWidth: p.completed ? 6 : 0 }} /><span className="tabular-nums text-slate-600">완료 {p.completed}</span></div>
-              </div>
-            </div>
-          ))}
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">최근 12개월 접수·처리 추이</h2>
+            <p className="text-xs text-slate-500">막대를 누르면 그 달의 통계로 바뀝니다.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <ChartLegend items={[{ label: "접수", color: CHART.series1 }, { label: "처리 완료", color: CHART.series2 }]} />
+            <button type="button" onClick={() => setShowTable((v) => !v)} aria-pressed={showTable} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              {showTable ? <BarChart3 className="h-3.5 w-3.5" /> : <Table2 className="h-3.5 w-3.5" />}{showTable ? "차트로 보기" : "표로 보기"}
+            </button>
+          </div>
         </div>
+        {showTable ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-200 text-left text-xs text-slate-500"><th className="py-2 font-semibold">월</th><th className="py-2 text-right font-semibold">접수</th><th className="py-2 text-right font-semibold">처리 완료</th></tr></thead>
+              <tbody>
+                {[...trend12].reverse().map((p) => (
+                  <tr key={p.month} className={`border-b border-slate-100 ${p.month === month ? "bg-blue-50/60 font-semibold" : ""}`}>
+                    <td className="py-1.5"><button type="button" onClick={() => setMonth(p.month)} className="text-left hover:underline">{monthLabel(p.month)}</button></td>
+                    <td className="py-1.5 text-right tabular-nums">{p.received}건</td>
+                    <td className="py-1.5 text-right tabular-nums">{p.completed}건</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <MonthlyTrendChart points={trend12} selected={month} onSelect={setMonth} />
+        )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        {([["유형별", report.byCategory], ["위치별", report.byLocation.slice(0, 8)], ["위험도별", report.byRisk]] as [string, [string, number][]][]).map(([title, rows]) => (
-          <section key={title} className="rounded-xl border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-bold text-slate-900">{monthLabel(month)} {title} 접수</h2>
-            {rows.length === 0 ? <p className="mt-3 text-xs text-slate-500">해당 신고가 없습니다.</p> : (
-              <ul className="mt-3 space-y-1.5">
-                {rows.map(([name, count]) => (
-                  <li key={name} className="flex items-center justify-between gap-2 text-sm"><span className="min-w-0 truncate text-slate-700">{name}</span><span className="font-bold tabular-nums text-slate-900">{count}건</span></li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ))}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-sm font-bold text-slate-900">{monthLabel(month)} 유형별 접수</h2>
+          <BreakdownBars rows={report.byCategory.map(([label, value]) => ({ label, value }))} total={report.received} />
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-sm font-bold text-slate-900">{monthLabel(month)} 위치별 접수</h2>
+          <BreakdownBars rows={locationRows} total={report.received} />
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="mb-3 text-sm font-bold text-slate-900">{monthLabel(month)} 위험도별 접수</h2>
+          <BreakdownBars rows={riskRows} total={report.received} />
+        </section>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-bold text-slate-900">지금 처리 중인 신고 <span className="font-normal text-slate-500">{openNow.length}건 · 단계별</span></h2>
+          <p className="text-xs text-slate-500">보고 월과 관계없이 현재 상태입니다.</p>
+        </div>
+        <StageStack stages={stages} />
+      </section>
+      </>}
     </div>
   );
 }
