@@ -6,7 +6,7 @@
  *  2) 정상적인 학교 신고와 일반적인 감정 표현은 통과하는가 (오탐 방지)
  */
 
-import { checkProfanity, normalizeText } from "./profanityFilter";
+import { checkProfanity, maskProfanity, normalizeText } from "./profanityFilter";
 
 let passed = 0;
 let failed = 0;
@@ -110,10 +110,33 @@ expectAllowed("복도 전등 하나가 꺼져 있어요.");
 expectAllowed("수업 중에 컴퓨터가 자꾸 꺼져서 불편해요.");
 expectBlocked("야 꺼져", "명령형 욕설은 계속 차단");
 
-console.log("\n-- '니미' 가 단어 경계에 걸린 경우 --");
+console.log("\n-- 앞뒤 단어가 이어져 금지어처럼 보이는 경우 --");
 expectAllowed("바닥에 물이 고여 있으니 미끄러워요.");
 expectAllowed("언니 미술실 앞 복도 조명이 나갔어요.");
+expectAllowed("경비 아저씨 발밑 계단이 깨져 있어요.");
+expectAllowed("2층 형광등 신고합니다. 계속 깜빡여요.");
+expectAllowed("교실 물병 신경 써서 치워 주세요.");
 expectBlocked("니미 뭐하냐");
+expectBlocked("아 씨 발 진짜", "단어 첫머리에서 시작하는 공백 우회는 계속 차단");
+expectBlocked("이 병 신 같은 시설");
+
+console.log("\n-- 마스킹도 단어 경계는 건드리지 않는다 --");
+const maskCases: [string, string][] = [
+  ["2층 형광등 신고합니다.", "2층 형광등 신고합니다."],
+  ["경비 아저씨 발밑이 미끄러워요", "경비 아저씨 발밑이 미끄러워요"],
+  ["씨 발 고쳐줘", "#### 고쳐줘"],
+];
+for (const [input, expected] of maskCases) {
+  const actual = maskProfanity(input).text;
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✓ "${input}" -> "${actual}"`);
+  } else {
+    failed++;
+    failures.push(`마스킹: "${input}" -> "${actual}" (기대 "${expected}")`);
+    console.log(`  ✗ "${input}" -> "${actual}" (기대 "${expected}")`);
+  }
+}
 
 console.log("\n-- 빈 값 처리 --");
 expectAllowed("");

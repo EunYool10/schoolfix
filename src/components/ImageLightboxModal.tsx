@@ -69,6 +69,28 @@ export function ImageLightboxModal({
     setZoom(1);
   };
 
+  // 첨부는 data: URL 이라 링크로 새 탭에 열면 크롬 등이 최상위 이동을 차단한다.
+  // blob: URL 로 바꿔서 열면 원본을 그대로 보여 줄 수 있다.
+  // (fetch 로 변환하면 CSP connect-src 'self' 에 막히므로 직접 디코딩한다.)
+  const handleOpenOriginal = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const match = /^data:([^;,]+);base64,(.*)$/.exec(imageUrl);
+    if (!match) {
+      window.open(imageUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    try {
+      const binary = atob(match[2]);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: match[1] }));
+      window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      // 손상된 이미지 데이터 — 뷰어에서 보던 그대로 두고 아무것도 하지 않는다.
+    }
+  };
+
   const formatFileSize = (bytes?: number | null) => {
     if (!bytes) return null;
     if (bytes < 1024) return `${bytes} B`;
@@ -141,15 +163,14 @@ export function ImageLightboxModal({
           </div>
 
           {/* Open / Download */}
-          <a
-            href={imageUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={handleOpenOriginal}
             title="새 탭에서 원본 보기"
             className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
           >
             <ExternalLink className="h-4 w-4" />
-          </a>
+          </button>
 
           <a
             href={imageUrl}

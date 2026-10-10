@@ -35,6 +35,8 @@ export const DATE_RANGE_LABELS: Record<DateRange, string> = {
 
 const DATE_RANGES: DateRange[] = ["ALL", "TODAY", "WEEK", "MONTH"];
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
 /**
  * 필터가 판단에 쓰는 필드만 요구한다.
  * 화면의 SchoolReport 와 서버의 공개 DTO 가 모두 이 모양을 만족한다.
@@ -59,9 +61,11 @@ export function withinRange(createdAt: string, range: DateRange, now = Date.now(
   const day = 24 * 60 * 60 * 1000;
 
   if (range === "TODAY") {
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    return created >= start.getTime();
+    // "오늘"은 한국 시간(UTC+9, 서머타임 없음) 자정부터다.
+    // 실행 환경의 로컬 시간대를 쓰면 UTC 로 도는 서버와 한국 브라우저의 "오늘"이 달라져
+    // 새벽 0~9시에는 목록과 위치 통계가 서로 다른 신고를 세게 된다.
+    const start = Math.floor((now + KST_OFFSET_MS) / day) * day - KST_OFFSET_MS;
+    return created >= start;
   }
   if (range === "WEEK") return created >= now - 7 * day;
   if (range === "MONTH") return created >= now - 30 * day;
