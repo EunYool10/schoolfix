@@ -2185,6 +2185,204 @@
     "locations": []
   },
   {
+    "id": "chunghyun-e",
+    "schoolName": "충현초등학교",
+    "officialWebsite": "https://chunghyun-e.goegm.kr/chunghyun-e/main.do",
+    "address": "경기도 광명시 성채안로 16",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-10",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "khail-e",
+    "schoolName": "하일초등학교",
+    "officialWebsite": "https://khail-e.goegm.kr/khail-e/main.do",
+    "address": "경기도 광명시 철망산로 68",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-10",
+    "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2773&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "shmh-e",
+    "schoolName": "시흥매화초등학교",
+    "officialWebsite": "https://shmh-e.goesh.kr",
+    "address": "경기도 시흥시 매화1로 62",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-10",
+    "sourceUrl": "https://www.goesh.kr/goesh/ssm/scholStts/selectScholSttsList.do?mi=9139",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
     "id": "gmhs-m",
     "schoolName": "광명고등학교",
     "officialWebsite": "https://gmhs-m.goegm.kr/gmhs-m/main.do",
@@ -2729,6 +2927,73 @@
     "verificationStatus": "official",
     "verifiedAt": "2026-10-09",
     "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2775&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": [],
+    "highSchoolType": "일반고"
+  },
+  {
+    "id": "mh-h",
+    "schoolName": "시흥매화고등학교",
+    "officialWebsite": "https://mh-h.goesh.kr",
+    "address": "경기도 시흥시 매화로 35",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-10",
+    "sourceUrl": "https://www.goesh.kr/goesh/ssm/scholStts/selectScholSttsList.do?mi=9139",
     "departments": [],
     "locationTypes": [
       {
@@ -3522,6 +3787,72 @@
     "verificationStatus": "official",
     "verifiedAt": "2026-10-09",
     "sourceUrl": "https://www.goegm.kr/goegm/cm/cntnts/cntntsView.do?cntntsId=2774&mi=5809",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
+  },
+  {
+    "id": "shmaehwa-m",
+    "schoolName": "시흥매화중학교",
+    "officialWebsite": "https://shmaehwa-m.goesh.kr",
+    "address": "경기도 시흥시 매화로 71",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-10",
+    "sourceUrl": "https://www.goesh.kr/goesh/ssm/scholStts/selectScholSttsList.do?mi=9139",
     "departments": [],
     "locationTypes": [
       {
