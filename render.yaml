@@ -52,6 +52,13 @@ services:
       # 구형 service_role JWT를 쓰는 경우에만 SUPABASE_SECRET_KEY 대신 사용하세요.
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      # 긴급 신고 알림을 받을 Discord·Slack 등의 웹훅 주소 (선택)
+      - key: NOTIFY_WEBHOOK_URL
+        sync: false
+      - key: NOTIFY_MIN_RISK
+        value: 긴급
+      - key: PUBLIC_BASE_URL
+        value: https://schoolfix.onrender.com
       # Supabase 연결을 확인한 뒤 true로 설정하면 영구 저장소 없이 앱이 시작되지 않습니다.
       # 기존 데이터가 아직 로컬 JSON뿐인 경우 먼저 Supabase 연결과 이관을 완료하세요.
       # - key: REQUIRE_SUPABASE_STORE

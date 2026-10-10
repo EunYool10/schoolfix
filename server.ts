@@ -81,6 +81,8 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
+import { sendUrgentNotification } from "./notify";
+import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.
@@ -117,14 +119,22 @@ interface SchoolCatalogEntry {
   locations: Array<{ id: string; type: string; name: string; count?: number; verificationStatus: string }>;
 }
 
-function loadSchools(): SchoolCatalogEntry[] {
+function loadSeedSchools(): SchoolCatalogEntry[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(SCHOOL_CATALOG_FILE, "utf-8"));
-    return Array.isArray(parsed) ? parsed.filter((school) => school.supportStatus === "active") : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     console.error("[schools] 학교 카탈로그 읽기 실패:", err);
     return [];
   }
+}
+
+/** 지원 학교 = 공식 카탈로그(schools.seed.json) + 운영진이 화면에서 등록한 학교 */
+function loadSchools(): SchoolCatalogEntry[] {
+  const seed = loadSeedSchools();
+  const seedIds = new Set(seed.map((school) => school.id));
+  const custom = loadCustomSchools().filter((school) => !seedIds.has(school.id));
+  return [...seed, ...custom].filter((school) => school.supportStatus === "active");
 }
 function findSchool(id: unknown) { return typeof id === "string" ? loadSchools().find((school) => school.id === id) : undefined; }
 
@@ -162,6 +172,17 @@ interface StoredReport {
   riskAnalysisError?: string | null;
   /** 익명 소유 토큰의 SHA-256 해시. "내 신고" 조회에만 사용하며 절대 외부로 내보내지 않는다. */
   ownerTokenHash?: string | null;
+  /** 접수한 기기 토큰의 해시. 반복 신고 판단에만 쓰며 외부로 내보내지 않는다. */
+  reporterHash?: string | null;
+  /** "나도 겪었어요" 를 누른 기기 토큰 해시 목록. 외부에는 개수만 내보낸다. */
+  meTooHashes?: string[];
+  /** 학교가 신고한 학생에게만 보여 주는 답변 (공개 처리 결과와 별개) */
+  reporterReply?: string | null;
+  reporterReplyAt?: string | null;
+  /** 처리 완료 후 신고한 학생의 만족도 응답 */
+  feedback?: { resolved: boolean; comment: string | null; at: string } | null;
+  /** 상태 변경 이력 — 운영진 화면에서만 보여 준다 */
+  history?: ReportHistoryEntry[];
   /** Soft Delete — 값이 있으면 모든 공개 기능에서 제외된다. */
   deletedAt?: string | null;
   reviewedAt?: string | null;
@@ -171,6 +192,21 @@ interface StoredReport {
   completedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface ReportHistoryEntry {
+  at: string;
+  /** 누가 바꿨는지. 개인 계정이 없으므로 역할로 남긴다. */
+  actor: "staff" | "teacher" | "reporter" | "system";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
+  from?: string | null;
+  to?: string | null;
+}
+
+/** 이력이 끝없이 늘어나지 않게 최근 것만 남긴다. */
+const MAX_HISTORY = 100;
+function addHistory(report: StoredReport, entry: Omit<ReportHistoryEntry, "at">, at = new Date().toISOString()) {
+  report.history = [...(report.history ?? []), { at, ...entry }].slice(-MAX_HISTORY);
 }
 
 if (!fs.existsSync(DATA_DIR)) {
@@ -214,6 +250,8 @@ interface SchoolApplication {
   requests: string;
   replyEmail: string;
   status: "new" | "reviewed";
+  /** 이 신청으로 운영진이 등록한 학교 id */
+  registeredSchoolId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -248,7 +286,9 @@ async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promi
   return response;
 }
 
-async function readSupabaseDocument(key: "reports" | "school_applications"): Promise<unknown | null> {
+type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters";
+
+async function readSupabaseDocument(key: StoreKey): Promise<unknown | null> {
   const query = new URLSearchParams({ select: "key,payload", key: `eq.${key}`, limit: "1" });
   const response = await supabaseStoreRequest(`schoolfix_store?${query.toString()}`);
   const rows = await response.json() as Array<{ key?: string; payload?: unknown }>;
@@ -259,7 +299,7 @@ async function readSupabaseDocument(key: "reports" | "school_applications"): Pro
   return rows[0].payload;
 }
 
-function queueSupabaseDocument(key: "reports" | "school_applications", payload: unknown): Promise<void> {
+function queueSupabaseDocument(key: StoreKey, payload: unknown): Promise<void> {
   const write = storeWriteQueue.then(async () => {
     await supabaseStoreRequest("schoolfix_store?on_conflict=key", {
       method: "POST",
@@ -289,10 +329,16 @@ async function initializeDataStore() {
     throw new Error("SUPABASE_URL은 HTTPS 주소여야 합니다.");
   }
 
-  const [remoteReports, remoteApplications] = await Promise.all([
+  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked] = await Promise.all([
     readSupabaseDocument("reports"),
     readSupabaseDocument("school_applications"),
+    readSupabaseDocument("custom_schools"),
+    readSupabaseDocument("blocked_reporters"),
   ]);
+  // 새로 추가된 두 문서는 처음 쓸 때 만든다. 테이블 제약(supabase/schema.sql)을 아직 갱신하지 않은
+  // 배포에서도 서버가 시작은 되도록, 시작 시점에는 쓰지 않는다.
+  cachedCustomSchools = Array.isArray(remoteCustomSchools) ? (remoteCustomSchools as SchoolCatalogEntry[]) : [];
+  cachedBlockedReporters = Array.isArray(remoteBlocked) ? (remoteBlocked as BlockedReporter[]) : [];
   const reports = Array.isArray(remoteReports) ? remoteReports as StoredReport[] : localReports();
   const applications = Array.isArray(remoteApplications) ? remoteApplications as SchoolApplication[] : localSchoolApplications();
   const defaultSchool = loadSchools()[0];
@@ -334,6 +380,74 @@ function loadReports(): StoredReport[] {
 function loadSchoolApplications(): SchoolApplication[] {
   const applications = useSupabaseStore ? cachedSchoolApplications : localSchoolApplications();
   return applications.map((application) => ({ ...application }));
+}
+
+// --- 운영진이 등록한 학교 / 장난 신고로 처리된 기기 -------------------------------
+
+const CUSTOM_SCHOOLS_FILE = path.join(DATA_DIR, "custom_schools.json");
+const BLOCKED_REPORTERS_FILE = path.join(DATA_DIR, "blocked_reporters.json");
+let cachedCustomSchools: SchoolCatalogEntry[] = [];
+let cachedBlockedReporters: BlockedReporter[] = [];
+
+function readLocalArray<T>(file: string, label: string): T[] {
+  try {
+    if (!fs.existsSync(file)) return [];
+    const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    console.error(`[${label}] 읽기 실패:`, err);
+    return [];
+  }
+}
+
+function writeLocalArray(file: string, data: unknown[]) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
+  fs.renameSync(tmp, file);
+}
+
+/** Supabase 테이블 제약이 새 문서 종류를 아직 허용하지 않을 때 운영진에게 보여 줄 안내 */
+const STORE_SCHEMA_HINT = "저장하지 못했습니다. Supabase를 쓰는 경우 supabase/schema.sql 의 최신 내용을 SQL Editor에서 한 번 실행해야 합니다.";
+
+function loadCustomSchools(): SchoolCatalogEntry[] {
+  const list = useSupabaseStore ? cachedCustomSchools : readLocalArray<SchoolCatalogEntry>(CUSTOM_SCHOOLS_FILE, "custom-schools");
+  return list.map((school) => structuredClone(school));
+}
+
+async function saveCustomSchools(list: SchoolCatalogEntry[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("custom_schools", list);
+    cachedCustomSchools = list.map((school) => structuredClone(school));
+    return;
+  }
+  writeLocalArray(CUSTOM_SCHOOLS_FILE, list);
+}
+
+function loadBlockedReporters(): BlockedReporter[] {
+  const list = useSupabaseStore ? cachedBlockedReporters : readLocalArray<BlockedReporter>(BLOCKED_REPORTERS_FILE, "blocked-reporters");
+  // 만료된 항목은 의미가 없으므로 읽을 때 걸러낸다.
+  const now = Date.now();
+  return list.filter((entry) => new Date(entry.until).getTime() > now).map((entry) => ({ ...entry }));
+}
+
+async function saveBlockedReporters(list: BlockedReporter[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("blocked_reporters", list);
+    cachedBlockedReporters = list.map((entry) => ({ ...entry }));
+    return;
+  }
+  writeLocalArray(BLOCKED_REPORTERS_FILE, list);
+}
+
+/** 운영진이 학교를 등록할 때 쓰는 기본 위치 유형. 공식 확인 전이므로 모두 확인 필요 상태다. */
+const DEFAULT_LOCATION_TYPES = ["교실", "복도", "화장실", "계단", "급식실", "체육관", "운동장", "도서관", "특별실", "보건·상담", "학습공간", "공용공간"]
+  .map((type) => ({ type, verificationStatus: "needs_review" }))
+  .concat([{ type: "기타", verificationStatus: "user_entered" }]);
+
+/** 기기 토큰 → 해시. "내 신고" 소유 토큰과 섞이지 않도록 용도별 접두어를 붙인다. */
+function deviceHash(token: unknown, purpose: "reporter" | "metoo"): string | null {
+  if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return null;
+  return crypto.createHash("sha256").update(`${purpose}:${token}`).digest("hex");
 }
 
 async function saveSchoolApplications(applications: SchoolApplication[]) {
@@ -455,14 +569,43 @@ function toPublicReport(r: StoredReport) {
     scheduledAt: r.scheduledAt ?? null,
     inProgressAt: r.inProgressAt ?? null,
     completedAt: r.completedAt ?? null,
+    meTooCount: r.meTooHashes?.length ?? 0,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
 }
 
-/** "내 신고" — 공개 형태와 동일하되 본인 것임을 표시한다. */
+/** "내 신고" — 공개 형태에 신고한 학생만 볼 수 있는 답변·만족도 응답을 더한다. */
 function toMyReport(r: StoredReport) {
-  return { ...toPublicReport(r), isMine: true as const };
+  return {
+    ...toPublicReport(r),
+    isMine: true as const,
+    reporterReply: r.reporterReply ?? null,
+    reporterReplyAt: r.reporterReplyAt ?? null,
+    feedback: r.feedback ?? null,
+  };
+}
+
+/**
+ * 운영진·교사 화면용. 처리에 필요한 내부 정보(이력, 학생 답변, 반복 신고 여부)를 더한다.
+ * 기기 해시 원문은 여기서도 내보내지 않는다.
+ */
+function toStaffReport(r: StoredReport, all: StoredReport[], blocked: BlockedReporter[]) {
+  const sameDevice = r.reporterHash ? all.filter((other) => other.reporterHash === r.reporterHash).length : 0;
+  return {
+    ...toPublicReport(r),
+    moderationReason: r.moderationReason ?? null,
+    attachmentName: r.attachmentName ?? null,
+    reporterReply: r.reporterReply ?? null,
+    reporterReplyAt: r.reporterReplyAt ?? null,
+    feedback: r.feedback ?? null,
+    history: r.history ?? [],
+    reporter: {
+      /** 같은 기기에서 접수된 신고 수 (이 신고 포함). 기기 정보가 없으면 0 */
+      deviceReportCount: sameDevice,
+      blocked: Boolean(activeBlock(r.reporterHash ?? null, blocked)),
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +673,28 @@ async function runRiskAnalysis(
 const BACKFILL_DELAY_MS = 1500;
 const BACKFILL_MAX_PER_RUN = 20;
 
+/**
+ * 위험도가 알림 기준 이상이면 운영진에게 웹훅으로 알린다.
+ * 응답을 기다리지 않는다 — 알림이 늦거나 실패해도 신고 처리에는 영향이 없다.
+ */
+function notifyIfUrgent(report: StoredReport) {
+  const analysis = report.riskAnalysis;
+  if (!analysis || !process.env.NOTIFY_WEBHOOK_URL) return;
+  const base = process.env.PUBLIC_BASE_URL?.replace(/\/+$/, "");
+  void sendUrgentNotification({
+    schoolName: report.schoolName ?? "",
+    reportId: report.id,
+    title: maskProfanity(report.title ?? "").text || `${report.location} ${report.category}`,
+    location: [report.locationType ?? report.location, report.locationDetail, report.buildingName, report.floor, report.roomName].filter(Boolean).join(" · "),
+    category: report.category,
+    riskLevel: analysis.risk_level,
+    riskScore: analysis.risk_score ?? null,
+    description: maskProfanity(report.description).text,
+    held: report.moderationStatus === "held",
+    link: base && /^https:\/\//i.test(base) ? base : null,
+  });
+}
+
 async function backfillMissingRiskAnalysis() {
   if (!process.env.OPENAI_API_KEY) return;
 
@@ -573,7 +738,10 @@ async function backfillMissingRiskAnalysis() {
       return true;
     });
     if (!updated) continue;
-    if (analysis) done += 1;
+    if (analysis) {
+      done += 1;
+      notifyIfUrgent({ ...target, riskAnalysis: analysis });
+    }
 
     // 집합이 바뀌었으니 요약 캐시를 버린다.
     summaryCache = null;
@@ -804,6 +972,7 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
         report.deletedAt = now;
       }
       report.updatedAt = now;
+      addHistory(report, { actor: "staff", action: "moderation", from: "held", to: action === "approve" ? "approved" : "deleted" }, now);
       await saveReports(all);
       return true;
     });
@@ -813,6 +982,175 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   if (!found) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
   summaryCache = null;
   return res.json({ ok: true });
+});
+
+/** 운영진·교사 화면의 신고 목록. 운영진은 공개 보류 신고까지 함께 받는다. */
+app.get("/api/staff/reports", (req, res) => {
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  if (!requireReportManager(req, res, school.id)) return;
+  const isStaff = Boolean(getStaffSession(req));
+  const all = loadAllReports();
+  const blocked = loadBlockedReporters();
+  const scoped = all.filter((report) => !report.deletedAt && report.schoolId === school.id && (isStaff || report.moderationStatus !== "held"));
+  return res.json({ ok: true, data: scoped.map((report) => toStaffReport(report, all, blocked)) });
+});
+
+/**
+ * 장난 신고 처리 — 신고를 지우고, 접수한 기기의 이후 신고를 일정 기간 공개 보류로 돌린다.
+ * 접수 자체를 막지는 않는다. 진짜 위험 신고일 수 있으므로 운영진이 확인한 뒤 공개한다.
+ */
+app.post("/api/staff/reports/:id/spam", async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  let reporterHash: string | null = null;
+  try {
+    const found = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt);
+      if (!report) return false;
+      const now = new Date().toISOString();
+      report.deletedAt = now;
+      report.updatedAt = now;
+      addHistory(report, { actor: "staff", action: "spam", to: "deleted" }, now);
+      reporterHash = report.reporterHash ?? null;
+      await saveReports(all);
+      return true;
+    });
+    if (!found) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+  } catch (err) {
+    return safeError(res, 500, "장난 신고 처리를 저장하지 못했습니다.", err);
+  }
+  summaryCache = null;
+
+  // 기기 정보가 없는 과거 신고는 지우기만 한다.
+  if (!reporterHash) return res.json({ ok: true, blocked: false });
+  try {
+    const hash: string = reporterHash;
+    const list = loadBlockedReporters().filter((entry) => entry.hash !== hash);
+    list.push({ hash, until: blockUntil(), reason: "운영진이 장난 신고로 처리", reportId: req.params.id, createdAt: new Date().toISOString() });
+    await saveBlockedReporters(list);
+    return res.json({ ok: true, blocked: true });
+  } catch (err) {
+    console.error("[abuse] 차단 목록 저장 실패:", err);
+    return res.status(207).json({ ok: true, blocked: false, warning: STORE_SCHEMA_HINT });
+  }
+});
+
+/** 공개 보류 중인 기기 목록. 기기 해시 원문 대신 앞부분만 보여 준다. */
+app.get("/api/staff/blocked-reporters", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  return res.json({
+    ok: true,
+    data: loadBlockedReporters().map((entry) => ({
+      id: entry.hash.slice(0, 12),
+      until: entry.until,
+      reason: entry.reason,
+      reportId: entry.reportId,
+      createdAt: entry.createdAt,
+    })),
+  });
+});
+
+app.delete("/api/staff/blocked-reporters/:id", async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const id = String(req.params.id);
+  if (!/^[a-f0-9]{12}$/.test(id)) return safeError(res, 400, "요청이 올바르지 않습니다.");
+  const list = loadBlockedReporters();
+  const remaining = list.filter((entry) => !entry.hash.startsWith(id));
+  if (remaining.length === list.length) return safeError(res, 404, "보류 중인 기기를 찾을 수 없습니다.");
+  try {
+    await saveBlockedReporters(remaining);
+    return res.json({ ok: true });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+});
+
+/** 운영진이 화면에서 등록한 학교 목록 */
+app.get("/api/staff/schools", (req, res) => {
+  if (!requireStaff(req, res)) return;
+  return res.json({
+    ok: true,
+    data: loadCustomSchools().map(({ id, schoolName, officialWebsite, address, highSchoolType, supportStatus, verifiedAt }) => ({ id, schoolName, officialWebsite, address, highSchoolType, supportStatus, verifiedAt })),
+  });
+});
+
+/**
+ * 학교 추가 신청을 승인하고 학교를 등록한다. 재배포 없이 바로 학교 선택 화면에 나타난다.
+ * 시설 정보는 공식 확인 전이므로 기본 위치 유형만 "확인 필요" 상태로 둔다.
+ */
+app.post("/api/staff/schools", async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const body = req.body || {};
+  const id = typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
+  const schoolName = typeof body.schoolName === "string" ? body.schoolName.trim() : "";
+  const officialWebsite = typeof body.officialWebsite === "string" ? body.officialWebsite.trim() : "";
+  const address = typeof body.address === "string" ? body.address.trim() : "";
+  const highSchoolType = ["일반고", "특성화고", "특목고"].includes(body.highSchoolType) ? body.highSchoolType as SchoolCatalogEntry["highSchoolType"] : undefined;
+  const applicationId = typeof body.applicationId === "string" ? body.applicationId : "";
+
+  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) return safeError(res, 400, "학교 ID는 영문 소문자·숫자·하이픈 2~40자로 입력해주세요. (예: gm-h)");
+  if (!schoolName || schoolName.length > 100) return safeError(res, 400, "학교 이름을 확인해주세요.");
+  if (!address || address.length > 200) return safeError(res, 400, "학교 주소를 확인해주세요.");
+  try {
+    const url = new URL(officialWebsite);
+    if (!["http:", "https:"].includes(url.protocol) || officialWebsite.length > 500) throw new Error("invalid");
+  } catch {
+    return safeError(res, 400, "학교 공식 홈페이지 주소를 확인해주세요.");
+  }
+
+  const existing = [...loadSeedSchools(), ...loadCustomSchools()];
+  if (existing.some((school) => school.id === id)) return safeError(res, 409, "이미 사용 중인 학교 ID입니다.");
+  if (existing.some((school) => school.schoolName === schoolName && school.supportStatus === "active")) {
+    return safeError(res, 409, "같은 이름의 학교가 이미 지원 중입니다.");
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const entry: SchoolCatalogEntry = {
+    id, schoolName, officialWebsite, address, highSchoolType,
+    supportStatus: "active",
+    verificationStatus: "needs_review",
+    verifiedAt: today,
+    sourceUrl: officialWebsite,
+    departments: [],
+    locationTypes: DEFAULT_LOCATION_TYPES,
+    locations: [],
+  };
+  try {
+    await saveCustomSchools([...loadCustomSchools(), entry]);
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+
+  if (applicationId) {
+    const applications = loadSchoolApplications();
+    const application = applications.find((item) => item.id === applicationId);
+    if (application) {
+      application.status = "reviewed";
+      application.registeredSchoolId = id;
+      application.updatedAt = new Date().toISOString();
+      // 학교 등록은 이미 끝났다. 신청함 표시만 실패한 경우 등록을 되돌리지 않는다.
+      await saveSchoolApplications(applications).catch((err) => console.error("[schools] 신청 상태 갱신 실패:", err));
+    }
+  }
+  return res.status(201).json({ ok: true, data: { id, schoolName } });
+});
+
+/** 운영진이 등록한 학교의 지원 중지. 기존 신고는 남지만 학교 선택 화면에서 사라진다. */
+app.delete("/api/staff/schools/:id", async (req, res) => {
+  if (!requireStaff(req, res)) return;
+  const list = loadCustomSchools();
+  const target = list.find((school) => school.id === req.params.id);
+  if (!target) return safeError(res, 404, "운영진이 등록한 학교만 지원을 중지할 수 있습니다.");
+  target.supportStatus = "rejected";
+  try {
+    await saveCustomSchools(list);
+    return res.json({ ok: true });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
 });
 
 app.patch("/api/staff/reports/:id", async (req, res) => {
@@ -827,10 +1165,13 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
   }
   const assignee = typeof body.assignee === "string" ? body.assignee.trim() : "";
   const resolutionNote = typeof body.resolutionNote === "string" ? body.resolutionNote.trim() : "";
-  if (assignee.length > 100 || resolutionNote.length > 1000) {
-    return safeError(res, 400, "담당자 또는 처리 메모가 너무 깁니다.");
+  // 필드를 보내지 않은 예전 화면에서 저장해도 기존 답변이 지워지지 않게 한다.
+  const reporterReply = typeof body.reporterReply === "string" ? body.reporterReply.trim() : undefined;
+  if (assignee.length > 100 || resolutionNote.length > 1000 || (reporterReply?.length ?? 0) > 1000) {
+    return safeError(res, 400, "담당자, 처리 메모 또는 학생 답변이 너무 깁니다.");
   }
-  let outcome: { error: 404 | 409 } | { report: StoredReport };
+  const actor = getStaffSession(req) ? "staff" as const : "teacher" as const;
+  let outcome: { error: 404 | 409 } | { report: StoredReport; all: StoredReport[] };
   try {
     outcome = await withReportsLock(async () => {
       const all = loadAllReports();
@@ -839,6 +1180,13 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       if (report.moderationStatus === "held") return { error: 409 as const };
 
       const now = new Date().toISOString();
+      if (report.status !== body.status) addHistory(report, { actor, action: "status", from: report.status, to: body.status }, now);
+      if ((report.assignee ?? "") !== assignee) addHistory(report, { actor, action: "assignee", from: report.assignee ?? null, to: assignee || null }, now);
+      if (reporterReply !== undefined && (report.reporterReply ?? "") !== reporterReply) {
+        addHistory(report, { actor, action: "reply", to: reporterReply ? "작성" : "삭제" }, now);
+        report.reporterReply = reporterReply || null;
+        report.reporterReplyAt = reporterReply ? now : null;
+      }
       report.status = body.status;
       report.assignee = assignee || null;
       report.resolutionNote = resolutionNote || null;
@@ -849,7 +1197,7 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       if (body.status === "in_progress" && !report.inProgressAt) report.inProgressAt = now;
       if (body.status === "completed" && !report.completedAt) report.completedAt = now;
       await saveReports(all);
-      return { report };
+      return { report, all };
     });
   } catch (err) {
     return safeError(res, 500, "신고 처리 상태를 저장하지 못했습니다.", err);
@@ -860,7 +1208,7 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       : safeError(res, 409, "먼저 안전성 검토에서 신고를 승인해주세요.");
   }
   summaryCache = null;
-  return res.json({ ok: true, data: toPublicReport(outcome.report) });
+  return res.json({ ok: true, data: toStaffReport(outcome.report, outcome.all, loadBlockedReporters()) });
 });
 
 app.get("/api/reports/location-statistics", (req, res) => {
@@ -923,6 +1271,91 @@ app.post("/api/reports/mine", (req, res) => {
 
   const mine = loadAllReports().filter((r) => !r.deletedAt && r.schoolId === school.id && r.ownerTokenHash && hashes.has(r.ownerTokenHash));
   return res.json({ ok: true, data: mine.map(toMyReport) });
+});
+
+/** 기기마다 한 번만 셀 수 있도록 해시 목록으로 저장한다. 목록이 끝없이 커지지 않게 상한을 둔다. */
+const MAX_ME_TOO = 2000;
+
+/**
+ * "나도 겪었어요" — 같은 문제를 겪은 학생이 새 신고 대신 기존 신고에 공감한다.
+ * 로그인이 없으므로 브라우저의 기기 토큰으로 중복을 막는다.
+ */
+app.post("/api/reports/:id/me-too", rateLimit("meToo", LIMITS.meToo), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const hash = deviceHash(req.body?.deviceToken, "metoo");
+  if (!hash) return safeError(res, 400, "요청이 올바르지 않습니다.");
+  const add = req.body?.action !== "remove";
+
+  try {
+    const count = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt && r.moderationStatus !== "held");
+      if (!report) return null;
+      const set = new Set(report.meTooHashes ?? []);
+      const before = set.size;
+      if (add && set.size < MAX_ME_TOO) set.add(hash);
+      if (!add) set.delete(hash);
+      if (set.size !== before) {
+        report.meTooHashes = [...set];
+        // updatedAt 은 바꾸지 않는다. 공감 수는 처리 상태 변경이 아니므로 AI 요약 캐시 등에 영향을 주지 않는다.
+        await saveReports(all);
+      }
+      return set.size;
+    });
+    if (count === null) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+    return res.json({ ok: true, meTooCount: count, joined: add });
+  } catch (err) {
+    return safeError(res, 500, "공감을 저장하지 못했습니다.", err);
+  }
+});
+
+/**
+ * 처리 완료 후 만족도 확인 — 신고한 학생만 응답할 수 있다(소유 토큰으로 확인).
+ * "아직 해결되지 않았어요" 를 고르면 신고를 다시 "확인 중" 으로 돌린다.
+ */
+app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  if (typeof req.body?.resolved !== "boolean") return safeError(res, 400, "해결 여부를 선택해주세요.");
+  const resolved: boolean = req.body.resolved;
+  const comment = typeof req.body?.comment === "string" ? maskProfanity(req.body.comment.trim()).text : "";
+  if (comment.length > 500) return safeError(res, 400, "의견은 500자를 넘을 수 없습니다.");
+  const tokens: unknown[] = Array.isArray(req.body?.tokens) ? req.body.tokens.slice(0, 200) : [];
+  const hashes = new Set(tokens.filter((t): t is string => typeof t === "string" && t.length === 64).map(hashOwnerToken));
+
+  let result: "ok" | 404 | 403 | 409;
+  let saved: StoredReport | null = null;
+  try {
+    result = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt);
+      if (!report) return 404;
+      if (!report.ownerTokenHash || !hashes.has(report.ownerTokenHash)) return 403;
+      if (report.status !== "completed") return 409;
+
+      const now = new Date().toISOString();
+      report.feedback = { resolved, comment: comment || null, at: now };
+      addHistory(report, { actor: "reporter", action: "feedback", to: resolved ? "해결됨" : "미해결" }, now);
+      if (!resolved) {
+        addHistory(report, { actor: "reporter", action: "status", from: "completed", to: "reviewing" }, now);
+        report.status = "reviewing";
+        // 다시 완료될 때 새 완료 시각이 기록되도록 비운다.
+        report.completedAt = null;
+      }
+      report.updatedAt = now;
+      await saveReports(all);
+      saved = report;
+      return "ok";
+    });
+  } catch (err) {
+    return safeError(res, 500, "응답을 저장하지 못했습니다.", err);
+  }
+  if (result === 404) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+  if (result === 403) return safeError(res, 403, "이 브라우저에서 접수한 신고만 응답할 수 있습니다.");
+  if (result === 409) return safeError(res, 409, "처리 완료된 신고에만 응답할 수 있습니다.");
+  summaryCache = null;
+  return res.json({ ok: true, data: toMyReport(saved as unknown as StoredReport) });
 });
 
 /**
@@ -1112,6 +1545,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
     // 4) 익명 소유 토큰 — 원본은 응답으로 1회만 전달하고 DB 에는 해시만 남긴다
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
+    // 반복 신고 판단용 기기 해시. 토큰이 없거나 형식이 틀리면 판단 없이 접수한다.
+    const reporterHash = deviceHash(req.body.deviceToken, "reporter");
 
     const newReport: StoredReport = {
       id: "",
@@ -1140,6 +1575,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       riskAnalysis: analysis,
       riskAnalysisError: riskError,
       ownerTokenHash,
+      reporterHash,
       deletedAt: null,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -1149,6 +1585,17 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     // 접수번호는 저장 직전의 최신 목록에서 매겨야 중복되지 않는다.
     await withReportsLock(async () => {
       const latest = loadAllReports();
+      // 반복 신고 판단도 최신 목록으로 한다. 동시에 몰아 보낸 신고도 정확히 센다.
+      const reporter = evaluateReporter(
+        reporterHash,
+        reporterHash ? latest.filter((r) => r.reporterHash === reporterHash).map((r) => r.createdAt) : [],
+        loadBlockedReporters(),
+        now.getTime()
+      );
+      if (reporter.hold && newReport.moderationStatus !== "held") {
+        newReport.moderationStatus = "held";
+        newReport.moderationReason = reporter.reason;
+      }
       const prefix = `REP-${now.toISOString().slice(0, 10).replace(/-/g, "")}-`;
       // 당일 발급된 최대 일련번호 + 1 (삭제가 있어도 중복되지 않는다)
       const lastSerial = latest.reduce((max, r) => {
@@ -1164,6 +1611,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     // 접수가 끝났으면 대화 상태를 더 들고 있을 이유가 없다.
     if (clarity.session) dropClarifySession(clarity.session.id);
 
+    notifyIfUrgent(newReport);
+
     return res.status(201).json({
       ok: true,
       data: toMyReport(newReport),
@@ -1172,7 +1621,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       // 부적절한 표현이 가려졌다면 사용자에게 알린다.
       masked: maskedCount > 0,
       maskedCount,
-      heldForReview: moderation.hold,
+      heldForReview: newReport.moderationStatus === "held",
     });
   } catch (err) {
     return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);

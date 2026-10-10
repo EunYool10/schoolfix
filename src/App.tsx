@@ -20,37 +20,13 @@ import { ServicePolicyDialog, type PolicySection } from "./components/ServicePol
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
 import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck } from "lucide-react";
-
 /**
- * 익명 소유 토큰 저장소.
+ * 익명 소유 토큰·기기 토큰 저장소.
  *
  * 로그인이 없으므로 "내 신고"는 신고 등록 시 서버가 발급한 토큰으로 식별한다.
- * userId 를 임의로 만들지 않으며(§9), 토큰은 서버가 crypto 난수로 생성한다.
- * 브라우저에는 원본 토큰만, 서버 DB 에는 해시만 존재한다.
+ * userId 를 임의로 만들지 않으며(§9), 브라우저에는 원본 토큰만, 서버 DB 에는 해시만 존재한다.
  */
-const OWNER_TOKENS_KEY = "schoolfix_owner_tokens_v1";
-
-function loadOwnerTokens(): string[] {
-  try {
-    const raw = localStorage.getItem(OWNER_TOKENS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((t) => typeof t === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveOwnerToken(token: string) {
-  try {
-    const tokens = loadOwnerTokens();
-    if (!tokens.includes(token)) {
-      localStorage.setItem(OWNER_TOKENS_KEY, JSON.stringify([token, ...tokens].slice(0, 200)));
-    }
-  } catch (err) {
-    console.warn("소유 토큰을 저장하지 못했습니다.", err);
-  }
-}
+import { getDeviceToken, loadOwnerTokens, saveOwnerToken } from "./utils/clientTokens";
 
 type View = "SCHOOL_SELECT" | "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
 
@@ -226,7 +202,7 @@ export default function App() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, schoolId: selectedSchool?.id }),
+        body: JSON.stringify({ ...data, schoolId: selectedSchool?.id, deviceToken: getDeviceToken() }),
       });
       const json = await res.json();
 
@@ -301,13 +277,23 @@ export default function App() {
     setIsFormDirty(false);
   };
 
-  const myReportIds = useMemo(() => new Set(myReports.map((r) => r.id)), [myReports]);
+  const myReportsById = useMemo(() => new Map(myReports.map((r) => [r.id, r])), [myReports]);
 
   // 전체 목록에도 "내 신고" 표시를 붙여 준다.
+  // 내 신고에만 있는 정보(학교 답변·만족도 응답)도 함께 보이도록 내 신고 쪽 데이터로 바꿔 끼운다.
   const allReportsMarked = useMemo(
-    () => reports.map((r) => (myReportIds.has(r.id) ? { ...r, isMine: true } : r)),
-    [reports, myReportIds]
+    () => reports.map((r) => {
+      const mine = myReportsById.get(r.id);
+      return mine ? { ...r, ...mine, isMine: true } : r;
+    }),
+    [reports, myReportsById]
   );
+
+  /** 상세 창에서 공감·만족도 응답으로 신고가 바뀌었을 때 */
+  const handleReportUpdated = (updated: SchoolReport) => {
+    setDetailReport(updated);
+    refreshAll();
+  };
 
   const navButton = (target: View, label: string, Icon: typeof Home) => {
     const active = view === target;
@@ -438,9 +424,11 @@ export default function App() {
       {detailReport && (
         <ReportDetailModal
           report={detailReport}
+          schoolId={selectedSchool?.id || ""}
           isOpen={Boolean(detailReport)}
           onClose={() => setDetailReport(null)}
           onRequestDelete={(id) => setDeleteTargetId(id)}
+          onReportUpdated={handleReportUpdated}
         />
       )}
 

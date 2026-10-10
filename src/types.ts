@@ -230,8 +230,40 @@ export interface SchoolReport {
   scheduledAt?: string | null;
   inProgressAt?: string | null;
   completedAt?: string | null;
+  /** "나도 겪었어요" 공감 수 */
+  meTooCount?: number;
+  /** 학교가 신고한 학생에게만 보여 주는 답변 ("내 신고" 와 운영진 화면에만 있다) */
+  reporterReply?: string | null;
+  reporterReplyAt?: string | null;
+  /** 처리 완료 후 신고한 학생의 만족도 응답 */
+  feedback?: ReportFeedback | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ReportFeedback {
+  resolved: boolean;
+  comment: string | null;
+  at: string;
+}
+
+export interface ReportHistoryEntry {
+  at: string;
+  actor: "staff" | "teacher" | "reporter" | "system";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
+  from?: string | null;
+  to?: string | null;
+}
+
+/** GET /api/staff/reports — 운영진·교사 화면 전용 형태 */
+export interface StaffReport extends SchoolReport {
+  history: ReportHistoryEntry[];
+  reporter: {
+    /** 같은 기기에서 접수된 신고 수 (이 신고 포함) */
+    deviceReportCount: number;
+    /** 장난 신고 처리로 공개 보류 중인 기기인지 */
+    blocked: boolean;
+  };
 }
 
 // 학교에서 실제 사용하는 위치 목록 (기본값: 교실)

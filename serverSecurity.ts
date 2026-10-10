@@ -148,6 +148,20 @@ export const LIMITS = {
     blockMs: 10 * 60 * 1000,
     message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
+  /** "나도 겪었어요": 학교 공용 IP 를 고려해 넉넉히 두고, 중복은 기기 토큰으로 막는다. */
+  meToo: {
+    windowMs: 10 * 60 * 1000,
+    max: 120,
+    blockMs: 5 * 60 * 1000,
+    message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
+  /** 처리 완료 만족도 응답 */
+  feedback: {
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    blockMs: 5 * 60 * 1000,
+    message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
 };
 
 // ---------------------------------------------------------------------------
