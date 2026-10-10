@@ -49,6 +49,12 @@ const BLOCKED_TERMS: BlockedTerm[] = [
   { term: "개새끼", category: "severe_profanity" },
   { term: "새끼", category: "severe_profanity", ambiguous: true, exceptions: [/(강아지|고양이|짐승|동물|사자|호랑이)\s*새끼/] },
   { term: "꺼져", category: "severe_profanity" },
+  // --- English profanity (case-insensitive; spaces and punctuation between letters are also caught) ---
+  { term: "fuck", category: "severe_profanity" },
+  { term: "shit", category: "severe_profanity" },
+  { term: "bitch", category: "severe_insult" },
+  { term: "asshole", category: "severe_insult" },
+  { term: "motherfucker", category: "severe_insult" },
 
   // --- 심각한 모욕 ---
   { term: "병신", category: "severe_insult" },
@@ -67,6 +73,18 @@ const BLOCKED_TERMS: BlockedTerm[] = [
 
   // --- 노골적인 성적 비속어 ---
   { term: "섹스", category: "sexual" },
+  { term: "sex", category: "sexual" },
+  { term: "sexual", category: "sexual" },
+  { term: "porn", category: "sexual" },
+  { term: "hentai", category: "sexual" },
+  { term: "nudes", category: "sexual" },
+  { term: "야동", category: "sexual" },
+  { term: "포르노", category: "sexual" },
+  { term: "딸딸이", category: "sexual" },
+  { term: "보빨", category: "sexual" },
+  { term: "씹새끼", category: "severe_insult" },
+  { term: "씹창", category: "severe_profanity" },
+  { term: "후장", category: "sexual" },
   { term: "자위", category: "sexual", ambiguous: true, exceptions: [/자위\s*(대|권|적|하는\s*군|부|수단)/] },
   {
     term: "보지",

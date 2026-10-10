@@ -308,11 +308,13 @@ function toPublicReport(r: StoredReport) {
     grade: r.grade ?? null,
     className: r.className ?? null,
     roomName: r.roomName ?? null,
-    title: r.title ?? "",
+    // 저장된 과거 신고에도 필터 적용 전 원문이 남아 있을 수 있으므로
+    // 공개 API로 내보낼 때 한 번 더 규칙 기반 필터를 적용한다.
+    title: maskProfanity(r.title ?? "").text,
     location: r.location,
     locationDetail: r.locationDetail ?? null,
     category: r.category,
-    description: r.description,
+    description: maskProfanity(r.description).text,
     status: r.status,
     moderationStatus: r.moderationStatus ?? "approved",
     riskLevel: r.riskAnalysis?.risk_level ?? null,
