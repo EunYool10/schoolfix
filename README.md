@@ -15,6 +15,8 @@
 - **작성 도우미** — 상황별 예시 문구 10종을 제공해, 무엇을 어떻게 써야 할지 막막한 학생도 버튼 한 번으로 초안을 채웁니다.
 - **AI 추가 질문** — 내용이 애매하면 바로 접수하지 않고, 가장 중요한 질문 **하나**를 되묻습니다. 답변을 합쳐 다시 판단하고, 충분해지면 그때 저장합니다.
 - **내 신고 / 전체 신고** — 탭으로 구분해 조회합니다. 검색, 카테고리·위험도·처리 상태·기간 필터를 조합할 수 있습니다.
+- **다른 기기에서 내 신고 불러오기** — 접수할 때 접수번호와 함께 **확인 코드**(예: `ABCDE-FGHJK`)를 한 번 보여 줍니다. 휴대폰을 바꾸거나 브라우저 데이터를 지워도 "내 신고" 탭에서 두 값을 넣으면 다시 연결되어 학교 답변과 만족도 응답을 이어서 할 수 있습니다.
+- **처리 소식 알림** — "내 신고" 탭에서 알림을 켜면, 처리 상태가 바뀌거나 학교 답변이 달리거나 보류 신고가 공개될 때 휴대폰·PC로 알림이 옵니다(Web Push). 알림에는 접수번호와 바뀐 상태만 담고 신고 내용은 담지 않습니다.
 - **위치별 신고 현황** — 어느 장소에서 문제가 가장 많이 발생하는지 실제 신고 데이터로 집계합니다. 위의 필터가 그대로 반영됩니다.
 - **AI 요약** — 접수된 신고 전체에서 드러나는 문제 상황을 간결하게 정리합니다.
 - **PDF 저장 / 인쇄** — 현재 필터가 적용된 목록을 보고서 형태로 내보냅니다.
@@ -22,7 +24,15 @@
 
 학교별 데이터는 서버 측 [`schools.seed.json`](./schools.seed.json) 카탈로그에서 제공합니다. 학교 현황에 나온 학과 및 학년별 학급 수는 참고 정보로 저장하고, 실제 반 이름·건물명·층·호실은 공식 공개 자료에 없어 선택 목록으로 만들지 않고 신고자가 직접 적도록 했습니다. 기존 신고에는 기본 지원 학교 ID를 읽을 때 연결하며 신고번호와 내용을 초기화하거나 삭제하지 않습니다.
 
-운영진 전용 화면에서 신고 현황을 확인하고 처리 상태·담당자·처리 메모를 관리할 수 있습니다. 상태와 위험도별 요약, 검색·필터, 위험도 우선 정렬을 제공하며 현재 조건에 맞는 신고 목록을 CSV로 내려받을 수 있습니다.
+운영진 전용 화면에서 신고 현황을 확인하고 처리 상태·담당자·처리 메모를 관리할 수 있습니다. 상태와 위험도별 요약, 검색·필터, 위험도 우선 정렬을 제공하며 현재 조건에 맞는 신고 목록을 CSV로 내려받을 수 있습니다. 목록은 **30초마다 자동으로 갱신**되고, 새로 들어온 신고에는 "새로 들어옴" 표시와 함께 브라우저 탭 제목에 건수가 붙습니다. 처리 내용을 입력하는 중에는 갱신을 잠시 건너뜁니다.
+
+### 운영진·교사 계정
+
+- **개인 계정** — 관리자가 "계정 관리" 화면에서 사람마다 계정(관리자·운영진·교사)을 만듭니다. 처리 이력에 **누가 바꿨는지 이름**이 남고, 담당자가 바뀌면 그 계정만 끄면 됩니다. 계정을 끄거나 비밀번호를 바꾸면 열려 있던 로그인이 바로 끝납니다.
+- **역할** — 관리자: 모든 기능 + 계정 관리 + 전체 백업. 운영진: 모든 학교의 신고 처리·학교 신청·알림 설정. 교사: 소속 학교 신고만 처리.
+- **공용 비밀번호도 그대로** — `STAFF_PASSWORD_HASH`(아이디 `admin` 또는 비움, 관리자 권한)와 학교별 `SCHOOL_TEACHER_PASSWORD_HASHES`는 계속 쓸 수 있습니다. 처음에는 공용 비밀번호로 들어가 개인 관리자 계정을 만드세요.
+- **로그인 유지** — 로그인 세션의 해시를 저장소에 함께 저장해, 무료 플랜에서 서버가 잠들었다 깨거나 재배포돼도 8시간 동안 다시 로그인하지 않습니다.
+- **전체 백업** — 관리자는 "백업" 화면에서 모든 데이터를 JSON 파일 하나로 내려받을 수 있습니다(사진 포함 선택). 비밀번호 해시·로그인 세션·학생 알림 구독은 넣지 않습니다.
 
 ### 학생 참여와 운영 기능
 
@@ -85,7 +95,7 @@ AI가 보낸 점수와 등급은 신뢰하지 않고 공식으로 다시 계산�
 
 로그인이 없으므로 신고 등록 시 서버가 추측 불가능한 토큰을 발급합니다. **브라우저에는 원본 토큰만, 서버 DB에는 SHA-256 해시만** 저장됩니다. 사용자 ID를 임의로 만들지 않습니다.
 
-브라우저 저장소를 지우거나 다른 기기에서 접속하면 내 신고 목록은 비어 있습니다. 전체 신고에서는 계속 보입니다.
+브라우저 저장소를 지우거나 다른 기기에서 접속하면 내 신고 목록은 비어 있습니다. 이때는 접수할 때 받은 **확인 코드**로 다시 연결합니다. 확인 코드도 서버에는 해시만 저장하고, 접수번호와 코드가 모두 맞으면 그 기기용 소유 토큰을 새로 발급합니다(신고마다 최근 10개 기기까지). 어느 쪽이 틀렸는지는 알려 주지 않고, 시도 횟수를 제한해 코드 대입을 막습니다. 확인 코드가 생기기 전에 접수한 신고는 이 방법으로 불러올 수 없습니다.
 
 ---
 
@@ -97,7 +107,8 @@ AI가 보낸 점수와 등급은 신뢰하지 않고 공식으로 다시 계산�
 | 백엔드 | Express 4 (`server.ts`) |
 | 저장소 | Supabase REST API (`schoolfix_store`) 또는 로컬 JSON 파일 |
 | AI | OpenAI `gpt-5.6-terra` → `gpt-5.6-luna` 폴백, **서버에서만 호출** |
-| 인증 | 없음 (삭제만 bcrypt 비밀번호 검증) |
+| 인증 | 학생은 로그인 없음. 운영진·교사는 개인 계정 또는 공용 비밀번호(bcrypt), 세션은 해시로 저장소에 보관 |
+| 학생 알림 | Web Push (`web-push`, VAPID) + 서비스 워커 `public/sw.js` |
 | PDF / 인쇄 | 별도 라이브러리 없이 `@media print` + `window.print()` |
 
 ---
@@ -119,20 +130,31 @@ ADMIN_PASSWORD_HASH="$2b$12$..."
 STAFF_PASSWORD_HASH="$2b$12$..."
 ```
 
-키가 없어도 **신고 등록·조회·검색·필터·PDF·인쇄는 그대로 동작합니다.** 위험도 분석과 AI 요약만 비활성화됩니다.
+키가 없어도 **신고 등록·조회·검색·필터·PDF·인쇄는 그대로 동작합니다.** 키가 없을 때 달라지는 점은 다음과 같습니다.
+
+- 위험도 분석과 AI 요약은 꺼집니다.
+- AI 추가 질문 없이 바로 접수합니다.
+- 부적절한 내용 검사는 욕설 필터만 적용합니다. 사진이 붙은 신고는 안전성 검사를 할 수 없으므로 공개 전에 운영진 검토로 보류됩니다.
 
 ### 환경 변수
 
 | 변수 | 필수 | 설명 |
 |---|---|---|
-| `OPENAI_API_KEY` | AI 기능 사용 시 | 위험도 분석 + AI 요약 |
+| `OPENAI_API_KEY` | AI 기능 사용 시 | 위험도 분석, AI 요약, AI 추가 질문, 신고 글·사진 안전성 검사(Moderation) |
 | `ADMIN_PASSWORD_HASH` | 삭제 기능 사용 시 | bcrypt 해시. 없으면 삭제가 503 |
-| `STAFF_PASSWORD_HASH` | 운영진 기능 사용 시 | 운영진 로그인용 bcrypt 해시. 없으면 로그인 기능 비활성화 |
+| `STAFF_PASSWORD_HASH` | 처음 설정 시 | 공용 운영진 계정(아이디 `admin`, 관리자 권한)의 bcrypt 해시. 개인 관리자 계정을 만든 뒤에는 지워도 됨 |
 | `SCHOOL_TEACHER_PASSWORD_HASHES` | 교사 로그인 사용 시 | 학교 ID별 비밀번호 bcrypt 해시를 담은 JSON 객체 |
-| `NOTIFY_WEBHOOK_URL` | 선택 | 긴급 신고 알림을 받을 Discord·Slack 등 웹훅 주소 (HTTPS) |
+| `SUPABASE_URL` | 영구 저장 시 | Supabase Project URL. 아래 키와 함께 설정 |
+| `SUPABASE_SECRET_KEY` | 영구 저장 시 | 서버 전용 Secret key(`sb_secret_...`). 절대 커밋하지 않음 |
+| `SUPABASE_SERVICE_ROLE_KEY` | 선택 | 구형 `service_role` JWT. `SUPABASE_SECRET_KEY` 대신 쓸 때만, 둘을 동시에 설정하지 않음 |
+| `SUPABASE_PHOTO_BUCKET` | 선택 | 신고 사진용 비공개 Storage 버킷 이름. 기본 `report-photos` |
+| `REQUIRE_SUPABASE_STORE` | 선택 | `true`면 Supabase 연결 설정 없이는 서버가 시작하지 않음 |
+| `NOTIFY_WEBHOOK_URL` | 선택 | 운영진 알림(새 신고·긴급 신고·학교 신청·월간 보고)을 받을 Discord·Slack 등 웹훅 주소 (HTTPS) |
 | `NOTIFY_MIN_RISK` | 선택 | 알림 기준 위험도. `긴급`(기본)·`높음`·`중간`·`낮음` |
 | `PUBLIC_BASE_URL` | 선택 | 알림 메시지에 붙일 사이트 주소 |
-| `DATA_DIR` | 선택 | JSON 저장 경로. 영구 디스크용 |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | 학생 알림 사용 시 | Web Push 키 쌍. `npx web-push generate-vapid-keys` 로 만들고, 한 번 정하면 바꾸지 않음(바꾸면 기존 구독이 끊김) |
+| `VAPID_SUBJECT` | 선택 | 푸시 서비스에 알릴 연락처(`mailto:` 또는 https). 비우면 `PUBLIC_BASE_URL` |
+| `DATA_DIR` | 선택 | JSON·사진 저장 경로(Supabase 미사용 시). 영구 디스크용 |
 | `ALLOWED_ORIGINS` | 선택 | 교차 출처 허용 도메인 |
 | `PORT` | 선택 | 기본 3000. 호스팅이 자동 주입 |
 
@@ -156,7 +178,7 @@ npm run test:clarify  # AI 추가 질문 검증 (〃)
 npm run test:location # 위치 정규화·집계 검증 (API 호출 없음)
 npm run test:filter   # 욕설 필터 검증
 npm run test:report   # PDF·인쇄 문서 검증
-npm run test:ops      # 처리 기한·월별 통계·긴급 알림·반복 신고 판단 검증
+npm run test:ops      # 처리 기한·월별 통계·긴급 알림·반복 신고·확인 코드·학생 알림·계정과 세션 검증
 ```
 
 ---
@@ -165,11 +187,18 @@ npm run test:ops      # 처리 기한·월별 통계·긴급 알림·반복 신�
 
 ```
 server.ts                      Express 서버 (라우트 전체)
-serverSecurity.ts              Rate Limit, 비밀번호 검증, 토큰, 입력 검증, 보안 헤더
+serverSecurity.ts              Rate Limit, 비밀번호 검증, 토큰·확인 코드, 입력 검증, 보안 헤더
+staffAuth.ts                   운영진·교사 개인 계정 규칙과 로그인 세션(해시 저장)
+pushNotify.ts                  학생 알림(Web Push) — 구독 검증·문구·발송
 riskAnalysis.ts                위험도 채점 — 계산의 단일 출처
 reportClarify.ts               AI 추가 질문 — 판단·응답 검증·대화 세션
 locationStats.ts               위치 정규화와 집계 — 통계의 단일 출처
 aiSummary.ts                   AI 요약 + Prompt Injection 방어
+abuseGuard.ts                  반복 신고 기기 판단 (공개 보류 규칙)
+notify.ts                      운영진 웹훅 알림 (Discord·Slack 등)
+photoStore.ts                  신고 사진 저장 (Supabase Storage 또는 로컬 파일)
+schools.seed.json              지원 학교·위치 카탈로그
+supabase/schema.sql            Supabase 테이블 생성 SQL
 src/
   App.tsx                      화면 전환, API 호출, 익명 토큰 관리
   types.ts                     타입과 표시 규칙
@@ -178,15 +207,18 @@ src/
   utils/reportDocument.ts      PDF·인쇄용 문서 생성
   hooks/useReportFilters.ts    필터 상태 (위 규칙에 React 상태를 붙인 껍데기)
   hooks/useLocationStats.ts    위치 통계 조회
-  components/                  화면
-data/                          JSON 저장소 (git 제외)
+  data/formExamples.ts         신고 작성 예시 문구
+  utils/push.ts                학생 알림 켜기·끄기 (브라우저 쪽)
+  components/                  화면 (StaffAccountsPanel: 계정·백업, MyReportTools: 신고 불러오기·알림)
+public/sw.js                   서비스 워커 — 학생 알림 표시 전용 (페이지 캐시 안 함)
+data/                          JSON 저장소와 사진 (Supabase 미사용 시, git 제외)
 ```
 
 ---
 
 ## API
 
-로그인이 없으므로 대부분 공개입니다. 삭제만 2단계 인증을 거칩니다.
+학생용 API는 로그인 없이 공개입니다. 운영진·교사 기능은 HttpOnly 세션 쿠키가 필요하고, 신고 삭제는 관리자 비밀번호로 삭제 토큰을 받는 2단계 인증을 거칩니다.
 
 | 메서드 | 경로 | 권한 | 설명 |
 |---|---|---|---|
@@ -196,18 +228,31 @@ data/                          JSON 저장소 (git 제외)
 | GET | `/api/reports?schoolId=...` | 공개 | 선택 학교 신고 + 학교별 서버 통계 |
 | GET | `/api/reports/location-statistics?schoolId=...` | 공개 | 선택 학교 위치별 집계 (필터: `search` `category` `risk` `status` `range`) |
 | GET | `/api/reports/:id?schoolId=...` | 공개 | 선택 학교 신고 상세 |
+| GET | `/api/photos/:month/:file` | 공개 (보류 신고 사진은 운영진 세션) | 신고 첨부 사진 |
+| POST | `/api/school-applications` | 공개 | 학교 추가 신청 (Rate Limit) |
 | POST | `/api/reports/analyze` | 공개 | AI 사전 확인 — 부족하면 질문 1개 반환 |
 | POST | `/api/reports` | 공개 | 신고 등록 (소유 토큰 발급). 내용이 애매하면 `422`와 함께 질문을 반환하고 저장하지 않음 |
 | POST | `/api/reports/mine` | 공개 | 소유 토큰으로 내 신고 조회 |
+| POST | `/api/reports/recover` | 공개 (접수번호 + 확인 코드, Rate Limit) | 다른 기기에서 내 신고 불러오기 — 이 기기용 소유 토큰 발급 |
+| GET | `/api/push/config` | 공개 | 학생 알림 사용 가능 여부와 공개 키 |
+| POST | `/api/push/subscribe` · `/api/push/unsubscribe` | 공개 (소유 토큰, Rate Limit) | 이 기기로 내 신고 알림 받기·끊기 |
 | POST | `/api/ai/summary` | 공개 | 요청 본문 `schoolId`에 해당하는 학교 AI 요약 (Rate Limit + 캐시) |
 | GET | `/api/staff/session` | 공개 | 운영진 또는 교사 로그인 상태 확인 |
-| POST | `/api/staff/login` | 비밀번호 | 운영진 로그인 (HttpOnly 세션 쿠키, 8시간) |
-| POST | `/api/staff/teacher-login` | 학교 ID + 학교 비밀번호 | 학교별 교사 세션 발급 (HttpOnly, 8시간) |
+| POST | `/api/staff/login` | 아이디 + 비밀번호 | 운영진 로그인. 아이디를 비우거나 `admin`이면 공용 비밀번호 (HttpOnly 세션 쿠키, 8시간) |
+| POST | `/api/staff/teacher-login` | 학교 ID + (아이디) + 비밀번호 | 교사 로그인. 아이디를 비우면 학교 공용 비밀번호 |
 | POST | `/api/staff/logout` | 세션 | 로그아웃 및 세션 폐기 |
+| POST | `/api/staff/me/password` | 개인 계정 세션 | 내 비밀번호 변경 (다른 기기 세션 종료) |
+| GET·POST | `/api/staff/accounts` | 관리자 세션 | 개인 계정 목록·생성 |
+| PATCH·DELETE | `/api/staff/accounts/:id` | 관리자 세션 | 이름·역할·소속 학교·비밀번호 재설정·사용 중지·삭제 |
+| GET | `/api/staff/backup` | 관리자 세션 | 전체 데이터 JSON 백업 (`?photos=1` 이면 사진 포함) |
 | POST | `/api/reports/:id/me-too` | 공개 (기기 토큰) | "나도 겪었어요" 추가·취소 |
 | POST | `/api/reports/:id/feedback` | 소유 토큰 | 처리 완료 신고의 만족도 응답. 미해결이면 "확인 중"으로 되돌림 |
 | GET | `/api/staff/reports?schoolId=...` | 운영진 또는 대상 학교 교사 세션 | 운영진 화면용 목록 (이력·학생 답변·반복 신고 정보 포함, 운영진은 보류 신고 포함) |
 | PATCH | `/api/staff/reports/:id` | 운영진 또는 대상 학교 교사 세션 | 신고 상태·담당자·처리 메모·학생 답변 변경. 교사는 소속 학교 신고만 수정 가능 |
+| GET | `/api/staff/moderation?schoolId=...` | 운영진 세션 | 공개 보류된 신고(검토 대기열) |
+| PATCH | `/api/staff/reports/:id/moderation?schoolId=...` | 운영진 세션 | 보류 신고 승인(`approve`) 또는 거절(`reject`) |
+| GET | `/api/staff/school-applications` | 운영진 세션 | 학교 신청 메일함 |
+| PATCH·DELETE | `/api/staff/school-applications/:id` | 운영진 세션 | 신청 확인 표시(`mark-reviewed`·`mark-new`)·삭제 |
 | POST | `/api/staff/reports/:id/spam` | 운영진 세션 | 장난 신고 처리 — 삭제 후 접수 기기를 30일간 검토 대상으로 지정 |
 | GET·DELETE | `/api/staff/blocked-reporters` | 운영진 세션 | 검토 대상 기기 목록·해제 |
 | GET·POST | `/api/staff/schools` | 운영진 세션 | 화면에서 등록한 학교 목록·학교 등록 (학교 신청 승인) |
@@ -226,10 +271,12 @@ data/                          JSON 저장소 (git 제외)
 
 로그인이 없다는 것이 보안이 없다는 뜻은 아닙니다.
 
-- **입력 검증** — 프론트엔드 검증을 신뢰하지 않고 서버가 최종 판단합니다. 허용된 위치·종류, 길이 제한, 첨부는 `data:image/*`만 허용.
+- **입력 검증** — 프론트엔드 검증을 신뢰하지 않고 서버가 최종 판단합니다. 허용된 위치·종류, 길이 제한. 사진은 신고당 6장, 장당 5MB까지이며 PNG·JPG·GIF·WEBP만 받고, 확장자가 아니라 파일 내용으로 형식을 확인합니다.
 - **부적절한 내용 보류** — 신고 텍스트와 첨부 이미지를 서버에서 OpenAI Moderation으로 검사합니다. 검토가 필요한 신고는 공개 목록·상세·통계에서 숨기고 운영진 검토 대기열에 보관하며, 운영진이 승인하거나 삭제할 수 있습니다. 검사 장애 시 이미지 첨부 신고는 자동 공개하지 않고 보류합니다.
 - **욕설 필터** — 규칙 기반. 금지어 글자 사이 구분자를 허용하는 정규식으로 `씨 발`·`씨.발` 같은 우회를 잡되, 문장 전체 공백을 제거하지 않아 `보지 못했어요` 같은 정상 문장을 오탐하지 않습니다.
-- **Rate Limit** — 신고 등록 / AI 요약 / 관리자 인증에 각각 적용. 학교는 NAT 뒤에서 IP를 공유하므로 신고 등록 한도는 여유 있게 잡았습니다.
+- **Rate Limit** — 신고 등록 / AI 요약 / 관리자 인증 / 확인 코드 불러오기 / 알림 구독에 각각 적용. 학교는 NAT 뒤에서 IP를 공유하므로 신고 등록 한도는 여유 있게 잡았습니다. 운영진·교사 로그인은 **틀린 비밀번호만** 세서(15분에 10번) 같은 학교 교사 여러 명이 로그인해도 막히지 않습니다.
+- **계정·세션** — 개인 계정 비밀번호는 bcrypt 해시로만 저장하고, 없는 아이디로 로그인해도 같은 시간이 걸리게 해 아이디 존재 여부가 드러나지 않습니다. 로그인 쿠키는 HttpOnly·SameSite=Strict이며 서버에는 그 SHA-256 해시만 남깁니다. 켜진 관리자가 하나도 없게 되는 변경(마지막 관리자 끄기·삭제)은 막습니다.
+- **학생 알림** — 서버가 임의 주소로 요청을 보내지 않도록 브라우저 제조사의 공식 푸시 서비스 주소(FCM·Mozilla·Apple·WNS)만 구독으로 받습니다. 실제로 있는 신고의 소유 토큰만 구독에 묶습니다.
 - **Prompt Injection 방어** — 신고 내용은 `<report>` 안의 데이터로 고정되며, 그 안의 지시문은 실행하지 않습니다.
 - **XSS** — React 기본 escape에 의존하며 `dangerouslySetInnerHTML`을 쓰지 않습니다.
 - **보안 헤더** — CSP, X-Frame-Options, Referrer-Policy, HSTS(운영).
@@ -239,13 +286,23 @@ data/                          JSON 저장소 (git 제외)
 
 ## 배포
 
-`render.yaml`이 포함되어 있어 Render에서 **New → Blueprint**로 저장소를 연결하면 구성됩니다. `OPENAI_API_KEY`, `ADMIN_PASSWORD_HASH`, `STAFF_PASSWORD_HASH`는 커밋하지 않고 대시보드에서 입력합니다. 운영진 로그인 비밀번호 해시는 다음 명령으로 생성합니다.
+`render.yaml`이 포함되어 있어 Render에서 **New → Blueprint**로 저장소를 연결하면 구성됩니다. 비밀 값은 커밋하지 않고 Render 대시보드 **Environment**에서 입력합니다.
+
+- `OPENAI_API_KEY`
+- `ADMIN_PASSWORD_HASH`, `STAFF_PASSWORD_HASH`, `SCHOOL_TEACHER_PASSWORD_HASHES`
+- `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (데이터를 영구 보관할 때, 아래 참고)
+- `NOTIFY_WEBHOOK_URL` (운영진 알림을 받을 때)
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (학생 알림을 쓸 때)
+
+`PUBLIC_BASE_URL`은 `render.yaml`에 `https://schoolfix.onrender.com`으로 들어 있습니다. Render가 배정한 실제 주소가 다르면 이 값도 바꿔야 알림 속 링크가 맞습니다. 운영진 로그인 비밀번호 해시는 다음 명령으로 생성합니다.
 
 ```bash
 node -e "console.log(require('bcryptjs').hashSync('운영진비밀번호', 12))"
 ```
 
-STAFF 비밀번호는 운영진 전체가 공유하는 단일 비밀번호입니다. 로그인 세션은 서버 메모리에 보관되며 8시간 뒤 만료됩니다. 서버가 재시작되면 기존 세션은 모두 로그아웃됩니다.
+STAFF 비밀번호는 공용 관리자 계정(아이디 `admin` 또는 비움)의 비밀번호입니다. 배포 후 이 비밀번호로 로그인해 **운영진 화면 → 계정 관리**에서 사람마다 개인 계정을 만들고, 개인 관리자 계정이 생기면 `STAFF_PASSWORD_HASH`는 지워도 됩니다. 로그인 세션은 8시간 뒤 만료되며, 해시가 저장소에 남아 서버가 재시작돼도 유지됩니다.
+
+학생 알림을 쓰려면 `npx web-push generate-vapid-keys`로 만든 키 두 개를 `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`에 넣습니다. 키가 없으면 "알림 켜기" 버튼이 나오지 않을 뿐 다른 기능은 그대로입니다. iPhone·iPad는 Safari에서 **홈 화면에 추가**한 앱에서만 알림을 받을 수 있습니다(iOS 16.4 이상).
 
 교사 비밀번호는 학교별로 별도 발급합니다. `schools.seed.json`의 학교 `id`를 키로 하는 JSON 객체에 bcrypt 해시를 등록하세요. 예: `{"cem-h":"$2b$12$..."}`. Render 환경 변수 `SCHOOL_TEACHER_PASSWORD_HASHES`에 등록하기 전까지 해당 학교 교사 로그인은 비활성화됩니다. 교사는 소속 학교 신고의 상태·담당자·처리 메모만 관리하며, 운영진 검토 대기열과 학교 신청 메일함은 이용할 수 없습니다.
 
@@ -256,7 +313,7 @@ STAFF 비밀번호는 운영진 전체가 공유하는 단일 비밀번호입니
 Render 배포 흐름은 그대로 유지하고, 신고 및 학교 추가 신청 데이터만 Supabase에 저장할 수 있습니다.
 
 1. Supabase에서 프로젝트를 만들고, **SQL Editor**에서 [`supabase/schema.sql`](./supabase/schema.sql)을 실행합니다.
-   - **이미 Supabase를 쓰고 있었다면** 업데이트할 때마다 이 파일을 한 번 더 실행하세요. 화면에서 등록한 학교, 검토 대상 기기, 알림 설정을 저장할 수 있도록 테이블 제약을 갱신합니다. 실행하지 않아도 서버는 시작되지만 해당 기능의 저장이 "저장하지 못했습니다" 오류로 실패합니다.
+   - **이미 Supabase를 쓰고 있었다면** 업데이트할 때마다 이 파일을 한 번 더 실행하세요. 화면에서 등록한 학교, 검토 대상 기기, 알림 설정, 운영진 개인 계정, 로그인 세션, 학생 알림 구독을 저장할 수 있도록 테이블 제약을 갱신합니다. 실행하지 않아도 서버는 시작되지만 해당 기능의 저장이 "저장하지 못했습니다" 오류로 실패합니다(로그인 세션은 메모리로만 유지됩니다).
 2. Supabase 프로젝트의 **Project URL**과 서버 전용 Secret key(`sb_secret_...`)를 확인합니다. 이 키는 브라우저나 저장소에 절대 올리지 마세요. 구형 `service_role` JWT도 지원하지만 새 프로젝트에서는 Secret key를 권장합니다.
 3. Render의 `schoolfix` 서비스 **Environment**에 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`를 추가하고 저장합니다. `SUPABASE_SERVICE_ROLE_KEY`를 쓸 경우에는 `SUPABASE_SECRET_KEY`와 동시에 설정하지 마세요.
 4. Render가 재배포된 뒤 `/api/health` 응답의 `dataStore`가 `supabase`인지 확인합니다.
@@ -271,14 +328,18 @@ Render 배포 흐름은 그대로 유지하고, 신고 및 학교 추가 신청 
 - 15분간 요청이 없으면 잠들고, 다음 접속에 30~60초가 걸립니다.
 - Supabase 환경변수를 설정하지 않으면 기존 JSON 파일 저장소를 쓰므로 재시작·재배포 시 데이터가 초기화될 수 있습니다.
 
-데이터를 계속 보관하려면 위 안내에 따라 Supabase를 연결하거나 유료 플랜에서 영구 디스크를 붙이세요(`render.yaml` 주석 참고).
+데이터를 계속 보관하려면 위 안내에 따라 Supabase를 연결하세요. 유료 플랜이라면 Supabase 대신 영구 디스크를 붙여도 됩니다. Render 서비스에 디스크(예: 마운트 경로 `/var/data`)를 추가하고 환경 변수 `DATA_DIR`을 같은 경로로 설정하면 JSON 데이터와 사진이 그 디스크에 저장됩니다.
 
 ---
 
 ## 알려진 제한
 
-- **실시간 알림 기능은 없습니다.** 새 신고가 접수되면 운영진이 화면을 새로고침해 확인해야 합니다.
+- **운영진 화면은 30초마다 다시 받아옵니다.** 실시간 연결(WebSocket)이 아니므로 새 신고가 화면에 나타나기까지 최대 30초가 걸립니다. 바로 알아야 하는 신고는 웹훅 알림(`NOTIFY_WEBHOOK_URL`)을 함께 쓰세요.
 - **Rate Limit이 인메모리**입니다. 인스턴스를 여러 개로 늘리면 Redis 같은 공유 저장소가 필요합니다.
 - **욕설 필터는 모음 삽입 우회를 잡지 못합니다.** 모음을 구분자로 허용하면 정상 문장을 오탐하므로 의도적으로 제외했습니다.
-- `data/` 폴더에는 신고 내용이 저장되며 git에 포함되지 않습니다.
+- **AI 추가 질문 대화는 서버 메모리에 있습니다.** 서버가 재시작되면 작성 중이던 추가 질문 대화는 처음부터 다시 해야 합니다. (운영진·교사 로그인 세션은 저장소에 남아 유지됩니다.)
+- **확인 코드가 없는 예전 신고**는 다른 기기에서 불러올 수 없습니다. 확인 코드는 이 기능이 생긴 뒤 접수한 신고부터 발급됩니다.
+- **백업은 내려받기만 됩니다.** 백업 파일을 화면에서 되돌리는(복원) 기능은 아직 없습니다. 복원이 필요하면 백업 파일의 각 항목을 Supabase `schoolfix_store` 의 같은 이름 문서로 넣어야 하며, 개인 계정은 비밀번호를 다시 정해야 합니다.
+- **학생 알림은 브라우저 지원에 따라 다릅니다.** iPhone·iPad는 홈 화면에 추가한 앱에서만, 일부 브라우저(카카오톡 인앱 브라우저 등)에서는 받을 수 없습니다.
+- `data/` 폴더에는 신고 내용과 사진이 저장되며 git에 포함되지 않습니다.
 

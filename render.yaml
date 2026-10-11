@@ -38,7 +38,8 @@ services:
       # 이 항목이 없으면 삭제 기능이 영구히 503 을 반환한다.
       - key: ADMIN_PASSWORD_HASH
         sync: false
-      # 운영진 로그인 비밀번호의 bcrypt 해시.
+      # 공용 운영진 계정(아이디 admin, 관리자 권한) 비밀번호의 bcrypt 해시.
+      # 운영진 화면 "계정 관리"에서 개인 관리자 계정을 만든 뒤에는 지워도 됩니다.
       - key: STAFF_PASSWORD_HASH
         sync: false
       # 학교별 교사 비밀번호 bcrypt 해시 JSON. key 는 schools.seed.json 의 school.id.
@@ -59,6 +60,12 @@ services:
         value: 긴급
       - key: PUBLIC_BASE_URL
         value: https://schoolfix.onrender.com
+      # 학생 알림(Web Push) 키 쌍 (선택). 둘 다 있어야 "알림 켜기" 버튼이 나옵니다.
+      # 만들기: npx web-push generate-vapid-keys  — 한 번 정하면 바꾸지 마세요(바꾸면 기존 구독이 모두 끊깁니다).
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
       # Supabase 연결을 확인한 뒤 true로 설정하면 영구 저장소 없이 앱이 시작되지 않습니다.
       # 기존 데이터가 아직 로컬 JSON뿐인 경우 먼저 Supabase 연결과 이관을 완료하세요.
       # - key: REQUIRE_SUPABASE_STORE

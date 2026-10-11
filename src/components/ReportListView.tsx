@@ -30,6 +30,7 @@ import { useLocationStats } from "../hooks/useLocationStats";
 import { buildReportHtml } from "../utils/reportDocument";
 import { feedbackPending } from "../utils/feedback";
 import { UPDATE_LABEL, type UpdateKind } from "../utils/reportUpdates";
+import { MyReportTools } from "./MyReportTools";
 
 export type ReportTab = "MINE" | "ALL";
 
@@ -46,6 +47,8 @@ interface ReportListViewProps {
   initialTab?: ReportTab;
   /** 내 신고 중 마지막으로 본 뒤 바뀐 것 (신고 id → 바뀐 내용) */
   updates?: Map<string, UpdateKind[]>;
+  /** 접수번호 + 확인 코드로 다른 기기의 신고를 불러온다. 실패하면 오류 문구 */
+  onRecoverReport?: (reportId: string, code: string) => Promise<string | null>;
 }
 
 const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
@@ -62,6 +65,7 @@ export function ReportListView({
   onNavigateNewReport,
   initialTab = "ALL",
   updates,
+  onRecoverReport,
 }: ReportListViewProps) {
   const [tab, setTab] = useState<ReportTab>(initialTab);
 
@@ -435,6 +439,10 @@ export function ReportListView({
         </div>
       )}
 
+      {tab === "MINE" && onRecoverReport && (
+        <MyReportTools onRecover={onRecoverReport} myReportCount={myReports.length} />
+      )}
+
       {/* 위치별 신고 현황 — 위의 필터가 그대로 반영된다 (§6) */}
       {tab === "ALL" && (
         <LocationStatsPanel
@@ -604,9 +612,9 @@ function EmptyState({
     return (
       <div className="py-16 text-center space-y-3">
         <Inbox className="h-8 w-8 text-slate-300 mx-auto" />
-        <p className="text-sm font-semibold text-slate-800">아직 등록한 신고가 없습니다.</p>
+        <p className="text-sm font-semibold text-slate-800">이 기기에서 등록한 신고가 없습니다.</p>
         <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
-          학교에서 불편하거나 개선이 필요한 문제를 발견했다면 신고를 등록해주세요.
+          학교에서 불편하거나 개선이 필요한 문제를 발견했다면 신고를 등록해주세요. 다른 기기에서 접수했다면 위의 "신고 불러오기" 를 이용하세요.
         </p>
         <button
           type="button"

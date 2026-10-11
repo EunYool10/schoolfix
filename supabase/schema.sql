@@ -12,10 +12,13 @@ create table if not exists public.schoolfix_store (
 --   custom_schools     운영진이 화면에서 등록한 학교
 --   blocked_reporters  장난 신고로 처리돼 공개 전 검토를 거치는 기기
 --   settings           운영진 알림 설정(알림 종류 켜기/끄기, 월간 보고 발송 기록)
+--   staff_accounts     운영진·교사 개인 계정 (비밀번호는 bcrypt 해시만)
+--   staff_sessions     로그인 세션 (쿠키 토큰의 SHA-256 해시만. 서버 재시작 후에도 로그인 유지)
+--   push_subscriptions 학생 알림 구독 (브라우저 푸시 주소와 소유 토큰 해시)
 -- 예전 버전의 제약을 새 목록으로 바꿉니다.
 alter table public.schoolfix_store drop constraint if exists schoolfix_store_key_check;
 alter table public.schoolfix_store add constraint schoolfix_store_key_check
-  check (key in ('reports', 'school_applications', 'custom_schools', 'blocked_reporters', 'settings'));
+  check (key in ('reports', 'school_applications', 'custom_schools', 'blocked_reporters', 'settings', 'staff_accounts', 'staff_sessions', 'push_subscriptions'));
 
 alter table public.schoolfix_store enable row level security;
 

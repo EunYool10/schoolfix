@@ -5,6 +5,10 @@
  *  2) 월별 통계 (한국 시간 월 경계, 평균 처리 시간)
  *  3) 긴급 신고 알림 (기준 위험도, 웹훅 형식)
  *  4) 반복 신고자 걸러내기
+ *  5)~7) 만족도 재응답, 비슷한 신고, 내 신고 새 소식
+ *  8) 확인 코드로 내 신고 불러오기
+ *  9) 학생 알림 (Web Push) — 구독 주소 검증, 묶기, 문구
+ * 10) 운영진 개인 계정 규칙과 로그인 세션 (해시 저장, 재시작 후 유지, 강제 종료)
  */
 
 import { computeSla, slaLabel } from "./src/utils/sla";
@@ -17,6 +21,9 @@ import { feedbackPending } from "./src/utils/feedback";
 import { decodePhotoDataUrl, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache } from "./photoStore";
 import { findSimilarReports } from "./src/utils/similarReports";
 import { changesSince, snapshotOf } from "./src/utils/reportUpdates";
+import { hashRecoveryCode, issueRecoveryCode, normalizeRecoveryCode, ownerTokenHashes, RECOVERY_CODE_ALPHABET, safeHashEqual } from "./serverSecurity";
+import { buildReportPush, isAllowedPushEndpoint, parseSubscription, recipientsFor, upsertPushRecord } from "./pushNotify";
+import { hashSessionToken, MASTER_USERNAME, passwordError, publicAccount, SessionStore, usernameError, type StaffAccount, type StaffSession } from "./staffAuth";
 
 let passed = 0;
 let failed = 0;
@@ -320,6 +327,110 @@ console.log("\n=== 7) 내 신고 새 소식 ===\n");
   check("상태가 바뀌면 '상태 변경'", changesSince(seen, { ...r, status: "completed" }).join() === "status");
   check("학교 답변이 달리면 '학교 답변'", changesSince(seen, { ...r, reporterReplyAt: "2026-10-10T01:00:00Z" }).join() === "reply");
   check("보류 신고가 공개되면 '공개됨'", changesSince(snapshotOf({ ...r, moderationStatus: "held" }), r).join() === "published");
+}
+
+console.log("\n=== 8) 확인 코드로 내 신고 불러오기 ===\n");
+{
+  const { code, hash } = issueRecoveryCode();
+  check("코드 형식 XXXXX-XXXXX", /^[A-Z0-9]{5}-[A-Z0-9]{5}$/.test(code), code);
+  check("헷갈리는 글자(0 O 1 I L) 없음", ![..."01OIL"].some((ch) => code.includes(ch)) && [...code.replace("-", "")].every((ch) => RECOVERY_CODE_ALPHABET.includes(ch)), code);
+  const normalized = normalizeRecoveryCode(code);
+  check("발급한 코드를 그대로 넣으면 같은 해시", normalized !== null && hashRecoveryCode(normalized) === hash);
+  check("소문자·공백·하이픈 없이 넣어도 인정", normalizeRecoveryCode(` ${code.toLowerCase().replace("-", " ")} `) === normalized);
+  check("길이가 틀리면 거부", normalizeRecoveryCode(code.slice(0, 9)) === null);
+  check("쓰지 않는 글자(O)가 있으면 거부", normalizeRecoveryCode("OOOOO-22222") === null);
+  check("문자열이 아니면 거부", normalizeRecoveryCode(12345) === null);
+  const codes = new Set(Array.from({ length: 2000 }, () => issueRecoveryCode().code));
+  check("2000번 발급해도 겹치지 않음", codes.size === 2000, String(codes.size));
+  check("해시 비교: 같으면 true", safeHashEqual(hash, hash));
+  check("해시 비교: 다르거나 없으면 false", !safeHashEqual(hash, hashRecoveryCode("2222222222")) && !safeHashEqual(null, hash) && !safeHashEqual(hash, "abc"));
+  const token = "a".repeat(64);
+  const hashes = ownerTokenHashes([token, "short", 42, "Z".repeat(64)]);
+  check("소유 토큰은 64자리 16진수만 받음", hashes.size === 1);
+}
+
+console.log("\n=== 9) 학생 알림 (Web Push) ===\n");
+{
+  check("Chrome(FCM) 주소 허용", isAllowedPushEndpoint("https://fcm.googleapis.com/fcm/send/abc"));
+  check("Firefox 주소 허용", isAllowedPushEndpoint("https://updates.push.services.mozilla.com/wpush/v2/abc"));
+  check("Safari 주소 허용", isAllowedPushEndpoint("https://web.push.apple.com/abc"));
+  check("Edge(WNS) 주소 허용", isAllowedPushEndpoint("https://wns2-par02p.notify.windows.com/w/?token=abc"));
+  check("임의 서버 주소 거부", !isAllowedPushEndpoint("https://example.com/push"));
+  check("비슷한 이름의 다른 도메인 거부", !isAllowedPushEndpoint("https://evilfcm.googleapis.com.attacker.io/x") && !isAllowedPushEndpoint("https://notfcm.googleapis.comx/x"));
+  check("http 거부", !isAllowedPushEndpoint("http://fcm.googleapis.com/fcm/send/abc"));
+  check("다른 포트·계정 정보 거부", !isAllowedPushEndpoint("https://fcm.googleapis.com:8443/x") && !isAllowedPushEndpoint("https://user:pw@fcm.googleapis.com/x"));
+  check("내부 주소 거부", !isAllowedPushEndpoint("https://127.0.0.1/x") && !isAllowedPushEndpoint("https://localhost/x"));
+
+  const keys = { p256dh: "B".repeat(87), auth: "A".repeat(22) };
+  const sub = parseSubscription({ endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys });
+  check("정상 구독 정보 통과", sub !== null);
+  check("키가 없으면 거부", parseSubscription({ endpoint: "https://fcm.googleapis.com/fcm/send/abc" }) === null);
+  check("키에 이상한 글자가 있으면 거부", parseSubscription({ endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { ...keys, auth: "<script>alert(1)</script>" } }) === null);
+
+  const first = upsertPushRecord([], sub!, ["h1"], "2026-10-11T00:00:00Z");
+  check("처음 등록하면 저장", first.changed && first.list.length === 1);
+  const same = upsertPushRecord(first.list, sub!, ["h1"]);
+  check("같은 내용을 다시 보내면 저장하지 않음", !same.changed);
+  const more = upsertPushRecord(first.list, sub!, ["h2"]);
+  check("새 신고 토큰은 합쳐서 저장", more.changed && more.list.length === 1 && more.list[0].ownerTokenHashes.join() === "h2,h1");
+  check("만든 시각은 유지", more.list[0].createdAt === "2026-10-11T00:00:00Z");
+  const other = upsertPushRecord(more.list, { ...sub!, endpoint: "https://fcm.googleapis.com/fcm/send/other" }, ["h9"]);
+  check("다른 기기는 따로 저장", other.list.length === 2);
+  check("신고 주인 기기만 받음", recipientsFor(other.list, ["h1"]).length === 1 && recipientsFor(other.list, ["h9", "h2"]).length === 2);
+  check("주인 정보가 없으면 아무도 안 받음", recipientsFor(other.list, []).length === 0);
+
+  const report = { id: "REP-20261011-0001", schoolId: "cem-h" };
+  const done = buildReportPush(report, { status: { from: "in_progress", to: "completed" } });
+  check("처리 완료 알림", done?.title === "신고한 문제가 처리됐어요" && done.body.startsWith("REP-20261011-0001"), JSON.stringify(done));
+  check("알림을 누르면 그 학교의 내 신고로", done?.url === "/?view=mine&school=cem-h");
+  const reply = buildReportPush(report, { status: { from: "reviewing", to: "reviewing" }, reply: true });
+  check("상태 그대로 + 답변이면 답변 알림", reply?.title === "학교에서 답변을 남겼어요");
+  const both = buildReportPush(report, { status: { from: "pending", to: "assigned" }, reply: true });
+  check("상태와 답변이 함께 바뀌면 한 번에", both?.title.includes("담당자 배정") === true && both.body.includes("답변"), JSON.stringify(both));
+  check("바뀐 게 없으면 보내지 않음", buildReportPush(report, { status: { from: "reviewing", to: "reviewing" } }) === null);
+  check("알림에 신고 내용은 싣지 않음", !JSON.stringify(buildReportPush({ ...report, title: "비밀 내용" }, { published: true })).includes("비밀 내용"));
+}
+
+console.log("\n=== 10) 운영진 개인 계정과 로그인 세션 ===\n");
+{
+  check("정상 아이디 통과", usernameError("kim.teacher") === null);
+  check("공용 아이디 admin 은 개인 계정으로 못 씀", usernameError(MASTER_USERNAME) !== null);
+  check("대문자·한글·짧은 아이디 거부", usernameError("Kim") !== null && usernameError("김선생") !== null && usernameError("ab") !== null);
+  check("비밀번호 8자 미만 거부", passwordError("1234567") !== null && passwordError("12345678") === null);
+  check("비밀번호 72자 초과 거부 (bcrypt 한계)", passwordError("x".repeat(73)) !== null);
+
+  const account: StaffAccount = { id: "acc_1", username: "kim", displayName: "김선생", role: "teacher", schoolId: "cem-h", passwordHash: "$2b$12$secret", disabled: false, createdAt: "", updatedAt: "", lastLoginAt: null };
+  check("화면용 계정 정보에 비밀번호 해시 없음", !("passwordHash" in publicAccount(account)) && !JSON.stringify(publicAccount(account)).includes("$2b$"));
+
+  let saved: StaffSession[] = [];
+  const store = new SessionStore(async (list) => { saved = list; });
+  const t0 = Date.parse("2026-10-11T00:00:00Z");
+  const token = store.create({ role: "teacher", accountId: "acc_1", name: "김선생", schoolId: "cem-h" }, t0);
+  check("세션 토큰은 64자리 16진수", /^[a-f0-9]{64}$/.test(token));
+  check("저장소에는 원본 토큰이 아닌 해시만", saved.length === 1 && saved[0].tokenHash === hashSessionToken(token) && !JSON.stringify(saved).includes(token));
+  check("토큰으로 세션 확인", store.get(token, t0 + 1000)?.name === "김선생");
+  check("8시간 뒤 만료", store.get(token, t0 + 8 * HOUR + 1) === null);
+
+  const restarted = new SessionStore(async () => {});
+  const t1 = Date.now();
+  const live = store.create({ role: "staff", accountId: "acc_2", name: "박운영", schoolId: null }, t1);
+  restarted.load(saved, t1 + 1000);
+  check("서버가 재시작돼도 저장된 세션으로 로그인 유지", restarted.get(live, t1 + 2000)?.name === "박운영");
+  check("만료된 세션은 불러오지 않음", restarted.get(token, t1 + 2000) === null);
+  restarted.load([{ tokenHash: "not-a-hash", role: "admin", expiresAt: t1 + HOUR }, { ...saved[0], role: "root" }], t1);
+  check("형식이 틀린 세션은 불러오지 않음", restarted.size() === 0);
+
+  const s2 = new SessionStore(async () => {});
+  const a = s2.create({ role: "staff", accountId: "acc_3", name: "A", schoolId: null });
+  const b = s2.create({ role: "staff", accountId: "acc_3", name: "A", schoolId: null });
+  const c = s2.create({ role: "staff", accountId: "acc_4", name: "C", schoolId: null });
+  s2.revokeAccount("acc_3", a);
+  check("비밀번호를 바꾸면 다른 기기 세션만 끝남", s2.get(a) !== null && s2.get(b) === null && s2.get(c) !== null);
+  s2.renameAccount("acc_4", "C2", "admin", null);
+  check("계정 이름·역할이 바뀌면 열린 세션에도 반영", s2.get(c)?.name === "C2" && s2.get(c)?.role === "admin");
+  s2.revoke(c);
+  check("로그아웃하면 세션 삭제", s2.get(c) === null);
+  check("이상한 토큰은 조회하지 않음", s2.get("../../etc") === null && s2.get(null) === null);
 }
 
 console.log(`\n${"=".repeat(60)}`);

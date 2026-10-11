@@ -257,9 +257,36 @@ export interface ReportFeedback {
 export interface ReportHistoryEntry {
   at: string;
   actor: "staff" | "teacher" | "reporter" | "system";
+  /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력에는 없다. */
+  actorName?: string | null;
   action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
   from?: string | null;
   to?: string | null;
+}
+
+/** GET /api/staff/session — 지금 로그인한 운영진·교사 */
+export interface StaffSessionInfo {
+  authenticated: boolean;
+  role: "staff" | "teacher" | null;
+  isAdmin?: boolean;
+  roleLabel?: string;
+  name?: string;
+  schoolId: string | null;
+  /** 개인 계정으로 로그인했는지 (비밀번호를 직접 바꿀 수 있다) */
+  hasAccount?: boolean;
+}
+
+/** GET /api/staff/accounts — 관리자 화면의 계정 목록 */
+export interface StaffAccountInfo {
+  id: string;
+  username: string;
+  displayName: string;
+  role: "admin" | "staff" | "teacher";
+  schoolId: string | null;
+  disabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
 }
 
 /** GET /api/staff/reports — 운영진·교사 화면 전용 형태 */

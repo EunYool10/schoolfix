@@ -2,11 +2,12 @@
  * SchoolFix AI — 공개형 학교 신고 서비스 백엔드
  *
  * 인증 구조
- *  - 일반 사용자 로그인 없음. 누구나 신고 등록/조회/AI 요약/PDF/인쇄 사용 가능.
+ *  - 학생 로그인 없음. 누구나 신고 등록/조회/AI 요약/PDF/인쇄 사용 가능.
  *  - "내 신고" 는 로그인 대신 신고 생성 시 발급하는 익명 소유 토큰으로 식별한다.
  *    (DB 에는 해시만 저장, 원본은 브라우저에만 존재)
- *  - 관리자 권한이 필요한 기능은 "신고 삭제" 하나뿐이며,
- *    서버가 bcrypt 해시로 비밀번호를 검증한 뒤 1회용 삭제 토큰을 발급한다.
+ *    기기를 바꾸면 접수 때 보여 준 확인 코드로 다시 연결한다.
+ *  - 운영진·교사는 공용 비밀번호 또는 개인 계정으로 로그인한다 (staffAuth.ts).
+ *  - "신고 삭제" 는 관리자 비밀번호를 한 번 더 확인한 뒤 1회용 삭제 토큰을 발급한다.
  *
  * 보안은 serverSecurity.ts 에 모아 두었다.
  */
@@ -35,27 +36,22 @@ import {
 import {
   rateLimit,
   checkRateLimit,
+  failureLimit,
   LIMITS,
   verifyAdminPassword,
   isAdminPasswordConfigured,
   isStaffPasswordConfigured,
   verifyStaffPassword,
-  createStaffSession,
-  getStaffSession,
-  revokeStaffSession,
-  setStaffSessionCookie,
-  clearStaffSessionCookie,
   isTeacherPasswordConfigured,
   verifyTeacherPassword,
-  createTeacherSession,
-  getTeacherSessionSchoolId,
-  revokeTeacherSession,
-  setTeacherSessionCookie,
-  clearTeacherSessionCookie,
   issueDeleteToken,
   consumeDeleteToken,
   issueOwnerToken,
-  hashOwnerToken,
+  ownerTokenHashes,
+  issueRecoveryCode,
+  normalizeRecoveryCode,
+  hashRecoveryCode,
+  safeHashEqual,
   validateReportInput,
   validateClarifyInput,
   FIELD_LIMITS,
@@ -87,6 +83,26 @@ import { computeSla } from "./src/utils/sla";
 import { feedbackPending } from "./src/utils/feedback";
 import { decodePhotoDataUrl, localPhotoBackend, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache, photoTypeFromId, supabasePhotoBackend, type IncomingPhoto, type PhotoBackend, type StoredPhoto } from "./photoStore";
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
+import bcrypt from "bcryptjs";
+import {
+  clearSessionCookies,
+  displayNameError,
+  DUMMY_PASSWORD_HASH,
+  MASTER_USERNAME,
+  newAccountId,
+  normalizeUsername,
+  passwordError,
+  publicAccount,
+  readSessionToken,
+  ROLE_LABEL,
+  SessionStore,
+  setSessionCookie,
+  usernameError,
+  type StaffAccount,
+  type StaffRole,
+  type StaffSession,
+} from "./staffAuth";
+import { buildReportPush, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./pushNotify";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.
@@ -187,6 +203,10 @@ interface StoredReport {
   riskAnalysisError?: string | null;
   /** 익명 소유 토큰의 SHA-256 해시. "내 신고" 조회에만 사용하며 절대 외부로 내보내지 않는다. */
   ownerTokenHash?: string | null;
+  /** 확인 코드로 다른 기기를 연결할 때 발급한 소유 토큰들의 해시 (최근 것만 남긴다) */
+  extraOwnerTokenHashes?: string[];
+  /** 접수 때 한 번 보여 준 확인 코드의 해시. 예전 신고에는 없다. */
+  recoveryCodeHash?: string | null;
   /** 접수한 기기 토큰의 해시. 반복 신고 판단에만 쓰며 외부로 내보내지 않는다. */
   reporterHash?: string | null;
   /** "나도 겪었어요" 를 누른 기기 토큰 해시 목록. 외부에는 개수만 내보낸다. */
@@ -211,8 +231,10 @@ interface StoredReport {
 
 interface ReportHistoryEntry {
   at: string;
-  /** 누가 바꿨는지. 개인 계정이 없으므로 역할로 남긴다. */
+  /** 누가 바꿨는지. 역할과, 개인 계정이면 그 이름을 남긴다. */
   actor: "staff" | "teacher" | "reporter" | "system";
+  /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력과 신고자 이력에는 없다. */
+  actorName?: string | null;
   action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
   from?: string | null;
   to?: string | null;
@@ -223,6 +245,18 @@ const MAX_HISTORY = 100;
 function addHistory(report: StoredReport, entry: Omit<ReportHistoryEntry, "at">, at = new Date().toISOString()) {
   report.history = [...(report.history ?? []), { at, ...entry }].slice(-MAX_HISTORY);
 }
+
+/** 이 신고의 소유 토큰 해시들 (접수 기기 + 확인 코드로 연결한 기기) */
+function reportOwnerHashes(report: StoredReport): string[] {
+  return [report.ownerTokenHash ?? "", ...(report.extraOwnerTokenHashes ?? [])].filter(Boolean);
+}
+
+function ownsReport(report: StoredReport, hashes: Set<string>): boolean {
+  return reportOwnerHashes(report).some((hash) => hashes.has(hash));
+}
+
+/** 확인 코드로 연결할 수 있는 기기 수. 넘으면 가장 오래된 연결부터 끊는다. */
+const MAX_EXTRA_OWNERS = 10;
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -303,7 +337,7 @@ async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promi
   return response;
 }
 
-type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters" | "settings";
+type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters" | "settings" | "staff_accounts" | "staff_sessions" | "push_subscriptions";
 
 async function readSupabaseDocument(key: StoreKey): Promise<unknown | null> {
   const query = new URLSearchParams({ select: "key,payload", key: `eq.${key}`, limit: "1" });
@@ -340,6 +374,7 @@ async function initializeDataStore() {
       console.warn("[store] 경고: 영구 저장소가 연결되지 않았습니다. Render 재시작·재배포 시 JSON 데이터가 사라질 수 있습니다. Supabase 설정 후 REQUIRE_SUPABASE_STORE=true를 설정하세요.");
     }
     console.log("[store] 로컬 JSON 파일 저장소를 사용합니다.");
+    staffSessions.load(readLocalArray<StaffSession>(STAFF_SESSIONS_FILE, "staff-sessions"));
     return;
   }
   if (!/^https:\/\//i.test(SUPABASE_URL)) {
@@ -376,18 +411,24 @@ async function initializeDataStore() {
     }
   }
 
-  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked, remoteSettings] = await Promise.all([
+  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked, remoteSettings, remoteAccounts, remoteSessions, remotePush] = await Promise.all([
     readSupabaseDocument("reports"),
     readSupabaseDocument("school_applications"),
     readSupabaseDocument("custom_schools"),
     readSupabaseDocument("blocked_reporters"),
     readSupabaseDocument("settings"),
+    readSupabaseDocument("staff_accounts"),
+    readSupabaseDocument("staff_sessions"),
+    readSupabaseDocument("push_subscriptions"),
   ]);
   // 나중에 추가된 문서들은 처음 쓸 때 만든다. 테이블 제약(supabase/schema.sql)을 아직 갱신하지 않은
   // 배포에서도 서버가 시작은 되도록, 시작 시점에는 쓰지 않는다.
   cachedCustomSchools = Array.isArray(remoteCustomSchools) ? (remoteCustomSchools as SchoolCatalogEntry[]) : [];
   cachedBlockedReporters = Array.isArray(remoteBlocked) ? (remoteBlocked as BlockedReporter[]) : [];
   cachedSettings = Array.isArray(remoteSettings) ? (remoteSettings as NotificationSettings[]) : [];
+  cachedStaffAccounts = Array.isArray(remoteAccounts) ? (remoteAccounts as StaffAccount[]) : [];
+  cachedPushRecords = Array.isArray(remotePush) ? (remotePush as PushRecord[]) : [];
+  staffSessions.load(remoteSessions);
   const reports = Array.isArray(remoteReports) ? remoteReports as StoredReport[] : localReports();
   const applications = Array.isArray(remoteApplications) ? remoteApplications as SchoolApplication[] : localSchoolApplications();
   const defaultSchool = loadSchools()[0];
@@ -517,6 +558,84 @@ async function saveBlockedReporters(list: BlockedReporter[]) {
     return;
   }
   writeLocalArray(BLOCKED_REPORTERS_FILE, list);
+}
+
+// --- 운영진·교사 개인 계정 / 로그인 세션 / 학생 알림 구독 ---------------------------
+
+const STAFF_ACCOUNTS_FILE = path.join(DATA_DIR, "staff_accounts.json");
+const STAFF_SESSIONS_FILE = path.join(DATA_DIR, "staff_sessions.json");
+const PUSH_SUBSCRIPTIONS_FILE = path.join(DATA_DIR, "push_subscriptions.json");
+let cachedStaffAccounts: StaffAccount[] = [];
+let cachedPushRecords: PushRecord[] = [];
+
+function loadStaffAccounts(): StaffAccount[] {
+  const list = useSupabaseStore ? cachedStaffAccounts : readLocalArray<StaffAccount>(STAFF_ACCOUNTS_FILE, "staff-accounts");
+  return list.map((account) => ({ ...account }));
+}
+
+async function saveStaffAccounts(list: StaffAccount[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("staff_accounts", list);
+    cachedStaffAccounts = list.map((account) => ({ ...account }));
+    return;
+  }
+  writeLocalArray(STAFF_ACCOUNTS_FILE, list);
+}
+
+/** 계정 목록의 "읽기 → 수정 → 저장" 을 하나씩 실행한다. 동시에 두 계정을 만들어도 한쪽이 사라지지 않게 한다. */
+let accountsLock: Promise<unknown> = Promise.resolve();
+function withAccountsLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = accountsLock.then(task, task);
+  accountsLock = run.catch(() => undefined);
+  return run;
+}
+
+/** 로그인 세션 — 해시만 저장소에 남긴다 (staffAuth.ts) */
+const staffSessions = new SessionStore(async (sessions) => {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("staff_sessions", sessions);
+    return;
+  }
+  writeLocalArray(STAFF_SESSIONS_FILE, sessions);
+});
+
+function loadPushRecords(): PushRecord[] {
+  const list = useSupabaseStore ? cachedPushRecords : readLocalArray<PushRecord>(PUSH_SUBSCRIPTIONS_FILE, "push-subscriptions");
+  return list.map((record) => ({ ...record, keys: { ...record.keys }, ownerTokenHashes: [...record.ownerTokenHashes] }));
+}
+
+async function savePushRecords(list: PushRecord[]) {
+  if (useSupabaseStore) {
+    await queueSupabaseDocument("push_subscriptions", list);
+    cachedPushRecords = list.map((record) => ({ ...record }));
+    return;
+  }
+  writeLocalArray(PUSH_SUBSCRIPTIONS_FILE, list);
+}
+
+let pushLock: Promise<unknown> = Promise.resolve();
+function withPushLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = pushLock.then(task, task);
+  pushLock = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * 신고한 학생의 기기로 알림을 보낸다. 응답을 기다리지 않는다 — 알림 실패가 처리 저장을 막지 않는다.
+ * 만료된 구독은 보낸 뒤 지운다.
+ */
+function notifyReporter(report: StoredReport, change: Parameters<typeof buildReportPush>[1]) {
+  if (!pushEnabled()) return;
+  const message = buildReportPush(report, change);
+  if (!message) return;
+  const recipients = recipientsFor(loadPushRecords(), reportOwnerHashes(report));
+  if (recipients.length === 0) return;
+  void sendPush(recipients, message).then(async (expired) => {
+    if (expired.length === 0) return;
+    await withPushLock(async () => {
+      await savePushRecords(loadPushRecords().filter((record) => !expired.includes(record.id)));
+    });
+  }).catch((err) => console.error("[push] 만료 구독 정리 실패:", err instanceof Error ? err.message : err));
 }
 
 /** 운영진이 학교를 등록할 때 쓰는 기본 위치 유형. 공식 확인 전이므로 모두 확인 필요 상태다. */
@@ -1070,6 +1189,8 @@ app.get("/api/health", (_req, res) => {
       lastResult: lastNotifyResult(),
     },
     photos: { store: photoBackend.kind, ready: photoBackendReady },
+    // 학생 알림(VAPID 키) 설정 여부만 알려 준다. 키 자체는 내보내지 않는다.
+    studentPush: { enabled: pushEnabled() },
   });
 });
 
@@ -1085,7 +1206,7 @@ app.get("/api/photos/:month/:file", async (req, res) => {
   const report = raw.find((r) => r.photos?.some((photo) => photo.id === id));
   if (!report || report.deletedAt) return safeError(res, 404, "사진을 찾을 수 없습니다.");
   const isPublic = report.moderationStatus !== "held";
-  if (!isPublic && !getStaffSession(req)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+  if (!isPublic && !staffSessionOf(req)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
 
   try {
     let buffer = photoCache.get(id);
@@ -1184,51 +1305,413 @@ app.get("/api/reports", (req, res) => {
 
 const STATUS_VALUES = ["pending", "reviewing", "assigned", "scheduled", "in_progress", "completed"];
 
-function requireStaff(req: express.Request, res: express.Response): boolean {
-  if (getStaffSession(req)) return true;
-  safeError(res, 401, "운영진 로그인이 필요합니다.");
-  return false;
+// ---------------------------------------------------------------------------
+// 운영진·교사 로그인과 개인 계정 (staffAuth.ts)
+// ---------------------------------------------------------------------------
+
+/** 지금 요청의 로그인 세션. 교사 세션도 포함한다. */
+function sessionOf(req: express.Request): StaffSession | null {
+  return staffSessions.get(readSessionToken(req));
 }
 
-function requireReportManager(req: express.Request, res: express.Response, schoolId: string): boolean {
-  if (getStaffSession(req) || getTeacherSessionSchoolId(req) === schoolId) return true;
+/** 운영진(관리자 포함) 세션만. 교사 세션은 null */
+function staffSessionOf(req: express.Request): StaffSession | null {
+  const session = sessionOf(req);
+  return session && session.role !== "teacher" ? session : null;
+}
+
+function requireStaff(req: express.Request, res: express.Response): StaffSession | null {
+  const session = staffSessionOf(req);
+  if (session) return session;
+  safeError(res, 401, "운영진 로그인이 필요합니다.");
+  return null;
+}
+
+function requireAdmin(req: express.Request, res: express.Response): StaffSession | null {
+  const session = requireStaff(req, res);
+  if (!session) return null;
+  if (session.role === "admin") return session;
+  safeError(res, 403, "관리자 계정만 사용할 수 있습니다.");
+  return null;
+}
+
+function requireReportManager(req: express.Request, res: express.Response, schoolId: string): StaffSession | null {
+  const session = sessionOf(req);
+  if (session && (session.role !== "teacher" || session.schoolId === schoolId)) return session;
   safeError(res, 401, "해당 학교의 교사 또는 운영진 로그인이 필요합니다.");
-  return false;
+  return null;
+}
+
+/** 처리 이력에 남길 행위자 */
+function historyActor(session: StaffSession): Pick<ReportHistoryEntry, "actor" | "actorName"> {
+  return { actor: session.role === "teacher" ? "teacher" : "staff", actorName: session.name };
+}
+
+function sessionPayload(session: StaffSession) {
+  return {
+    ok: true,
+    authenticated: true,
+    // 예전 화면과의 호환을 위해 운영진·관리자는 "staff" 로 내보낸다.
+    role: session.role === "teacher" ? "teacher" : "staff",
+    isAdmin: session.role === "admin",
+    roleLabel: ROLE_LABEL[session.role],
+    name: session.name,
+    schoolId: session.schoolId,
+    hasAccount: Boolean(session.accountId),
+  };
+}
+
+/** 새 세션을 시작한다. 같은 브라우저의 이전 세션은 끝낸다. */
+function startSession(req: express.Request, res: express.Response, data: Omit<StaffSession, "tokenHash" | "createdAt" | "expiresAt">): StaffSession {
+  staffSessions.revoke(readSessionToken(req));
+  const token = staffSessions.create(data);
+  setSessionCookie(res, token);
+  return staffSessions.get(token) as StaffSession;
+}
+
+/**
+ * 개인 계정 로그인 확인. 없는 아이디나 꺼진 계정도 같은 시간만큼 비교해,
+ * 응답 시간으로 아이디가 있는지 알 수 없게 한다.
+ */
+async function verifyAccountLogin(username: string, password: unknown): Promise<StaffAccount | null> {
+  const account = loadStaffAccounts().find((item) => item.username === username && !item.disabled);
+  if (typeof password !== "string" || !password || password.length > 72) return null;
+  const valid = await bcrypt.compare(password, account?.passwordHash ?? DUMMY_PASSWORD_HASH).catch(() => false);
+  return valid && account ? account : null;
+}
+
+/** 로그인 실패 제한 — 틀린 비밀번호만 센다. 학교 공용 IP 의 정상 로그인은 막지 않는다. */
+const loginFailures = failureLimit("staffLogin", LIMITS.staffLogin);
+
+function loginGate(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const wait = loginFailures.blockedFor(req);
+  if (!wait) return next();
+  res.setHeader("Retry-After", String(wait));
+  return res.status(429).json({ ok: false, error: loginFailures.message });
+}
+
+function loginFailed(req: express.Request, res: express.Response, message: string) {
+  loginFailures.fail(req);
+  return safeError(res, 401, message);
+}
+
+/** 마지막 로그인 시각. 저장에 실패해도 로그인은 막지 않는다. */
+function touchLastLogin(accountId: string) {
+  void withAccountsLock(async () => {
+    const list = loadStaffAccounts();
+    const account = list.find((item) => item.id === accountId);
+    if (!account) return;
+    account.lastLoginAt = new Date().toISOString();
+    await saveStaffAccounts(list);
+  }).catch((err) => console.error("[staff] 마지막 로그인 시각 저장 실패:", err instanceof Error ? err.message : err));
+}
+
+function accountSession(account: StaffAccount): Omit<StaffSession, "tokenHash" | "createdAt" | "expiresAt"> {
+  return { role: account.role, accountId: account.id, name: account.displayName, schoolId: account.role === "teacher" ? account.schoolId : null };
 }
 
 app.get("/api/staff/session", (req, res) => {
-  if (getStaffSession(req)) return res.json({ ok: true, authenticated: true, role: "staff", schoolId: null });
-  const schoolId = getTeacherSessionSchoolId(req);
-  return res.json({ ok: true, authenticated: Boolean(schoolId), role: schoolId ? "teacher" : null, schoolId });
+  const session = sessionOf(req);
+  if (!session) return res.json({ ok: true, authenticated: false, role: null, schoolId: null });
+  return res.json(sessionPayload(session));
 });
 
-app.post("/api/staff/login", rateLimit("staffLogin", LIMITS.staffLogin), async (req, res) => {
-  if (!isStaffPasswordConfigured()) {
-    console.error("[staff] STAFF_PASSWORD_HASH 환경변수가 설정되지 않았습니다.");
-    return safeError(res, 503, "운영진 로그인을 사용할 수 없습니다.");
+/**
+ * 운영진 로그인.
+ *  - 아이디를 비우거나 admin 이면 공용 비밀번호(STAFF_PASSWORD_HASH) — 관리자 권한
+ *  - 그 밖의 아이디는 개인 계정. 교사 계정으로 들어오면 소속 학교만 관리한다.
+ */
+app.post("/api/staff/login", loginGate, async (req, res) => {
+  const username = normalizeUsername(req.body?.username);
+  if (!username || username === MASTER_USERNAME) {
+    if (!isStaffPasswordConfigured()) {
+      console.error("[staff] STAFF_PASSWORD_HASH 환경변수가 설정되지 않았습니다.");
+      return loadStaffAccounts().length > 0
+        ? safeError(res, 401, "아이디와 비밀번호를 입력해주세요.")
+        : safeError(res, 503, "운영진 로그인을 사용할 수 없습니다.");
+    }
+    if (!await verifyStaffPassword(req.body?.password)) {
+      return loginFailed(req, res, username ? "아이디 또는 비밀번호가 올바르지 않습니다." : "비밀번호가 올바르지 않습니다.");
+    }
+    return res.json(sessionPayload(startSession(req, res, { role: "admin", accountId: null, name: "공용 운영진 계정", schoolId: null })));
   }
-  const valid = await verifyStaffPassword(req.body?.password);
-  if (!valid) return safeError(res, 401, "비밀번호가 올바르지 않습니다.");
-  const token = createStaffSession();
-  setStaffSessionCookie(res, token);
-  return res.json({ ok: true });
+  const account = await verifyAccountLogin(username, req.body?.password);
+  if (!account) return loginFailed(req, res, "아이디 또는 비밀번호가 올바르지 않습니다.");
+  touchLastLogin(account.id);
+  return res.json(sessionPayload(startSession(req, res, accountSession(account))));
 });
 
-app.post("/api/staff/teacher-login", rateLimit("staffLogin", LIMITS.staffLogin), async (req, res) => {
+/**
+ * 교사 로그인.
+ *  - 아이디를 비우면 학교 공용 비밀번호(SCHOOL_TEACHER_PASSWORD_HASHES)
+ *  - 아이디가 있으면 개인 계정. 교사 계정은 이 학교 소속이어야 한다.
+ */
+app.post("/api/staff/teacher-login", loginGate, async (req, res) => {
   const school = findSchool(req.body?.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-  if (!isTeacherPasswordConfigured(school.id)) return safeError(res, 503, "이 학교의 교사 로그인이 아직 설정되지 않았습니다.");
-  if (!await verifyTeacherPassword(req.body?.password, school.id)) return safeError(res, 401, "학교 비밀번호가 올바르지 않습니다.");
-  const token = createTeacherSession(school.id);
-  setTeacherSessionCookie(res, token);
-  return res.json({ ok: true, schoolId: school.id });
+  const username = normalizeUsername(req.body?.username);
+  if (username) {
+    const account = await verifyAccountLogin(username, req.body?.password);
+    if (!account) return loginFailed(req, res, "아이디 또는 비밀번호가 올바르지 않습니다.");
+    if (account.role === "teacher" && account.schoolId !== school.id) return safeError(res, 403, "다른 학교의 교사 계정입니다. 소속 학교를 선택한 뒤 로그인해주세요.");
+    touchLastLogin(account.id);
+    return res.json(sessionPayload(startSession(req, res, accountSession(account))));
+  }
+  if (!isTeacherPasswordConfigured(school.id)) return safeError(res, 503, "이 학교의 교사 공용 비밀번호가 설정되지 않았습니다. 개인 계정이 있으면 아이디를 입력해주세요.");
+  if (!await verifyTeacherPassword(req.body?.password, school.id)) return loginFailed(req, res, "학교 비밀번호가 올바르지 않습니다.");
+  return res.json(sessionPayload(startSession(req, res, { role: "teacher", accountId: null, name: `${school.schoolName} 교사(공용)`, schoolId: school.id })));
 });
 
 app.post("/api/staff/logout", (req, res) => {
-  revokeStaffSession(getStaffSession(req));
-  revokeTeacherSession(req);
-  clearStaffSessionCookie(res);
-  clearTeacherSessionCookie(res);
+  staffSessions.revoke(readSessionToken(req));
+  clearSessionCookies(res);
+  return res.json({ ok: true });
+});
+
+/** 개인 계정 사용자가 자기 비밀번호를 바꾼다. 다른 기기의 세션은 끝낸다. */
+app.post("/api/staff/me/password", loginGate, async (req, res) => {
+  const session = sessionOf(req);
+  if (!session) return safeError(res, 401, "로그인이 필요합니다.");
+  if (!session.accountId) return safeError(res, 400, "공용 계정의 비밀번호는 환경변수에서 바꿔야 합니다.");
+  const problem = passwordError(req.body?.newPassword);
+  if (problem) return safeError(res, 400, problem);
+  const current = loadStaffAccounts().find((item) => item.id === session.accountId && !item.disabled);
+  if (!current) return safeError(res, 404, "계정을 찾을 수 없습니다.");
+  const valid = typeof req.body?.currentPassword === "string" && await bcrypt.compare(req.body.currentPassword, current.passwordHash).catch(() => false);
+  if (!valid) return loginFailed(req, res, "현재 비밀번호가 올바르지 않습니다.");
+  const passwordHash = await bcrypt.hash(req.body.newPassword, 12);
+  try {
+    await withAccountsLock(async () => {
+      const list = loadStaffAccounts();
+      const account = list.find((item) => item.id === session.accountId);
+      if (!account) throw new Error("account missing");
+      account.passwordHash = passwordHash;
+      account.updatedAt = new Date().toISOString();
+      await saveStaffAccounts(list);
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  staffSessions.revokeAccount(session.accountId, readSessionToken(req));
+  return res.json({ ok: true });
+});
+
+/** 관리자가 아닌 상태로 남지 않도록, 켜진 관리자가 하나도 없게 되는 변경은 막는다. */
+function leavesNoAdmin(list: StaffAccount[]): boolean {
+  return !isStaffPasswordConfigured() && !list.some((item) => item.role === "admin" && !item.disabled);
+}
+
+function parseRole(value: unknown): StaffRole | null {
+  return value === "admin" || value === "staff" || value === "teacher" ? value : null;
+}
+
+/** 계정 목록 (관리자). 교사 계정의 학교를 고를 수 있도록 지원 학교 목록도 함께 준다. */
+app.get("/api/staff/accounts", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  return res.json({
+    ok: true,
+    data: loadStaffAccounts().map(publicAccount),
+    masterConfigured: isStaffPasswordConfigured(),
+    schools: loadSchools().map(({ id, schoolName }) => ({ id, schoolName })),
+  });
+});
+
+app.post("/api/staff/accounts", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  const username = normalizeUsername(body.username);
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+  const role = parseRole(body.role);
+  const problem = usernameError(username) || displayNameError(displayName) || (role ? null : "역할을 선택해주세요.") || passwordError(body.password);
+  if (problem) return safeError(res, 400, problem);
+  const schoolId = role === "teacher" ? findSchool(body.schoolId)?.id ?? null : null;
+  if (role === "teacher" && !schoolId) return safeError(res, 400, "교사 계정은 소속 학교를 선택해주세요.");
+
+  const passwordHash = await bcrypt.hash(body.password, 12);
+  const now = new Date().toISOString();
+  const account: StaffAccount = { id: newAccountId(), username, displayName, role: role as StaffRole, schoolId, passwordHash, disabled: false, createdAt: now, updatedAt: now, lastLoginAt: null };
+  try {
+    const created = await withAccountsLock(async () => {
+      const list = loadStaffAccounts();
+      if (list.some((item) => item.username === username)) return false;
+      await saveStaffAccounts([...list, account]);
+      return true;
+    });
+    if (!created) return safeError(res, 409, "이미 사용 중인 아이디입니다.");
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  return res.status(201).json({ ok: true, data: publicAccount(account) });
+});
+
+/** 계정 수정 — 이름·역할·소속 학교·비밀번호 재설정·사용 중지 */
+app.patch("/api/staff/accounts/:id", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+  const body = req.body || {};
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : undefined;
+  const role = body.role === undefined ? undefined : parseRole(body.role);
+  const disabled = typeof body.disabled === "boolean" ? body.disabled : undefined;
+  const password = body.password === undefined || body.password === "" ? undefined : body.password;
+  const problem = (displayName !== undefined ? displayNameError(displayName) : null)
+    || (role === null ? "역할이 올바르지 않습니다." : null)
+    || (password !== undefined ? passwordError(password) : null);
+  if (problem) return safeError(res, 400, problem);
+  if (req.params.id === admin.accountId && (disabled === true || (role && role !== "admin"))) {
+    return safeError(res, 400, "지금 로그인한 자기 계정은 끄거나 관리자 권한을 뺄 수 없습니다.");
+  }
+  const passwordHash = password !== undefined ? await bcrypt.hash(password, 12) : undefined;
+
+  let result: { error: number; message: string } | { account: StaffAccount; endSessions: boolean };
+  try {
+    result = await withAccountsLock(async () => {
+      const list = loadStaffAccounts();
+      const account = list.find((item) => item.id === req.params.id);
+      if (!account) return { error: 404, message: "계정을 찾을 수 없습니다." };
+      const nextRole = role ?? account.role;
+      const nextSchoolId = nextRole === "teacher"
+        ? (body.schoolId !== undefined ? findSchool(body.schoolId)?.id ?? null : account.schoolId)
+        : null;
+      if (nextRole === "teacher" && !nextSchoolId) return { error: 400, message: "교사 계정은 소속 학교를 선택해주세요." };
+      const endSessions = passwordHash !== undefined || (disabled === true && !account.disabled) || nextRole !== account.role || nextSchoolId !== account.schoolId;
+      if (displayName !== undefined) account.displayName = displayName;
+      account.role = nextRole;
+      account.schoolId = nextSchoolId;
+      if (disabled !== undefined) account.disabled = disabled;
+      if (passwordHash !== undefined) account.passwordHash = passwordHash;
+      account.updatedAt = new Date().toISOString();
+      if (leavesNoAdmin(list)) return { error: 400, message: "켜진 관리자 계정이 하나는 있어야 합니다. 다른 관리자 계정을 먼저 만들어주세요." };
+      await saveStaffAccounts(list);
+      return { account, endSessions };
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  if ("error" in result) return safeError(res, result.error, result.message);
+  if (result.endSessions) staffSessions.revokeAccount(result.account.id);
+  else staffSessions.renameAccount(result.account.id, result.account.displayName, result.account.role, result.account.schoolId);
+  return res.json({ ok: true, data: publicAccount(result.account) });
+});
+
+app.delete("/api/staff/accounts/:id", async (req, res) => {
+  const admin = requireAdmin(req, res);
+  if (!admin) return;
+  if (req.params.id === admin.accountId) return safeError(res, 400, "지금 로그인한 자기 계정은 삭제할 수 없습니다.");
+  let result: "ok" | 404 | 400;
+  try {
+    result = await withAccountsLock(async () => {
+      const list = loadStaffAccounts();
+      const remaining = list.filter((item) => item.id !== req.params.id);
+      if (remaining.length === list.length) return 404;
+      if (leavesNoAdmin(remaining)) return 400;
+      await saveStaffAccounts(remaining);
+      return "ok";
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  if (result === 404) return safeError(res, 404, "계정을 찾을 수 없습니다.");
+  if (result === 400) return safeError(res, 400, "켜진 관리자 계정이 하나는 있어야 합니다. 다른 관리자 계정을 먼저 만들어주세요.");
+  staffSessions.revokeAccount(req.params.id);
+  return res.json({ ok: true });
+});
+
+/**
+ * 전체 백업 (관리자). 저장소의 모든 문서를 JSON 파일 하나로 내려받는다.
+ * 비밀번호 해시·로그인 세션·알림 구독 주소는 넣지 않는다. 계정은 복원 후 비밀번호를 다시 정해야 한다.
+ * photos=1 이면 사진을 data URL 로 함께 담는다. 사진이 많으면 커지므로 한 장씩 흘려 보낸다.
+ */
+app.get("/api/staff/backup", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const withPhotos = req.query.photos === "1";
+  const reports = loadAllReports();
+  const exportedAt = new Date().toISOString();
+  const head = {
+    meta: {
+      app: "schoolfix",
+      format: 1,
+      exportedAt,
+      dataStore: useSupabaseStore ? "supabase" : "local-json",
+      counts: { reports: reports.length, schoolApplications: loadSchoolApplications().length },
+      includesPhotos: withPhotos,
+      note: "비밀번호 해시, 로그인 세션, 학생 알림 구독은 포함하지 않습니다.",
+    },
+    reports,
+    schoolApplications: loadSchoolApplications(),
+    customSchools: loadCustomSchools(),
+    blockedReporters: loadBlockedReporters(),
+    settings: loadNotificationSettings(),
+    staffAccounts: loadStaffAccounts().map(publicAccount),
+  };
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Disposition", `attachment; filename="schoolfix-backup-${exportedAt.slice(0, 10)}${withPhotos ? "-photos" : ""}.json"`);
+  const json = JSON.stringify(head);
+  if (!withPhotos) return res.send(json);
+
+  // 마지막 } 를 떼고 사진 항목을 이어 붙인다.
+  res.write(`${json.slice(0, -1)},"photos":{`);
+  let first = true;
+  let missing = 0;
+  for (const photo of reports.flatMap((report) => report.photos ?? [])) {
+    let buffer = photoCache.get(photo.id) ?? null;
+    if (!buffer) {
+      try {
+        buffer = (await ensurePhotoBackend()) ? await photoBackend.get(photo.id) : null;
+      } catch (err) {
+        console.error("[backup] 사진 읽기 실패:", photo.id, err instanceof Error ? err.message : err);
+      }
+    }
+    if (!buffer) { missing += 1; continue; }
+    res.write(`${first ? "" : ","}${JSON.stringify(photo.id)}:${JSON.stringify(`data:${photo.type};base64,${buffer.toString("base64")}`)}`);
+    first = false;
+  }
+  res.end(`},"missingPhotos":${missing}}`);
+});
+
+// ---------------------------------------------------------------------------
+// 학생 알림 구독 (pushNotify.ts)
+// ---------------------------------------------------------------------------
+
+app.get("/api/push/config", (_req, res) => {
+  return res.json({ ok: true, enabled: pushEnabled(), publicKey: vapidPublicKey() });
+});
+
+/**
+ * 이 기기로 "내 신고" 알림을 받는다. 브라우저 구독 정보와 이 기기가 가진 소유 토큰을 함께 받는다.
+ * 실제로 있는 신고의 토큰만 묶는다.
+ */
+app.post("/api/push/subscribe", rateLimit("push", LIMITS.push), async (req, res) => {
+  if (!pushEnabled()) return safeError(res, 503, "알림 기능이 설정되지 않았습니다.");
+  const subscription = parseSubscription(req.body?.subscription);
+  if (!subscription) return safeError(res, 400, "이 브라우저의 알림 구독 정보를 확인할 수 없습니다.");
+  const hashes = ownerTokenHashes(req.body?.tokens);
+  const known = new Set(loadAllReports().filter((report) => !report.deletedAt).flatMap(reportOwnerHashes));
+  const linked = [...hashes].filter((hash) => known.has(hash));
+  if (linked.length === 0) return res.json({ ok: true, linked: 0 });
+  try {
+    await withPushLock(async () => {
+      const { list, changed } = upsertPushRecord(loadPushRecords(), subscription, linked);
+      if (changed) await savePushRecords(list);
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  return res.json({ ok: true, linked: linked.length });
+});
+
+app.post("/api/push/unsubscribe", rateLimit("push", LIMITS.push), async (req, res) => {
+  const endpoint = req.body?.endpoint;
+  if (typeof endpoint !== "string" || endpoint.length > 1000) return safeError(res, 400, "요청이 올바르지 않습니다.");
+  try {
+    await withPushLock(async () => {
+      const list = loadPushRecords();
+      const remaining = list.filter((record) => record.endpoint !== endpoint);
+      if (remaining.length !== list.length) await savePushRecords(remaining);
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
   return res.json({ ok: true });
 });
 
@@ -1276,18 +1759,19 @@ app.get("/api/staff/moderation", (req, res) => {
 });
 
 app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
-  if (!requireStaff(req, res)) return;
+  const session = requireStaff(req, res);
+  if (!session) return;
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const action = req.body?.action;
   if (action !== "approve" && action !== "reject") return safeError(res, 400, "검토 작업이 올바르지 않습니다.");
-  let found: boolean;
+  let found: StoredReport | null;
   let removedPhotos: StoredPhoto[] = [];
   try {
     found = await withReportsLock(async () => {
       const all = loadAllReports();
       const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt && item.moderationStatus === "held");
-      if (!report) return false;
+      if (!report) return null;
       const now = new Date().toISOString();
       if (action === "approve") {
         report.moderationStatus = "approved";
@@ -1299,9 +1783,9 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
         report.photos = [];
       }
       report.updatedAt = now;
-      addHistory(report, { actor: "staff", action: "moderation", from: "held", to: action === "approve" ? "approved" : "deleted" }, now);
+      addHistory(report, { ...historyActor(session), action: "moderation", from: "held", to: action === "approve" ? "approved" : "deleted" }, now);
       await saveReports(all);
-      return true;
+      return report;
     });
   } catch (err) {
     return safeError(res, 500, "신고 검토 상태를 저장하지 못했습니다.", err);
@@ -1309,6 +1793,7 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   if (!found) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
   await removePhotos(removedPhotos);
   summaryCache = null;
+  if (action === "approve") notifyReporter(found, { published: true });
   return res.json({ ok: true });
 });
 
@@ -1316,8 +1801,9 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
 app.get("/api/staff/reports", (req, res) => {
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-  if (!requireReportManager(req, res, school.id)) return;
-  const isStaff = Boolean(getStaffSession(req));
+  const session = requireReportManager(req, res, school.id);
+  if (!session) return;
+  const isStaff = session.role !== "teacher";
   const all = loadAllReports();
   const blocked = loadBlockedReporters();
   const scoped = all.filter((report) => !report.deletedAt && report.schoolId === school.id && (isStaff || report.moderationStatus !== "held"));
@@ -1329,7 +1815,8 @@ app.get("/api/staff/reports", (req, res) => {
  * 접수 자체를 막지는 않는다. 진짜 위험 신고일 수 있으므로 운영진이 확인한 뒤 공개한다.
  */
 app.post("/api/staff/reports/:id/spam", async (req, res) => {
-  if (!requireStaff(req, res)) return;
+  const session = requireStaff(req, res);
+  if (!session) return;
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   let reporterHash: string | null = null;
@@ -1344,7 +1831,7 @@ app.post("/api/staff/reports/:id/spam", async (req, res) => {
       removedPhotos = report.photos ?? [];
       report.photos = [];
       report.updatedAt = now;
-      addHistory(report, { actor: "staff", action: "spam", to: "deleted" }, now);
+      addHistory(report, { ...historyActor(session), action: "spam", to: "deleted" }, now);
       reporterHash = report.reporterHash ?? null;
       await saveReports(all);
       return true;
@@ -1545,7 +2032,8 @@ app.delete("/api/staff/schools/:id", async (req, res) => {
 app.patch("/api/staff/reports/:id", async (req, res) => {
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-  if (!requireReportManager(req, res, school.id)) return;
+  const session = requireReportManager(req, res, school.id);
+  if (!session) return;
   const { id } = req.params;
   const body = req.body || {};
   const allowedStatuses = ["pending", "reviewing", "assigned", "scheduled", "in_progress", "completed"];
@@ -1559,8 +2047,8 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
   if (assignee.length > 100 || resolutionNote.length > 1000 || (reporterReply?.length ?? 0) > 1000) {
     return safeError(res, 400, "담당자, 처리 메모 또는 학생 답변이 너무 깁니다.");
   }
-  const actor = getStaffSession(req) ? "staff" as const : "teacher" as const;
-  let outcome: { error: 404 | 409 } | { report: StoredReport; all: StoredReport[] };
+  const actor = historyActor(session);
+  let outcome: { error: 404 | 409 } | { report: StoredReport; all: StoredReport[]; statusFrom: string; replied: boolean };
   try {
     outcome = await withReportsLock(async () => {
       const all = loadAllReports();
@@ -1569,12 +2057,15 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       if (report.moderationStatus === "held") return { error: 409 as const };
 
       const now = new Date().toISOString();
-      if (report.status !== body.status) addHistory(report, { actor, action: "status", from: report.status, to: body.status }, now);
-      if ((report.assignee ?? "") !== assignee) addHistory(report, { actor, action: "assignee", from: report.assignee ?? null, to: assignee || null }, now);
+      const statusFrom = report.status;
+      let replied = false;
+      if (report.status !== body.status) addHistory(report, { ...actor, action: "status", from: report.status, to: body.status }, now);
+      if ((report.assignee ?? "") !== assignee) addHistory(report, { ...actor, action: "assignee", from: report.assignee ?? null, to: assignee || null }, now);
       if (reporterReply !== undefined && (report.reporterReply ?? "") !== reporterReply) {
-        addHistory(report, { actor, action: "reply", to: reporterReply ? "작성" : "삭제" }, now);
+        addHistory(report, { ...actor, action: "reply", to: reporterReply ? "작성" : "삭제" }, now);
         report.reporterReply = reporterReply || null;
         report.reporterReplyAt = reporterReply ? now : null;
+        replied = Boolean(reporterReply);
       }
       report.status = body.status;
       report.assignee = assignee || null;
@@ -1589,7 +2080,7 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       // 처리 시간·월별 완료 수·만족도 재응답 판단이 틀어진다.
       if (body.status !== "completed") report.completedAt = null;
       await saveReports(all);
-      return { report, all };
+      return { report, all, statusFrom, replied };
     });
   } catch (err) {
     return safeError(res, 500, "신고 처리 상태를 저장하지 못했습니다.", err);
@@ -1600,6 +2091,7 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
       : safeError(res, 409, "먼저 안전성 검토에서 신고를 승인해주세요.");
   }
   summaryCache = null;
+  notifyReporter(outcome.report, { status: { from: outcome.statusFrom, to: outcome.report.status }, reply: outcome.replied });
   return res.json({ ok: true, data: toStaffReport(outcome.report, outcome.all, loadBlockedReporters()) });
 });
 
@@ -1649,20 +2141,44 @@ app.get("/api/reports/:id", (req, res) => {
 app.post("/api/reports/mine", (req, res) => {
   const school = findSchool(req.body?.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-  const tokens = Array.isArray(req.body?.tokens) ? req.body.tokens : [];
-  if (tokens.length === 0) {
+  const hashes = ownerTokenHashes(req.body?.tokens);
+  if (hashes.size === 0) {
     return res.json({ ok: true, data: [] });
   }
 
-  const hashes = new Set(
-    tokens
-      .filter((t: unknown): t is string => typeof t === "string" && t.length === 64)
-      .slice(0, 200)
-      .map((t: string) => hashOwnerToken(t))
-  );
-
-  const mine = loadAllReports().filter((r) => !r.deletedAt && r.schoolId === school.id && r.ownerTokenHash && hashes.has(r.ownerTokenHash));
+  const mine = loadAllReports().filter((r) => !r.deletedAt && r.schoolId === school.id && ownsReport(r, hashes));
   return res.json({ ok: true, data: mine.map(toMyReport) });
+});
+
+/**
+ * 다른 기기에서 내 신고 불러오기 — 접수번호와 확인 코드가 맞으면 이 기기용 소유 토큰을 새로 발급한다.
+ * 맞지 않으면 어느 쪽이 틀렸는지 알려 주지 않는다.
+ */
+app.post("/api/reports/recover", rateLimit("recover", LIMITS.recover), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const reportId = typeof req.body?.reportId === "string" ? req.body.reportId.trim().toUpperCase() : "";
+  const code = normalizeRecoveryCode(req.body?.code);
+  if (!/^REP-\d{8}-\d{4,}$/.test(reportId) || !code) return safeError(res, 400, "접수번호와 확인 코드를 정확히 입력해주세요.");
+  const codeHash = hashRecoveryCode(code);
+  const { token, hash } = issueOwnerToken();
+
+  let restored: StoredReport | null;
+  try {
+    restored = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((r) => r.id === reportId && r.schoolId === school.id && !r.deletedAt);
+      if (!report || !safeHashEqual(report.recoveryCodeHash, codeHash)) return null;
+      report.extraOwnerTokenHashes = [...(report.extraOwnerTokenHashes ?? []), hash].slice(-MAX_EXTRA_OWNERS);
+      // updatedAt 은 바꾸지 않는다. 기기 연결은 신고 내용의 변경이 아니다.
+      await saveReports(all);
+      return report;
+    });
+  } catch (err) {
+    return safeError(res, 500, "신고를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.", err);
+  }
+  if (!restored) return safeError(res, 404, "접수번호나 확인 코드가 맞지 않습니다.");
+  return res.json({ ok: true, ownerToken: token, data: toMyReport(restored) });
 });
 
 /** 기기마다 한 번만 셀 수 있도록 해시 목록으로 저장한다. 목록이 끝없이 커지지 않게 상한을 둔다. */
@@ -1713,8 +2229,7 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
   const resolved: boolean = req.body.resolved;
   const comment = typeof req.body?.comment === "string" ? maskProfanity(req.body.comment.trim()).text : "";
   if (comment.length > 500) return safeError(res, 400, "의견은 500자를 넘을 수 없습니다.");
-  const tokens: unknown[] = Array.isArray(req.body?.tokens) ? req.body.tokens.slice(0, 200) : [];
-  const hashes = new Set(tokens.filter((t): t is string => typeof t === "string" && t.length === 64).map(hashOwnerToken));
+  const hashes = ownerTokenHashes(req.body?.tokens);
 
   let result: "ok" | 404 | 403 | 409;
   let saved: StoredReport | null = null;
@@ -1723,7 +2238,7 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
       const all = loadAllReports();
       const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt);
       if (!report) return 404;
-      if (!report.ownerTokenHash || !hashes.has(report.ownerTokenHash)) return 403;
+      if (!ownsReport(report, hashes)) return 403;
       if (report.status !== "completed") return 409;
       // 이번 완료에 이미 응답했으면 다시 받지 않는다. "아직 그대로예요" 뒤 다시 완료되면 새로 응답할 수 있다.
       if (!feedbackPending(report)) return 409;
@@ -1951,6 +2466,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
 
     // 4) 익명 소유 토큰 — 원본은 응답으로 1회만 전달하고 DB 에는 해시만 남긴다
     const { token: ownerToken, hash: ownerTokenHash } = issueOwnerToken();
+    // 다른 기기에서 다시 불러올 때 쓰는 확인 코드. 이것도 응답으로 한 번만 보여 주고 해시만 남긴다.
+    const { code: recoveryCode, hash: recoveryCodeHash } = issueRecoveryCode();
     // 반복 신고 판단용 기기 해시. 토큰이 없거나 형식이 틀리면 판단 없이 접수한다.
     const reporterHash = deviceHash(req.body.deviceToken, "reporter");
 
@@ -1981,6 +2498,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       riskAnalysis: analysis,
       riskAnalysisError: riskError,
       ownerTokenHash,
+      recoveryCodeHash,
       reporterHash,
       deletedAt: null,
       createdAt: now.toISOString(),
@@ -2029,6 +2547,8 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       data: toMyReport(newReport),
       // 브라우저가 저장해야 "내 신고" 에서 다시 찾을 수 있다.
       ownerToken,
+      // 기기를 바꿔도 접수번호와 이 코드로 다시 불러올 수 있다. 다시 보여 줄 수 없으므로 화면에서 꼭 안내한다.
+      recoveryCode,
       // 부적절한 표현이 가려졌다면 사용자에게 알린다.
       masked: maskedCount > 0,
       maskedCount,
@@ -2338,6 +2858,11 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    // 재배포로 사라진 예전 화면 파일(assets/…)은 index.html 대신 404 로 답한다.
+    // 열어 둔 탭은 이 실패를 보고 한 번 새로고침해 새 버전을 받는다 (src/utils/lazyScreen.ts).
+    app.use("/assets", (_req, res) => {
+      res.status(404).end();
+    });
     app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });

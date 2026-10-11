@@ -91,6 +91,27 @@ export function checkRateLimit(
   return { allowed: true, retryAfterSec: 0 };
 }
 
+/**
+ * 실패한 시도만 세는 제한 — 로그인용.
+ * 학교는 교사 여러 명이 IP 하나를 함께 쓰므로, 성공한 로그인까지 세면 정상 사용자가 막힌다.
+ * 틀린 비밀번호만 세서 무차별 대입은 막고, 맞게 로그인한 사람은 몇 명이든 통과시킨다.
+ */
+export function failureLimit(scope: string, rule: RateLimitRule) {
+  return {
+    /** 지금 막혀 있으면 다시 시도할 수 있을 때까지 남은 초, 아니면 0 */
+    blockedFor(req: express.Request): number {
+      const b = buckets.get(`${scope}:${clientKey(req)}`);
+      const now = Date.now();
+      return b?.blockedUntil && b.blockedUntil > now ? Math.ceil((b.blockedUntil - now) / 1000) : 0;
+    },
+    /** 실패 1회를 기록한다. */
+    fail(req: express.Request) {
+      checkRateLimit(scope, req, rule);
+    },
+    message: rule.message,
+  };
+}
+
 /** Express 미들웨어로 감싸서 쓰기 */
 export function rateLimit(scope: string, rule: RateLimitRule) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -142,9 +163,10 @@ export const LIMITS = {
     blockMs: 10 * 60 * 1000,
     message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
+  /** 운영진·교사 로그인: 틀린 비밀번호만 센다 (failureLimit). */
   staffLogin: {
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 10,
     blockMs: 10 * 60 * 1000,
     message: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
@@ -162,27 +184,28 @@ export const LIMITS = {
     blockMs: 5 * 60 * 1000,
     message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
+  /**
+   * 확인 코드로 내 신고 불러오기: 코드 대입을 막는다.
+   * 학교 공용 IP 에서 여러 학생이 함께 써도 걸리지 않을 정도로만 둔다. 접수번호까지 맞아야 하므로 대입 공간은 충분히 크다.
+   */
+  recover: {
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    blockMs: 15 * 60 * 1000,
+    message: "시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
+  /** 알림 구독 등록·해제 */
+  push: {
+    windowMs: 10 * 60 * 1000,
+    max: 60,
+    blockMs: 5 * 60 * 1000,
+    message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
 };
 
 // ---------------------------------------------------------------------------
-// 운영진 세션
+// 공용 계정 비밀번호 (로그인 세션과 개인 계정은 staffAuth.ts)
 // ---------------------------------------------------------------------------
-
-const STAFF_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
-const staffSessions = new Map<string, number>();
-const STAFF_SESSION_COOKIE = "schoolfix_staff_session";
-const teacherSessions = new Map<string, { expiresAt: number; schoolId: string }>();
-const TEACHER_SESSION_COOKIE = "schoolfix_teacher_session";
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, expiresAt] of staffSessions) {
-    if (expiresAt <= now) staffSessions.delete(token);
-  }
-  for (const [token, session] of teacherSessions) {
-    if (session.expiresAt <= now) teacherSessions.delete(token);
-  }
-}, 10 * 60 * 1000).unref?.();
 
 export function isStaffPasswordConfigured(): boolean {
   const hash = process.env.STAFF_PASSWORD_HASH;
@@ -197,41 +220,6 @@ export async function verifyStaffPassword(password: unknown): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export function createStaffSession(): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  staffSessions.set(token, Date.now() + STAFF_SESSION_TTL_MS);
-  return token;
-}
-
-export function getStaffSession(req: express.Request): string | null {
-  const cookie = req.headers.cookie || "";
-  const raw = cookie.split(";").map((part) => part.trim())
-    .find((part) => part.startsWith(`${STAFF_SESSION_COOKIE}=`))
-    ?.slice(STAFF_SESSION_COOKIE.length + 1);
-  if (!raw) return null;
-  const expiresAt = staffSessions.get(raw);
-  if (!expiresAt) return null;
-  if (expiresAt <= Date.now()) {
-    staffSessions.delete(raw);
-    return null;
-  }
-  return raw;
-}
-
-export function revokeStaffSession(token: string | null): void {
-  if (token) staffSessions.delete(token);
-}
-
-export function setStaffSessionCookie(res: express.Response, token: string): void {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${STAFF_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${STAFF_SESSION_TTL_MS / 1000}${secure}`);
-}
-
-export function clearStaffSessionCookie(res: express.Response): void {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${STAFF_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 
 function teacherPasswordHashes(): Record<string, string> {
@@ -252,40 +240,6 @@ export async function verifyTeacherPassword(password: unknown, schoolId: string)
   const hash = teacherPasswordHashes()[schoolId];
   if (!hash || typeof password !== "string" || !password) return false;
   try { return await bcrypt.compare(password, hash); } catch { return false; }
-}
-
-export function createTeacherSession(schoolId: string): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  teacherSessions.set(token, { expiresAt: Date.now() + STAFF_SESSION_TTL_MS, schoolId });
-  return token;
-}
-
-export function getTeacherSessionSchoolId(req: express.Request): string | null {
-  const raw = (req.headers.cookie || "").split(";").map((part) => part.trim())
-    .find((part) => part.startsWith(`${TEACHER_SESSION_COOKIE}=`))
-    ?.slice(TEACHER_SESSION_COOKIE.length + 1);
-  if (!raw) return null;
-  const session = teacherSessions.get(raw);
-  if (!session) return null;
-  if (session.expiresAt <= Date.now()) { teacherSessions.delete(raw); return null; }
-  return session.schoolId;
-}
-
-export function revokeTeacherSession(req: express.Request): void {
-  const raw = (req.headers.cookie || "").split(";").map((part) => part.trim())
-    .find((part) => part.startsWith(`${TEACHER_SESSION_COOKIE}=`))
-    ?.slice(TEACHER_SESSION_COOKIE.length + 1);
-  if (raw) teacherSessions.delete(raw);
-}
-
-export function setTeacherSessionCookie(res: express.Response, token: string): void {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.setHeader("Set-Cookie", `${TEACHER_SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${STAFF_SESSION_TTL_MS / 1000}${secure}`);
-}
-
-export function clearTeacherSessionCookie(res: express.Response): void {
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  res.append("Set-Cookie", `${TEACHER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +318,50 @@ export function issueOwnerToken(): { token: string; hash: string } {
 
 export function hashOwnerToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+/** 요청 본문의 소유 토큰 목록 → 해시 집합. 형식이 틀린 값은 버린다. */
+export function ownerTokenHashes(tokens: unknown): Set<string> {
+  const list: unknown[] = Array.isArray(tokens) ? tokens.slice(0, 200) : [];
+  return new Set(list.filter((t): t is string => typeof t === "string" && /^[a-f0-9]{64}$/.test(t)).map(hashOwnerToken));
+}
+
+// ---------------------------------------------------------------------------
+// 확인 코드 — 다른 기기에서 "내 신고" 를 다시 불러오기
+//
+// 소유 토큰은 브라우저 저장소에만 있어서, 저장소를 지우거나 기기를 바꾸면 내 신고를 잃는다.
+// 그래서 접수할 때 사람이 옮겨 적을 수 있는 짧은 코드를 한 번 보여 주고, 서버에는 해시만 남긴다.
+// 접수번호 + 확인 코드가 맞으면 새 소유 토큰을 발급해 그 기기를 다시 연결한다.
+// 헷갈리는 글자(0/O, 1/I/L)는 뺐다. 31자 × 10자리 ≈ 49비트.
+// ---------------------------------------------------------------------------
+
+export const RECOVERY_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const RECOVERY_CODE_LENGTH = 10;
+
+export function issueRecoveryCode(): { code: string; hash: string } {
+  let raw = "";
+  for (let i = 0; i < RECOVERY_CODE_LENGTH; i++) raw += RECOVERY_CODE_ALPHABET[crypto.randomInt(RECOVERY_CODE_ALPHABET.length)];
+  const code = `${raw.slice(0, 5)}-${raw.slice(5)}`;
+  return { code, hash: hashRecoveryCode(raw) };
+}
+
+/** 사용자가 입력한 코드 → 비교용 형태(대문자 10자리). 형식이 틀리면 null */
+export function normalizeRecoveryCode(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const raw = input.toUpperCase().replace(/[\s-]/g, "");
+  if (raw.length !== RECOVERY_CODE_LENGTH) return null;
+  for (const ch of raw) if (!RECOVERY_CODE_ALPHABET.includes(ch)) return null;
+  return raw;
+}
+
+export function hashRecoveryCode(normalized: string): string {
+  return crypto.createHash("sha256").update(`recover:${normalized}`).digest("hex");
+}
+
+/** 해시를 비교할 때 앞부분이 맞는 정도로 시간이 달라지지 않게 한다. */
+export function safeHashEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 // ---------------------------------------------------------------------------

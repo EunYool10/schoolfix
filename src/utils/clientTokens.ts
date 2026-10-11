@@ -34,6 +34,33 @@ export function saveOwnerToken(token: string) {
   }
 }
 
+const RECOVERY_CODES_KEY = "schoolfix_recovery_codes_v1";
+
+/**
+ * 접수 때 받은 확인 코드. 서버는 해시만 가지고 있어 다시 보여 줄 수 없으므로,
+ * 이 브라우저에도 적어 두고 "내 신고" 상세에서 다시 볼 수 있게 한다(기기를 바꾸기 전에 옮겨 적도록).
+ */
+export function loadRecoveryCodes(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECOVERY_CODES_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveRecoveryCode(reportId: string, code: string) {
+  try {
+    const codes = loadRecoveryCodes();
+    delete codes[reportId];
+    codes[reportId] = code;
+    const entries = Object.entries(codes).slice(-200);
+    localStorage.setItem(RECOVERY_CODES_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // 저장하지 못해도 접수 완료 화면에서 한 번은 보여 준다.
+  }
+}
+
 let memoryDeviceToken: string | null = null;
 
 /** 이 브라우저의 기기 토큰(64자리 16진수). 저장소가 막혀 있으면 이번 탭에서만 유지된다. */
