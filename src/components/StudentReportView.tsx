@@ -74,6 +74,8 @@ export interface SubmitReportResult {
   success: boolean;
   report?: SchoolReport;
   heldForReview?: boolean;
+  /** 다른 기기에서 내 신고를 다시 불러올 때 쓰는 확인 코드. 이 화면에서 한 번만 받는다. */
+  recoveryCode?: string | null;
   error?: string;
   /** 서버가 추가 확인이 필요하다고 판단한 경우 */
   needsMoreInfo?: boolean;
@@ -164,6 +166,8 @@ export function StudentReportView({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [completedReport, setCompletedReport] = useState<SchoolReport | null>(null);
+  const [completedRecoveryCode, setCompletedRecoveryCode] = useState<string | null>(null);
+  const [copiedRecoveryCode, setCopiedRecoveryCode] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Unsaved changes dialog state
@@ -422,6 +426,7 @@ export function StudentReportView({
     setGlobalError(null);
     setSubmitError(null);
     setCompletedReport(null);
+    setCompletedRecoveryCode(null);
     setAutoFillNotice(false);
     setSelectedExampleKey(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
@@ -518,6 +523,7 @@ export function StudentReportView({
 
     if (res.success && res.report) {
       setCompletedReport(res.report);
+      setCompletedRecoveryCode(res.recoveryCode ?? null);
       clearSessionDraft(reportDraftKey);
       setDraftSavedAt(null);
       setDraftRestored(false);
@@ -693,6 +699,31 @@ export function StudentReportView({
               className="mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100"
             >{copiedReceipt ? "복사했어요" : "접수번호 복사"}</button>
           </div>
+
+          {completedRecoveryCode && (
+            <div className="mx-auto mt-3 max-w-sm rounded-2xl border border-amber-200 bg-amber-50/80 px-5 py-4 text-center">
+              <span className="text-xs font-semibold text-amber-900">확인 코드 · 다른 기기에서 불러올 때 필요해요</span>
+              <div className="mt-1 font-mono text-xl font-extrabold tracking-[0.12em] text-amber-900">
+                {completedRecoveryCode}
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+                휴대폰을 바꾸거나 브라우저 기록을 지우면 "내 신고" 가 비어요. 접수번호와 이 코드를 캡처하거나 적어 두면 신고 목록 → 내 신고 → "신고 불러오기" 에서 다시 연결할 수 있어요. 이 코드는 다른 사람에게 알려 주지 마세요.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(`${completedReport.id} ${completedRecoveryCode}`);
+                    setCopiedRecoveryCode(true);
+                    window.setTimeout(() => setCopiedRecoveryCode(false), 1800);
+                  } catch {
+                    setCopiedRecoveryCode(false);
+                  }
+                }}
+                className="mt-2 inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100"
+              >{copiedRecoveryCode ? "복사했어요" : "접수번호와 코드 복사"}</button>
+            </div>
+          )}
 
           <div className="mt-7 flex flex-col items-center justify-center gap-3 border-t border-slate-100 pt-6 sm:flex-row">
             {onSuccessNavToMyReports && (

@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Building2, Check, CheckCircle2, Globe2, Mail, MapPin, Search, Star, X } from "lucide-react";
 import type { FormEvent } from "react";
 import type { School } from "../types";
-import { ServicePolicyDialog, type PolicySection } from "./ServicePolicyDialog";
+import type { PolicySection } from "./ServicePolicyDialog";
+import { lazyScreen } from "../utils/lazyScreen";
+// 약관·안내 문서는 열 때만 불러온다. 첫 화면에서 받을 코드 크기를 줄인다.
+const ServicePolicyDialog = lazyScreen(() => import("./ServicePolicyDialog").then((m) => m.ServicePolicyDialog));
 
 const FAVORITES_KEY = "schoolfix_favorite_schools_v1";
 
@@ -222,7 +225,7 @@ export function SchoolSelectionView({ schools, loading, error, initialSchoolId =
           </form></>}
         </section>
       </div>}
-      {policySection && <ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} />}
+      {policySection && <Suspense fallback={null}><ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} /></Suspense>}
     </main>
   );
 }

@@ -8,6 +8,7 @@ import {
   UserCog,
 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
+import { loadRecoveryCodes } from "../utils/clientTokens";
 import { ReportTimeline } from "./ReportTimeline";
 import { RiskAnalysisPanel } from "./RiskAnalysisPanel";
 import { PhotoGallery } from "./PhotoGallery";
@@ -59,6 +60,8 @@ export function ReportDetailModal({
 
   const status = STATUS_MAP[report.status] || STATUS_MAP.pending;
   const detailedLocation = [report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ");
+  // 내 신고라면 이 브라우저에 적어 둔 확인 코드를 보여 준다(기기를 바꾸기 전에 옮겨 적도록).
+  const recoveryCode = report.isMine ? loadRecoveryCodes()[report.id] : undefined;
 
   return (
     <>
@@ -128,6 +131,12 @@ export function ReportDetailModal({
             <PhotoGallery photos={report.photos ?? []} locked={report.moderationStatus === "held"} onViewerChange={setIsLightboxOpen} />
 
             <ReportEngagement key={report.id} report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
+
+            {recoveryCode && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs leading-relaxed text-amber-900">
+                확인 코드 <strong className="font-mono tracking-wider">{recoveryCode}</strong> — 다른 기기에서 신고 목록 → 내 신고 → "신고 불러오기" 에 접수번호와 함께 넣으면 이 신고를 다시 볼 수 있어요. 다른 사람에게 알려 주지 마세요.
+              </p>
+            )}
 
             {/* 위험도 분석 — 모든 사용자가 확인할 수 있다(§2). */}
             <RiskAnalysisPanel analysis={report.riskAnalysis} />

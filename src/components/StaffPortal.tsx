@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BarChart3, Ban, BellRing, Check, Clock, Download, HandHeart, History, Inbox, Loader2, LockKeyhole, LogOut, Save, School as SchoolIcon, Search, ShieldAlert, ShieldCheck, Trash2 } from "lucide-react";
-import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport } from "../types";
+import { BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, RefreshCw, Save, School as SchoolIcon, Search, ShieldAlert, ShieldCheck, Trash2, UserCog } from "lucide-react";
+import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport, type StaffSessionInfo } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
 import { StaffStatsPanel } from "./StaffStatsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { PhotoGallery } from "./PhotoGallery";
+import { MyPasswordForm, StaffAccountsPanel, StaffBackupPanel } from "./StaffAccountsPanel";
+
+/** 운영진 화면이 신고 목록을 다시 받아오는 간격 */
+const AUTO_REFRESH_MS = 30 * 1000;
 
 interface StaffPortalProps {
   schoolId: string;
@@ -46,9 +50,14 @@ interface BlockedDevice {
   createdAt: string;
 }
 
-type Section = "reports" | "stats" | "applications" | "blocked" | "notifications";
+type Section = "reports" | "stats" | "applications" | "blocked" | "notifications" | "accounts" | "backup";
 
 const ACTOR_LABEL: Record<ReportHistoryEntry["actor"], string> = { staff: "운영진", teacher: "교사", reporter: "신고자", system: "시스템" };
+
+function actorLabel(entry: ReportHistoryEntry) {
+  const role = ACTOR_LABEL[entry.actor] ?? entry.actor;
+  return entry.actorName ? `${role} · ${entry.actorName}` : role;
+}
 
 function statusLabel(value?: string | null) {
   if (!value) return "-";
@@ -82,7 +91,14 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   const [role, setRole] = useState<"staff" | "teacher">("staff");
   const [loginRole, setLoginRole] = useState<"staff" | "teacher">("staff");
   const [checking, setChecking] = useState(true);
+  const [sessionInfo, setSessionInfo] = useState<StaffSessionInfo | null>(null);
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  /** 자동 갱신으로 새로 들어온 신고. 운영진이 확인을 누르면 비운다. */
+  const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const knownIdsRef = useRef<Set<string> | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -167,27 +183,80 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  useEffect(() => {
-    fetch("/api/staff/session").then((res) => res.json()).then((json) => {
-      const sessionRole = json.role === "teacher" ? "teacher" : "staff";
-      setRole(sessionRole);
-      setLoginRole(sessionRole);
-      setAuthenticated(Boolean(json.authenticated) && (sessionRole === "staff" || json.schoolId === schoolId));
-    }).catch(() => setError("로그인 상태를 확인하지 못했습니다.")).finally(() => setChecking(false));
+  /** 서버가 알려 준 세션으로 화면 상태를 맞춘다. 다른 학교의 교사 세션이면 로그인 전 상태로 둔다. */
+  const applySession = useCallback((json: StaffSessionInfo) => {
+    const sessionRole = json.role === "teacher" ? "teacher" : "staff";
+    setRole(sessionRole);
+    setLoginRole(sessionRole);
+    setSessionInfo(json);
+    const ok = Boolean(json.authenticated) && (sessionRole === "staff" || json.schoolId === schoolId);
+    setAuthenticated(ok);
+    return ok;
   }, [schoolId]);
+
+  useEffect(() => {
+    fetch("/api/staff/session").then((res) => res.json()).then((json) => { applySession(json); })
+      .catch(() => setError("로그인 상태를 확인하지 못했습니다.")).finally(() => setChecking(false));
+  }, [applySession]);
 
   const refreshStaffReports = useCallback(async () => {
     try {
       const res = await fetch(`/api/staff/reports?schoolId=${encodeURIComponent(schoolId)}`);
       const json = await res.json();
-      if (res.ok && json.ok) setStaffReports(Array.isArray(json.data) ? json.data : []);
+      if (res.status === 401) {
+        // 다른 곳에서 로그아웃됐거나 관리자가 계정을 껐다.
+        setAuthenticated(false);
+        setError("로그인이 끝났습니다. 다시 로그인해주세요.");
+        return;
+      }
+      if (!res.ok || !json.ok) return;
+      const list: StaffReport[] = Array.isArray(json.data) ? json.data : [];
+      const known = knownIdsRef.current;
+      if (known) {
+        const added = list.filter((report) => !known.has(report.id)).map((report) => report.id);
+        if (added.length) setFreshIds((current) => new Set([...current, ...added]));
+      }
+      knownIdsRef.current = new Set(list.map((report) => report.id));
+      setStaffReports(list);
+      setLastSyncedAt(new Date());
     } catch { /* keep existing list */ }
   }, [schoolId]);
 
   useEffect(() => {
     setStaffReports(null);
+    knownIdsRef.current = null;
+    setFreshIds(new Set());
     if (authenticated) void refreshStaffReports();
   }, [authenticated, role, refreshStaffReports]);
+
+  /*
+   * 자동 갱신 — 새 신고가 들어와도 새로고침 없이 보이게 한다.
+   * 화면이 보일 때만 받아오고, 처리 내용을 입력하는 중(입력칸에 커서가 있을 때)에는 건너뛴다.
+   * 다른 탭에 갔다가 돌아오면 바로 한 번 받아온다.
+   */
+  useEffect(() => {
+    if (!authenticated) return;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      const active = document.activeElement as HTMLElement | null;
+      if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) && active.closest("form")) return;
+      void refreshStaffReports();
+    };
+    const timer = window.setInterval(tick, AUTO_REFRESH_MS);
+    const onVisible = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [authenticated, refreshStaffReports]);
+
+  // 새 신고가 있으면 브라우저 탭 제목에도 표시한다(다른 탭을 보고 있어도 알 수 있게).
+  useEffect(() => {
+    const original = document.title.replace(/^\(\d+\) /, "");
+    document.title = freshIds.size > 0 ? `(${freshIds.size}) ${original}` : original;
+    return () => { document.title = original; };
+  }, [freshIds]);
 
   const refreshApplications = async () => {
     try {
@@ -323,21 +392,25 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     setNotice("");
     try {
       await fetch("/api/staff/logout", { method: "POST" });
-      const nextRole = loginRole;
-      const res = await fetch(nextRole === "teacher" ? "/api/staff/teacher-login" : "/api/staff/login", {
+      const res = await fetch(loginRole === "teacher" ? "/api/staff/teacher-login" : "/api/staff/login", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(nextRole === "teacher" ? { password, schoolId } : { password }),
+        body: JSON.stringify(loginRole === "teacher" ? { username, password, schoolId } : { username, password }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "로그인하지 못했습니다.");
       setPassword("");
-      setRole(nextRole);
-      if (nextRole === "teacher") {
+      // 서버가 정한 역할을 따른다. 운영진 탭에서 교사 계정으로 들어오면 교사 화면이 된다.
+      if (!applySession(json)) {
+        await fetch("/api/staff/logout", { method: "POST" });
+        throw new Error("이 계정은 다른 학교의 교사 계정입니다. 소속 학교를 선택한 뒤 로그인해주세요.");
+      }
+      if (json.role === "teacher") {
         setSchoolApplications([]);
         setBlockedDevices([]);
         setActiveSection("reports");
+      } else if (!json.isAdmin && (activeSection === "accounts" || activeSection === "backup")) {
+        setActiveSection("reports");
       }
-      setAuthenticated(true);
       onRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인하지 못했습니다.");
@@ -347,8 +420,12 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   const logout = async () => {
     await fetch("/api/staff/logout", { method: "POST" });
     setAuthenticated(false);
+    setSessionInfo(null);
+    setShowPasswordForm(false);
     setLoginRole(role);
   };
+
+  const isAdmin = Boolean(sessionInfo?.isAdmin);
 
   const saveReport = async (event: FormEvent<HTMLFormElement>, report: SchoolReport) => {
     event.preventDefault();
@@ -384,8 +461,12 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><LockKeyhole /></div>
       <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => { setLoginRole("staff"); setError(""); }} aria-pressed={loginRole === "staff"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "staff" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}>운영진</button><button type="button" onClick={() => { setLoginRole("teacher"); setError(""); }} aria-pressed={loginRole === "teacher"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "teacher" ? "bg-white text-blue-800 shadow-sm" : "text-slate-600"}`}>교사 전용</button></div>
       <h1 className="text-xl font-bold text-slate-900">{loginRole === "teacher" ? "교사 로그인" : "운영진 로그인"}</h1>
-      <p className="mt-2 text-sm leading-relaxed text-slate-600">{loginRole === "teacher" ? <><strong>{schoolName}</strong>의 학교별 비밀번호로 로그인합니다. 소속 학교 신고만 관리할 수 있습니다.</> : "운영진 계정으로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다."}</p>
+      <p className="mt-2 text-sm leading-relaxed text-slate-600">{loginRole === "teacher" ? <><strong>{schoolName}</strong> 교사 개인 계정 또는 학교 공용 비밀번호로 로그인합니다. 소속 학교 신고만 관리할 수 있습니다.</> : "개인 계정 또는 공용 운영진 비밀번호로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다."}</p>
       <form className="mt-6 space-y-4" onSubmit={login}>
+        <div>
+          <label className="block text-sm font-semibold text-slate-700" htmlFor="staff-username">아이디</label>
+          <input id="staff-username" autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} placeholder={loginRole === "teacher" ? "학교 공용 비밀번호면 비워 두세요" : "공용 운영진 비밀번호면 비워 두세요"} className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+        </div>
         <label className="block text-sm font-semibold text-slate-700" htmlFor="staff-password">비밀번호</label>
         <input id="staff-password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3.5 py-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
         {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
@@ -404,16 +485,23 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   return (
     <section className="sf-staff-portal space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:p-5">
-        <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">{role === "teacher" ? `${schoolName} 교사 신고 관리` : "운영진 신고 관리"}</h1><p className="text-sm text-slate-600">{role === "teacher" ? "소속 학교의 신고 상태, 담당자, 처리 메모를 관리합니다." : "신고 상태, 담당자, 처리 메모를 관리합니다."}</p></div></div>
-        <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
+        <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">{role === "teacher" ? `${schoolName} 교사 신고 관리` : "운영진 신고 관리"}</h1><p className="text-sm text-slate-600">{sessionInfo?.name ? <><strong className="text-slate-800">{sessionInfo.name}</strong>{sessionInfo.roleLabel ? ` (${sessionInfo.roleLabel})` : ""}로 로그인 · </> : null}{role === "teacher" ? "소속 학교의 신고 상태, 담당자, 처리 메모를 관리합니다." : "신고 상태, 담당자, 처리 메모를 관리합니다."}</p></div></div>
+        <div className="flex flex-wrap gap-2">
+          {sessionInfo?.hasAccount && <button type="button" onClick={() => setShowPasswordForm((open) => !open)} aria-expanded={showPasswordForm} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><KeyRound className="h-4 w-4" /> 내 비밀번호</button>}
+          <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
+        </div>
       </div>
 
+      {showPasswordForm && <MyPasswordForm onDone={() => setShowPasswordForm(false)} />}
+
       <div className="flex flex-wrap gap-2">
-        {sectionButton("reports", "신고 관리", ShieldCheck)}
+        {sectionButton("reports", "신고 관리", ShieldCheck, freshIds.size > 0 ? freshIds.size : undefined)}
         {sectionButton("stats", "월별 통계", BarChart3)}
         {role === "staff" && sectionButton("applications", "학교 신청 메일함", Inbox, schoolApplications.filter((item) => item.status === "new").length)}
         {role === "staff" && sectionButton("blocked", "검토 대상 기기", Ban, blockedDevices.length)}
         {role === "staff" && sectionButton("notifications", "알림", BellRing)}
+        {isAdmin && sectionButton("accounts", "계정 관리", UserCog)}
+        {isAdmin && sectionButton("backup", "백업", DatabaseBackup)}
       </div>
 
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
@@ -422,6 +510,10 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       {activeSection === "stats" && <StaffStatsPanel schoolId={schoolId} schoolName={schoolName} reports={displayedReports} canNotify={role === "staff"} />}
 
       {role === "staff" && activeSection === "notifications" && <NotificationSettingsPanel schoolId={schoolId} schoolName={schoolName} />}
+
+      {isAdmin && activeSection === "accounts" && <StaffAccountsPanel />}
+
+      {isAdmin && activeSection === "backup" && <StaffBackupPanel />}
 
       {role === "staff" && activeSection === "blocked" && <div className="space-y-3">
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">장난 신고로 처리한 신고의 접수 기기입니다. 이 기기에서 오는 신고는 막지 않고 <strong>공개 전에 운영진 검토</strong>를 거칩니다. 짧은 시간에 여러 건을 보낸 기기의 신고도 자동으로 검토 대기가 됩니다.</p>
@@ -480,7 +572,17 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
         </select>
         <button type="button" onClick={exportCsv} disabled={visibleReports.length === 0} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download className="h-4 w-4" /> CSV 내보내기</button>
       </div>
-      <p className="text-sm text-slate-500">{visibleReports.length}건 표시 · 처리 기한: 긴급 1일 · 높음 3일 · 중간 7일 · 낮음 14일 (분석 전 7일)</p>
+      {freshIds.size > 0 && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <span><strong>새 신고 {freshIds.size}건</strong>이 들어왔습니다. 목록에 "새로 들어옴" 으로 표시했습니다.</span>
+          <button type="button" onClick={() => setFreshIds(new Set())} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-800 shadow-sm">확인</button>
+        </div>
+      )}
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
+        <span>{visibleReports.length}건 표시 · 처리 기한: 긴급 1일 · 높음 3일 · 중간 7일 · 낮음 14일 (분석 전 7일)</span>
+        <span className="inline-flex items-center gap-1 text-xs"><RefreshCw className="h-3 w-3" />30초마다 자동 갱신{lastSyncedAt ? ` · 마지막 ${lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
+        <button type="button" onClick={() => void refreshStaffReports()} className="text-xs font-semibold text-blue-700 hover:underline">지금 새로고침</button>
+      </p>
       {displayedReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">접수된 신고가 없습니다.</p> : visibleReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">조건에 맞는 신고가 없습니다.</p> : visibleReports.map((report) => {
         const sla = computeSla(report);
         const suspicious = report.reporter.blocked || report.reporter.deviceReportCount >= 5;
@@ -489,6 +591,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
           {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button></div></div>}
           <div className="mb-4">
             <div className="flex flex-wrap items-center gap-2">
+              {freshIds.has(report.id) && <span className="rounded-full bg-blue-600 px-2 py-1 text-xs font-bold text-white">새로 들어옴</span>}
               <span className="font-mono text-xs text-slate-500">{report.id}</span>
               <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{[report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ")} · {report.category}</span>
               <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${report.riskLevel ? RISK_LEVEL_MAP[report.riskLevel].badgeClass : "border-slate-200 bg-slate-50 text-slate-500"}`}>{report.riskLevel || "분석 대기"}</span>
@@ -515,7 +618,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
           </form>
           {report.history.length > 0 && <details className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
             <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold text-slate-600"><History className="h-3.5 w-3.5" /> 처리 이력 {report.history.length}건</summary>
-            <ol className="mt-2 space-y-1">{[...report.history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-slate-600"><span className="font-mono text-slate-400">{new Date(entry.at).toLocaleString("ko-KR")}</span> · <strong className="text-slate-700">{ACTOR_LABEL[entry.actor] ?? entry.actor}</strong> · {describeHistory(entry)}</li>)}</ol>
+            <ol className="mt-2 space-y-1">{[...report.history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-slate-600"><span className="font-mono text-slate-400">{new Date(entry.at).toLocaleString("ko-KR")}</span> · <strong className="text-slate-700">{actorLabel(entry)}</strong> · {describeHistory(entry)}</li>)}</ol>
           </details>}
         </article>
         );

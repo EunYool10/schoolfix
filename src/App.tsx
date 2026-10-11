@@ -3,31 +3,43 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { Header } from "./components/Header";
 import { UserHomeLandingView } from "./components/UserHomeLandingView";
-import {
-  StudentReportView,
-  type SubmitReportPayload,
-  type SubmitReportResult,
-} from "./components/StudentReportView";
-import { ReportListView } from "./components/ReportListView";
-import { ReportDetailModal } from "./components/ReportDetailModal";
-import { DeleteReportModal } from "./components/DeleteReportModal";
-import { StaffPortal } from "./components/StaffPortal";
+import type { SubmitReportPayload, SubmitReportResult } from "./components/StudentReportView";
 import { SchoolSelectionView } from "./components/SchoolSelectionView";
-import { ServicePolicyDialog, type PolicySection } from "./components/ServicePolicyDialog";
+import type { PolicySection } from "./components/ServicePolicyDialog";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
-import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck } from "lucide-react";
+import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck, Loader2 } from "lucide-react";
+
+/*
+ * 첫 화면(학교 선택·홈)에 필요 없는 화면은 들어갈 때 불러온다.
+ * 학생 대부분은 신고하기·신고 목록만 쓰고, 운영진 화면과 통계 차트는 받을 필요가 없다.
+ */
+const loadStudentReportView = () => import("./components/StudentReportView").then((m) => m.StudentReportView);
+const loadReportListView = () => import("./components/ReportListView").then((m) => m.ReportListView);
+const loadReportDetailModal = () => import("./components/ReportDetailModal").then((m) => m.ReportDetailModal);
+const StudentReportView = lazyScreen(loadStudentReportView);
+const ReportListView = lazyScreen(loadReportListView);
+const ReportDetailModal = lazyScreen(loadReportDetailModal);
+const DeleteReportModal = lazyScreen(() => import("./components/DeleteReportModal").then((m) => m.DeleteReportModal));
+const StaffPortal = lazyScreen(() => import("./components/StaffPortal").then((m) => m.StaffPortal));
+const ServicePolicyDialog = lazyScreen(() => import("./components/ServicePolicyDialog").then((m) => m.ServicePolicyDialog));
+
+function ScreenLoading() {
+  return <div className="py-20 text-center text-sm text-slate-500"><Loader2 className="inline h-5 w-5 animate-spin" /> 불러오는 중</div>;
+}
 /**
  * 익명 소유 토큰·기기 토큰 저장소.
  *
  * 로그인이 없으므로 "내 신고"는 신고 등록 시 서버가 발급한 토큰으로 식별한다.
  * userId 를 임의로 만들지 않으며(§9), 브라우저에는 원본 토큰만, 서버 DB 에는 해시만 존재한다.
  */
-import { getDeviceToken, loadOwnerTokens, saveOwnerToken } from "./utils/clientTokens";
+import { getDeviceToken, loadOwnerTokens, saveOwnerToken, saveRecoveryCode } from "./utils/clientTokens";
 import { changesSince, loadSeen, markSeen, rememberNew, type UpdateKind } from "./utils/reportUpdates";
+import { syncPush } from "./utils/push";
+import { lazyScreen } from "./utils/lazyScreen";
 
 type View = "SCHOOL_SELECT" | "HOME" | "NEW_REPORT" | "REPORTS" | "STAFF";
 
@@ -141,6 +153,17 @@ export default function App() {
       if (!available.some((school) => school.id === savedId)) {
         try { localStorage.removeItem("schoolfix_selected_school_v1"); } catch { /* selection starts fresh */ }
       }
+      // 학생 알림을 누르고 들어온 경우(/?view=mine&school=…) 학교 선택을 건너뛰고 내 신고로 바로 보낸다.
+      const params = new URLSearchParams(window.location.search);
+      const linkedSchool = params.get("view") === "mine" ? available.find((school) => school.id === params.get("school")) : undefined;
+      if (params.has("view")) window.history.replaceState(null, "", window.location.pathname);
+      if (linkedSchool) {
+        setSelectedSchool(linkedSchool);
+        try { localStorage.setItem("schoolfix_selected_school_v1", linkedSchool.id); } catch { /* school remains selected in memory */ }
+        setReportsTab("MINE");
+        setView("REPORTS");
+        return;
+      }
       setSelectedSchool(null);
       setView("SCHOOL_SELECT");
     } catch (error) { setSchoolError(error instanceof Error ? error.message : "지원 학교 목록을 불러오지 못했습니다."); }
@@ -148,6 +171,21 @@ export default function App() {
   }, []);
 
   useEffect(() => { void loadSchoolCatalog(); }, [loadSchoolCatalog]);
+
+  // 첫 화면을 그린 뒤 한가할 때 학생이 자주 여는 화면 코드를 미리 받아 둔다. 누를 때 기다리지 않게 한다.
+  useEffect(() => {
+    const warm = () => {
+      for (const load of [loadStudentReportView, loadReportListView, loadReportDetailModal]) load().catch(() => undefined);
+    };
+    // Safari 는 requestIdleCallback 이 없다.
+    const requestIdle = window.requestIdleCallback as typeof window.requestIdleCallback | undefined;
+    if (requestIdle) {
+      const id = requestIdle(warm, { timeout: 4000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const timer = window.setTimeout(warm, 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!selectedSchool) { setSchoolLocations([]); setSchoolLocationTypes([]); return; }
@@ -226,6 +264,9 @@ export default function App() {
 
       // 서버가 발급한 소유 토큰을 저장해야 "내 신고"에서 다시 찾을 수 있다.
       if (json.ownerToken) saveOwnerToken(json.ownerToken);
+      if (json.recoveryCode) saveRecoveryCode(json.data.id, json.recoveryCode);
+      // 알림을 켜 둔 기기라면 새 신고도 알림을 받도록 다시 등록한다.
+      void syncPush();
 
       showToast(json.heldForReview ? "info" : "success", json.heldForReview ? `신고가 운영진 검토 대기 상태입니다 (접수번호: ${json.data.id})` : `신고가 접수되었습니다 (접수번호: ${json.data.id})`);
       if (json.masked) {
@@ -236,13 +277,35 @@ export default function App() {
         );
       }
       refreshAll();
-      return { success: true as const, report: json.data as SchoolReport, heldForReview: Boolean(json.heldForReview) };
+      return { success: true as const, report: json.data as SchoolReport, heldForReview: Boolean(json.heldForReview), recoveryCode: typeof json.recoveryCode === "string" ? json.recoveryCode : null };
     } catch (err: any) {
       const message = err?.message || "신고를 저장하지 못했습니다.";
       showToast("error", message);
       return { success: false as const, error: message };
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  /** 다른 기기에서 접수한 신고를 접수번호 + 확인 코드로 이 기기에 연결한다. 실패하면 오류 문구 */
+  const handleRecoverReport = async (reportId: string, code: string): Promise<string | null> => {
+    if (!selectedSchool) return "학교를 먼저 선택해주세요.";
+    try {
+      const res = await fetch("/api/reports/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId: selectedSchool.id, reportId, code }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) return json.error || "신고를 불러오지 못했습니다.";
+      saveOwnerToken(json.ownerToken);
+      const raw = code.toUpperCase().replace(/[\s-]/g, "");
+      saveRecoveryCode(json.data.id, `${raw.slice(0, 5)}-${raw.slice(5)}`);
+      void syncPush();
+      await fetchMyReports();
+      return null;
+    } catch {
+      return "신고를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.";
     }
   };
 
@@ -400,6 +463,7 @@ export default function App() {
               />
             )}
 
+            <Suspense fallback={<ScreenLoading />}>
             {view === "NEW_REPORT" && (
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12 lg:gap-7">
                 <section className="min-w-0 lg:col-span-8">
@@ -455,34 +519,40 @@ export default function App() {
                 onNavigateNewReport={() => setView("NEW_REPORT")}
                 initialTab={reportsTab}
                 updates={myUpdates}
+                onRecoverReport={handleRecoverReport}
               />
             )}
             {view === "STAFF" && (
               <StaffPortal schoolId={selectedSchool.id} schoolName={selectedSchool.schoolName} reports={allReportsMarked} onRefresh={refreshAll} />
             )}
+            </Suspense>
             </>}
           </div>
         </div>
       </main>
 
-      {detailReport && (
-        <ReportDetailModal
-          report={detailReport}
-          schoolId={selectedSchool?.id || ""}
-          isOpen={Boolean(detailReport)}
-          onClose={() => setDetailReport(null)}
-          onRequestDelete={(id) => setDeleteTargetId(id)}
-          onReportUpdated={handleReportUpdated}
-        />
-      )}
+      <Suspense fallback={null}>
+        {detailReport && (
+          <ReportDetailModal
+            report={detailReport}
+            schoolId={selectedSchool?.id || ""}
+            isOpen={Boolean(detailReport)}
+            onClose={() => setDetailReport(null)}
+            onRequestDelete={(id) => setDeleteTargetId(id)}
+            onReportUpdated={handleReportUpdated}
+          />
+        )}
 
-      <DeleteReportModal
-        schoolId={selectedSchool?.id || ""}
-        isOpen={Boolean(deleteTargetId)}
-        reportId={deleteTargetId}
-        onClose={() => setDeleteTargetId(null)}
-        onDeleted={handleDeleted}
-      />
+        {deleteTargetId && (
+          <DeleteReportModal
+            schoolId={selectedSchool?.id || ""}
+            isOpen={Boolean(deleteTargetId)}
+            reportId={deleteTargetId}
+            onClose={() => setDeleteTargetId(null)}
+            onDeleted={handleDeleted}
+          />
+        )}
+      </Suspense>
 
       <UnsavedChangesModal
         isOpen={Boolean(pendingView)}
@@ -511,7 +581,7 @@ export default function App() {
           <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button></div>
         </div>
       </footer>
-      {policySection && <ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} />}
+      {policySection && <Suspense fallback={null}><ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} /></Suspense>}
     </div>
   );
 }
