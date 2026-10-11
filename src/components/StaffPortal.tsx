@@ -511,7 +511,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
 
       {role === "staff" && activeSection === "notifications" && <NotificationSettingsPanel schoolId={schoolId} schoolName={schoolName} />}
 
-      {isAdmin && activeSection === "accounts" && <StaffAccountsPanel />}
+      {isAdmin && activeSection === "accounts" && <StaffAccountsPanel onRolesChanged={() => { fetch("/api/staff/session").then((res) => res.json()).then((json) => { applySession(json); }).catch(() => undefined); }} />}
 
       {isAdmin && activeSection === "backup" && <StaffBackupPanel />}
 

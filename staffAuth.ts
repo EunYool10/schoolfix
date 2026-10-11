@@ -16,7 +16,8 @@
 import type express from "express";
 import crypto from "crypto";
 
-export type StaffRole = "admin" | "staff" | "teacher";
+/** 총괄(1명) > 관리자 > 운영진 > 교사 */
+export type StaffRole = "owner" | "admin" | "staff" | "teacher";
 
 export interface StaffAccount {
   id: string;
@@ -53,7 +54,42 @@ export const SESSION_COOKIE = "schoolfix_staff_session";
 const LEGACY_TEACHER_COOKIE = "schoolfix_teacher_session";
 /** STAFF_PASSWORD_HASH 공용 계정의 아이디. 개인 계정으로는 만들 수 없다. */
 export const MASTER_USERNAME = "admin";
-export const ROLE_LABEL: Record<StaffRole, string> = { admin: "관리자", staff: "운영진", teacher: "교사" };
+export const ROLE_LABEL: Record<StaffRole, string> = { owner: "총괄", admin: "관리자", staff: "운영진", teacher: "교사" };
+
+/** 계정 관리·백업 같은 관리자 기능을 쓸 수 있는 역할 */
+export function isAdminRole(role: StaffRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+export function hasOwner(list: Pick<StaffAccount, "role">[]): boolean {
+  return list.some((account) => account.role === "owner");
+}
+
+/**
+ * 계정 권한 규칙
+ *  - 총괄 계정은 다른 누구도(공용 비밀번호 관리자 포함) 바꾸거나 끄거나 지울 수 없다.
+ *    총괄 본인은 '내 비밀번호'로 비밀번호만 바꾸고, 자리는 다른 사람에게 넘기는 방식으로만 내려놓는다.
+ *  - 총괄이 있으면 관리자 계정을 다루는 일은 총괄만 한다.
+ *  - 총괄이 아직 없으면 예전처럼 관리자가 모든 계정을 다룬다.
+ */
+export function canManageAccount(actorRole: StaffRole, target: Pick<StaffAccount, "role">, ownerExists: boolean): boolean {
+  if (!isAdminRole(actorRole) || target.role === "owner") return false;
+  if (target.role === "admin") return actorRole === "owner" || !ownerExists;
+  return true;
+}
+
+/** 새 계정을 만들거나 역할을 바꿀 때 줄 수 있는 역할. 총괄은 지정·넘기기로만 정한다. */
+export function assignableRoles(actorRole: StaffRole, ownerExists: boolean): StaffRole[] {
+  if (actorRole === "owner" || (actorRole === "admin" && !ownerExists)) return ["admin", "staff", "teacher"];
+  if (actorRole === "admin") return ["staff", "teacher"];
+  return [];
+}
+
+/** 총괄 지정·넘기기 — 총괄이 없으면 관리자 누구나 처음 한 번 지정하고, 있으면 지금 총괄 본인만 넘긴다. */
+export function canAssignOwner(actor: Pick<StaffSession, "role" | "accountId">, currentOwnerId: string | null): boolean {
+  if (!currentOwnerId) return isAdminRole(actor.role);
+  return actor.role === "owner" && actor.accountId === currentOwnerId;
+}
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 export const PASSWORD_MIN_LENGTH = 8;
@@ -118,7 +154,7 @@ export class SessionStore {
     for (const item of list as StaffSession[]) {
       if (!item || typeof item.tokenHash !== "string" || !/^[a-f0-9]{64}$/.test(item.tokenHash)) continue;
       if (typeof item.expiresAt !== "number" || item.expiresAt <= now) continue;
-      if (!["admin", "staff", "teacher"].includes(item.role)) continue;
+      if (!["owner", "admin", "staff", "teacher"].includes(item.role)) continue;
       this.sessions.set(item.tokenHash, { ...item });
     }
   }
