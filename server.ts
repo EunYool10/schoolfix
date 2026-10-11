@@ -110,7 +110,7 @@ import { parseNoiseMeasurement, type NoiseMeasurement } from "./src/utils/noise"
 import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
 import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
 import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./backupStore";
-import { appendAudit, auditCategory, newAuditEntry, type AuditAction, type AuditCategory, type AuditEntry } from "./auditLog";
+import { appendAudit, auditCategory, MAX_AUDIT_ENTRIES, newAuditEntry, type AuditAction, type AuditCategory, type AuditEntry } from "./auditLog";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.
@@ -758,10 +758,29 @@ function withPushLock<T>(task: () => Promise<T>): Promise<T> {
 
 const AUDIT_FILE = path.join(DATA_DIR, "audit_log.json");
 let cachedAudit: AuditEntry[] = [];
-let auditWarned = false;
+/**
+ * 아직 저장하지 못한 기록 (최근 것부터). 저장이 막혀도(예: Supabase 키 제약이 옛날 것) 화면에는 바로 보이고,
+ * 저장이 다시 되면 한꺼번에 저장한다. 서버가 다시 시작되면 사라지므로 화면에 경고를 띄운다.
+ */
+let pendingAudit: AuditEntry[] = [];
+let auditSaveProblem: { message: string; needsSchemaUpdate: boolean; since: string } | null = null;
 
+/** supabase/schema.sql 의 키 제약을 지금 서버가 쓰는 문서 목록으로 바꾸는 SQL */
+const STORE_KEY_CONSTRAINT_SQL = [
+  "alter table public.schoolfix_store drop constraint if exists schoolfix_store_key_check;",
+  "alter table public.schoolfix_store add constraint schoolfix_store_key_check",
+  `  check (key in (${STORE_KEYS.map((key) => `'${key}'`).join(", ")}));`,
+].join("\n");
+
+function savedAudit(): AuditEntry[] {
+  return useSupabaseStore ? cachedAudit : readLocalArray<AuditEntry>(AUDIT_FILE, "audit-log");
+}
+
+/** 저장된 기록과 아직 저장하지 못한 기록을 합쳐 최근 것부터 */
 function loadAudit(): AuditEntry[] {
-  return useSupabaseStore ? cachedAudit.map((entry) => ({ ...entry })) : readLocalArray<AuditEntry>(AUDIT_FILE, "audit-log");
+  const saved = savedAudit();
+  const merged = pendingAudit.length ? [...pendingAudit, ...saved.filter((entry) => !pendingAudit.some((item) => item.id === entry.id))].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)) : saved;
+  return merged.slice(0, MAX_AUDIT_ENTRIES).map((entry) => ({ ...entry }));
 }
 
 async function saveAudit(list: AuditEntry[]) {
@@ -779,12 +798,26 @@ async function saveAudit(list: AuditEntry[]) {
  */
 function audit(actor: StaffSession | null, action: AuditAction, target: string | null = null, detail: string | null = null) {
   const entry = newAuditEntry(action, actor ? { name: actor.name, role: actor.role, accountId: actor.accountId } : null, target, detail);
-  void withDocLock("audit_log", async () => {
-    await saveAudit(appendAudit(loadAudit(), entry));
+  pendingAudit = appendAudit(pendingAudit, entry);
+  void flushAudit();
+}
+
+/** 아직 저장하지 못한 기록을 저장한다. 실패하면 남겨 두고 다음 기록이나 주기 확인 때 다시 시도한다. */
+function flushAudit(): Promise<void> {
+  return withDocLock("audit_log", async () => {
+    if (pendingAudit.length === 0) return;
+    const batch = pendingAudit;
+    await saveAudit(loadAudit());
+    pendingAudit = pendingAudit.filter((entry) => !batch.includes(entry));
+    if (auditSaveProblem) console.log("[audit] 운영 기록 저장이 다시 됩니다. 밀린 기록을 저장했습니다.");
+    auditSaveProblem = null;
   }).catch((err) => {
-    if (auditWarned) return;
-    auditWarned = true;
-    console.error("[audit] 운영 기록을 저장하지 못했습니다 (supabase/schema.sql 갱신 필요할 수 있음):", err instanceof Error ? err.message : err);
+    const message = err instanceof Error ? err.message : String(err);
+    const needsSchemaUpdate = err instanceof SupabaseRequestError && (message.includes("schoolfix_store_key_check") || message.includes("23514"));
+    if (!auditSaveProblem || auditSaveProblem.message !== message) {
+      console.error(`[audit] 운영 기록을 저장하지 못했습니다${needsSchemaUpdate ? " — Supabase SQL Editor 에서 supabase/schema.sql 을 다시 실행해야 합니다" : ""}:`, message);
+    }
+    auditSaveProblem = { message, needsSchemaUpdate, since: auditSaveProblem?.since ?? new Date().toISOString() };
   });
 }
 
@@ -1385,6 +1418,8 @@ app.get("/api/health", (_req, res) => {
     photos: { store: photoBackend.kind, ready: photoBackendReady },
     // 학생 알림(VAPID 키) 설정 여부만 알려 준다. 키 자체는 내보내지 않는다.
     studentPush: { enabled: pushEnabled() },
+    // 운영 기록 저장이 막혔는지만 알려 준다 (기록 내용은 관리자 화면에서만).
+    auditLog: { saving: auditSaveProblem ? "failing" : "ok", needsSchemaUpdate: Boolean(auditSaveProblem?.needsSchemaUpdate), unsaved: pendingAudit.length },
   });
 });
 
@@ -1754,7 +1789,15 @@ app.get("/api/staff/audit", (req, res) => {
   let list = loadAudit();
   if (["login", "account", "report", "backup", "etc"].includes(category)) list = list.filter((entry) => auditCategory(entry.action) === (category as AuditCategory));
   if (before) list = list.filter((entry) => entry.at < before);
-  return res.json({ ok: true, data: list.slice(0, limit), hasMore: list.length > limit });
+  // 저장이 막혀 있으면 화면에 이유와 고치는 방법을 함께 보여 준다. 저장소 응답 원문은 관리자에게만 간다.
+  const saveProblem = auditSaveProblem && {
+    unsaved: pendingAudit.length,
+    since: auditSaveProblem.since,
+    needsSchemaUpdate: auditSaveProblem.needsSchemaUpdate,
+    detail: auditSaveProblem.message.slice(0, 300),
+    fixSql: auditSaveProblem.needsSchemaUpdate ? STORE_KEY_CONSTRAINT_SQL : null,
+  };
+  return res.json({ ok: true, data: list.slice(0, limit), hasMore: list.length > limit, saveProblem });
 });
 
 /** 계정 목록 (관리자). 교사 계정의 학교를 고를 수 있도록 지원 학교 목록도 함께 준다. */
@@ -3720,6 +3763,9 @@ async function startServer() {
     // 자동 백업·오래된 삭제 사진 정리: 깨어날 때 한 번, 이후 30분마다 확인한다.
     setTimeout(() => void runMaintenance(), envNumber("MAINTENANCE_START_DELAY_MS", 30_000, 100)).unref?.();
     setInterval(() => void runMaintenance(), 30 * 60 * 1000).unref?.();
+
+    // 저장하지 못한 운영 기록을 5분마다 다시 저장해 본다 (SQL 을 고친 뒤 새 기록을 기다리지 않아도 되게).
+    setInterval(() => { if (pendingAudit.length) void flushAudit(); }, envNumber("AUDIT_RETRY_INTERVAL_MS", 5 * 60 * 1000, 200)).unref?.();
 
     // 다른 서버(배포 중 옛 서버)가 바꾼 문서를 30초마다 확인해 가져온다.
     if (useSupabaseStore) {

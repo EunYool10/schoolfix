@@ -467,6 +467,39 @@ async function twoServerScenarios(serverA, serverB, mock) {
 
 // --- 실행 ---------------------------------------------------------------------------
 
+/** Supabase 키 제약이 옛날 것(audit_log 없음)일 때 — 운영 기록이 보이고, 고칠 SQL 을 알려 주고, 고치면 밀린 기록이 저장된다. */
+async function oldSchemaScenarios() {
+  section("옛 Supabase 키 제약 (audit_log 저장 막힘)");
+  const allowedKeys = ["reports", "school_applications", "custom_schools", "blocked_reporters", "settings", "staff_accounts", "staff_sessions", "push_subscriptions"];
+  const oldMock = await startMockSupabase({ allowedKeys });
+  const server = await startServer({ DATA_DIR: tempDir(), SUPABASE_URL: oldMock.url, SUPABASE_SECRET_KEY: "sb_secret_test", REQUIRE_SUPABASE_STORE: "true", AUDIT_RETRY_INTERVAL_MS: "300" }, "옛 키 제약");
+  try {
+    const { call } = server;
+    const login = await call("POST", "/api/staff/login", { password: "master-pass-1" });
+    check("옛 키 제약이어도 로그인됨", login.status === 200 && Boolean(login.cookie));
+    const failing = await waitFor(async () => (await call("GET", "/api/health")).json.auditLog?.saving === "failing");
+    check("상태 확인에 운영 기록 저장 실패 표시", failing);
+    const health = (await call("GET", "/api/health")).json;
+    check("상태 확인에 SQL 필요 표시", health.auditLog?.needsSchemaUpdate === true && health.auditLog?.unsaved >= 1);
+    const audit = await call("GET", "/api/staff/audit", undefined, login.cookie);
+    check("저장 못 한 기록도 운영 기록에 보임", audit.json.data?.some((entry) => entry.action === "login"));
+    check("운영 기록 화면에 고치는 SQL", audit.json.saveProblem?.needsSchemaUpdate === true && audit.json.saveProblem?.fixSql?.includes("'audit_log'"));
+    check("Supabase 에 audit_log 문서 없음 (제약 때문)", !oldMock.rows.has("audit_log"));
+
+    allowedKeys.push("audit_log"); // 관리자가 SQL 을 실행한 상태
+    const saved = await waitFor(async () => oldMock.rows.has("audit_log"));
+    check("SQL 을 고치면 밀린 기록이 저장됨", saved && oldMock.rows.get("audit_log").payload.some((entry) => entry.action === "login"));
+    const after = await call("GET", "/api/staff/audit", undefined, login.cookie);
+    check("저장되면 경고가 사라짐", after.json.saveProblem === null && (await call("GET", "/api/health")).json.auditLog?.saving === "ok");
+  } catch (err) {
+    console.log(server.logs.join(""));
+    throw err;
+  } finally {
+    await server.stop();
+    await oldMock.close();
+  }
+}
+
 async function main() {
   console.log(`\nSchoolFix API 종단 간 테스트 — ${MODE === "supabase" ? "Supabase 흉내 서버" : "로컬 JSON 저장소"}`);
   if (!fs.existsSync(path.join(ROOT, "dist", "server.cjs"))) throw new Error("dist/server.cjs 가 없습니다. 먼저 npm run build 를 실행하세요.");
@@ -532,6 +565,7 @@ async function main() {
   }
 
   if (mock) await mock.close();
+  if (MODE === "supabase") await oldSchemaScenarios();
 }
 
 main()

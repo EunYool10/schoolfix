@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, ScrollText } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2, ScrollText } from "lucide-react";
 import type { AuditEntryInfo } from "../types";
 
 /** 서버(auditLog.ts)와 같은 표시 이름. 모르는 항목은 원래 이름을 보여 준다. */
@@ -41,6 +41,15 @@ function tone(action: string) {
   return "bg-slate-100 text-slate-700";
 }
 
+/** 서버가 운영 기록을 저장하지 못하고 있을 때 받는 정보 */
+interface SaveProblem {
+  unsaved: number;
+  since: string;
+  needsSchemaUpdate: boolean;
+  detail: string;
+  fixSql: string | null;
+}
+
 /** 관리자 전용 — 운영 기록. 누가 언제 무엇을 했는지 최근 것부터 보여 준다. */
 export function StaffAuditPanel() {
   const [category, setCategory] = useState("all");
@@ -48,6 +57,8 @@ export function StaffAuditPanel() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saveProblem, setSaveProblem] = useState<SaveProblem | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async (before: string | null) => {
     setLoading(true); setError("");
@@ -60,6 +71,7 @@ export function StaffAuditPanel() {
       const page: AuditEntryInfo[] = Array.isArray(json.data) ? json.data : [];
       setEntries((current) => (before ? [...current, ...page] : page));
       setHasMore(Boolean(json.hasMore));
+      setSaveProblem(json.saveProblem ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "운영 기록을 불러오지 못했습니다.");
     } finally {
@@ -75,6 +87,27 @@ export function StaffAuditPanel() {
         <ScrollText className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         <span>운영진·교사가 한 중요한 일(로그인, 계정 변경, 총괄 지정, 신고 삭제·복구, 백업 등)을 최근 1,000건까지 남깁니다. 학생 정보는 기록하지 않습니다. 이 기능이 생기기 전의 일은 남아 있지 않습니다.</span>
       </p>
+      {saveProblem && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
+          <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" /> 운영 기록이 저장되지 않고 있습니다</p>
+          {saveProblem.needsSchemaUpdate ? (
+            <>
+              <p className="mt-1">Supabase 표의 문서 목록 규칙이 옛날 것이라 운영 기록을 넣지 못합니다. 아래 기록 {saveProblem.unsaved}건은 서버에만 잠시 있고, 서버가 다시 시작되면 사라집니다.</p>
+              <p className="mt-1"><strong>고치는 법:</strong> Supabase → SQL Editor 에 아래 SQL 을 붙여 넣고 Run 을 누르세요. 몇 분 안에 밀린 기록까지 저장됩니다.</p>
+              {saveProblem.fixSql && (
+                <div className="mt-2">
+                  <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 font-mono text-xs leading-relaxed text-slate-100">{saveProblem.fixSql}</pre>
+                  <button type="button" onClick={async () => { try { await navigator.clipboard.writeText(saveProblem.fixSql ?? ""); setCopied(true); window.setTimeout(() => setCopied(false), 1800); } catch { setCopied(false); } }} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700">
+                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? "복사했어요" : "SQL 복사"}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="mt-1">저장소에 쓰지 못했습니다 ({new Date(saveProblem.since).toLocaleString("ko-KR")}부터). 저장하지 못한 기록 {saveProblem.unsaved}건은 5분마다 다시 저장해 봅니다. <span className="break-all text-xs text-amber-800">{saveProblem.detail}</span></p>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {CATEGORIES.map(([value, label]) => (
           <button key={value} type="button" onClick={() => setCategory(value)} aria-pressed={category === value} className={`rounded-lg px-3 py-1.5 text-xs font-bold ${category === value ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>{label}</button>
