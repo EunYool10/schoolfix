@@ -269,6 +269,8 @@ export interface StaffSessionInfo {
   authenticated: boolean;
   role: "staff" | "teacher" | null;
   isAdmin?: boolean;
+  /** 총괄(모든 계정 위의 1인자)인지 */
+  isOwner?: boolean;
   roleLabel?: string;
   name?: string;
   schoolId: string | null;
@@ -281,7 +283,7 @@ export interface StaffAccountInfo {
   id: string;
   username: string;
   displayName: string;
-  role: "admin" | "staff" | "teacher";
+  role: "owner" | "admin" | "staff" | "teacher";
   schoolId: string | null;
   disabled: boolean;
   createdAt: string;

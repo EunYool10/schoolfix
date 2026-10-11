@@ -85,8 +85,13 @@ import { decodePhotoDataUrl, localPhotoBackend, newPhotoId, PHOTO_ID_PATTERN, PH
 import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
 import bcrypt from "bcryptjs";
 import {
+  assignableRoles,
+  canAssignOwner,
+  canManageAccount,
   clearSessionCookies,
   displayNameError,
+  hasOwner,
+  isAdminRole,
   DUMMY_PASSWORD_HASH,
   MASTER_USERNAME,
   newAccountId,
@@ -1330,7 +1335,7 @@ function requireStaff(req: express.Request, res: express.Response): StaffSession
 function requireAdmin(req: express.Request, res: express.Response): StaffSession | null {
   const session = requireStaff(req, res);
   if (!session) return null;
-  if (session.role === "admin") return session;
+  if (isAdminRole(session.role)) return session;
   safeError(res, 403, "관리자 계정만 사용할 수 있습니다.");
   return null;
 }
@@ -1351,9 +1356,10 @@ function sessionPayload(session: StaffSession) {
   return {
     ok: true,
     authenticated: true,
-    // 예전 화면과의 호환을 위해 운영진·관리자는 "staff" 로 내보낸다.
+    // 예전 화면과의 호환을 위해 총괄·관리자·운영진은 "staff" 로 내보낸다.
     role: session.role === "teacher" ? "teacher" : "staff",
-    isAdmin: session.role === "admin",
+    isAdmin: isAdminRole(session.role),
+    isOwner: session.role === "owner",
     roleLabel: ROLE_LABEL[session.role],
     name: session.name,
     schoolId: session.schoolId,
@@ -1496,28 +1502,41 @@ app.post("/api/staff/me/password", loginGate, async (req, res) => {
   return res.json({ ok: true });
 });
 
-/** 관리자가 아닌 상태로 남지 않도록, 켜진 관리자가 하나도 없게 되는 변경은 막는다. */
+/** 관리자가 아닌 상태로 남지 않도록, 켜진 관리자(총괄 포함)가 하나도 없게 되는 변경은 막는다. */
 function leavesNoAdmin(list: StaffAccount[]): boolean {
-  return !isStaffPasswordConfigured() && !list.some((item) => item.role === "admin" && !item.disabled);
+  return !isStaffPasswordConfigured() && !list.some((item) => isAdminRole(item.role) && !item.disabled);
 }
 
+/** 화면에서 직접 줄 수 있는 역할. 총괄은 지정·넘기기(/owner)로만 정한다. */
 function parseRole(value: unknown): StaffRole | null {
   return value === "admin" || value === "staff" || value === "teacher" ? value : null;
 }
 
+function manageDeniedMessage(target: StaffAccount): string {
+  return target.role === "owner"
+    ? "총괄 계정은 다른 사람이 바꾸거나 끄거나 지울 수 없습니다. 총괄 본인은 '내 비밀번호'에서 비밀번호를 바꿀 수 있습니다."
+    : "관리자 계정은 총괄만 바꿀 수 있습니다.";
+}
+
 /** 계정 목록 (관리자). 교사 계정의 학교를 고를 수 있도록 지원 학교 목록도 함께 준다. */
 app.get("/api/staff/accounts", (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  const list = loadStaffAccounts();
   return res.json({
     ok: true,
-    data: loadStaffAccounts().map(publicAccount),
+    data: list.map(publicAccount),
     masterConfigured: isStaffPasswordConfigured(),
+    ownerExists: hasOwner(list),
+    // 화면이 보여 줄 버튼을 고를 수 있도록 지금 로그인한 사람의 역할을 알려 준다. 실제 권한은 서버가 다시 확인한다.
+    viewer: { role: session.role, accountId: session.accountId },
     schools: loadSchools().map(({ id, schoolName }) => ({ id, schoolName })),
   });
 });
 
 app.post("/api/staff/accounts", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  const session = requireAdmin(req, res);
+  if (!session) return;
   const body = req.body || {};
   const username = normalizeUsername(body.username);
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
@@ -1533,11 +1552,13 @@ app.post("/api/staff/accounts", async (req, res) => {
   try {
     const created = await withAccountsLock(async () => {
       const list = loadStaffAccounts();
-      if (list.some((item) => item.username === username)) return false;
+      if (!assignableRoles(session.role, hasOwner(list)).includes(account.role)) return 403;
+      if (list.some((item) => item.username === username)) return 409;
       await saveStaffAccounts([...list, account]);
-      return true;
+      return "ok";
     });
-    if (!created) return safeError(res, 409, "이미 사용 중인 아이디입니다.");
+    if (created === 403) return safeError(res, 403, "관리자 계정은 총괄만 만들 수 있습니다.");
+    if (created === 409) return safeError(res, 409, "이미 사용 중인 아이디입니다.");
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
@@ -1568,6 +1589,11 @@ app.patch("/api/staff/accounts/:id", async (req, res) => {
       const list = loadStaffAccounts();
       const account = list.find((item) => item.id === req.params.id);
       if (!account) return { error: 404, message: "계정을 찾을 수 없습니다." };
+      const ownerExists = hasOwner(list);
+      if (!canManageAccount(admin.role, account, ownerExists)) return { error: 403, message: manageDeniedMessage(account) };
+      if (role && role !== account.role && !assignableRoles(admin.role, ownerExists).includes(role)) {
+        return { error: 403, message: "관리자 역할은 총괄만 줄 수 있습니다." };
+      }
       const nextRole = role ?? account.role;
       const nextSchoolId = nextRole === "teacher"
         ? (body.schoolId !== undefined ? findSchool(body.schoolId)?.id ?? null : account.schoolId)
@@ -1597,12 +1623,14 @@ app.delete("/api/staff/accounts/:id", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
   if (req.params.id === admin.accountId) return safeError(res, 400, "지금 로그인한 자기 계정은 삭제할 수 없습니다.");
-  let result: "ok" | 404 | 400;
+  let result: "ok" | 404 | 400 | { denied: string };
   try {
     result = await withAccountsLock(async () => {
       const list = loadStaffAccounts();
+      const target = list.find((item) => item.id === req.params.id);
+      if (!target) return 404;
+      if (!canManageAccount(admin.role, target, hasOwner(list))) return { denied: manageDeniedMessage(target) };
       const remaining = list.filter((item) => item.id !== req.params.id);
-      if (remaining.length === list.length) return 404;
       if (leavesNoAdmin(remaining)) return 400;
       await saveStaffAccounts(remaining);
       return "ok";
@@ -1612,8 +1640,49 @@ app.delete("/api/staff/accounts/:id", async (req, res) => {
   }
   if (result === 404) return safeError(res, 404, "계정을 찾을 수 없습니다.");
   if (result === 400) return safeError(res, 400, "켜진 관리자 계정이 하나는 있어야 합니다. 다른 관리자 계정을 먼저 만들어주세요.");
+  if (typeof result === "object") return safeError(res, 403, result.denied);
   staffSessions.revokeAccount(req.params.id);
   return res.json({ ok: true });
+});
+
+/**
+ * 총괄 지정·넘기기.
+ *  - 총괄이 없으면 관리자(공용 비밀번호 포함) 누구나 한 사람을 처음 총괄로 지정할 수 있다.
+ *  - 총괄이 있으면 지금 총괄 본인만 다른 사람에게 넘길 수 있고, 넘긴 사람은 관리자가 된다.
+ * 총괄은 학교에 묶이지 않는다. 꺼진 계정은 지정할 수 없다.
+ */
+app.post("/api/staff/accounts/:id/owner", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  let result: { error: number; message: string } | { owner: StaffAccount; previous: StaffAccount | null };
+  try {
+    result = await withAccountsLock(async () => {
+      const list = loadStaffAccounts();
+      const target = list.find((item) => item.id === req.params.id);
+      if (!target) return { error: 404, message: "계정을 찾을 수 없습니다." };
+      const current = list.find((item) => item.role === "owner") ?? null;
+      if (!canAssignOwner(session, current?.id ?? null)) return { error: 403, message: "총괄 자리는 지금 총괄 본인만 넘길 수 있습니다." };
+      if (target.role === "owner") return { error: 400, message: "이미 총괄인 계정입니다." };
+      if (target.disabled) return { error: 400, message: "사용 중지된 계정은 총괄로 지정할 수 없습니다. 먼저 다시 켜 주세요." };
+      const now = new Date().toISOString();
+      if (current) {
+        current.role = "admin";
+        current.updatedAt = now;
+      }
+      target.role = "owner";
+      target.schoolId = null;
+      target.updatedAt = now;
+      await saveStaffAccounts(list);
+      return { owner: target, previous: current };
+    });
+  } catch (err) {
+    return safeError(res, 500, STORE_SCHEMA_HINT, err);
+  }
+  if ("error" in result) return safeError(res, result.error, result.message);
+  // 열려 있는 세션의 역할도 바로 바꾼다. 다시 로그인하지 않아도 새 권한이 적용된다.
+  staffSessions.renameAccount(result.owner.id, result.owner.displayName, "owner", null);
+  if (result.previous) staffSessions.renameAccount(result.previous.id, result.previous.displayName, "admin", null);
+  return res.json({ ok: true, data: publicAccount(result.owner), previousOwner: result.previous ? publicAccount(result.previous) : null });
 });
 
 /**

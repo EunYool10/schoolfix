@@ -9,6 +9,7 @@
  *  8) 확인 코드로 내 신고 불러오기
  *  9) 학생 알림 (Web Push) — 구독 주소 검증, 묶기, 문구
  * 10) 운영진 개인 계정 규칙과 로그인 세션 (해시 저장, 재시작 후 유지, 강제 종료)
+ * 11) 총괄 — 모든 계정 위의 1인자 (지정·넘기기, 아무도 못 건드림)
  */
 
 import { computeSla, slaLabel } from "./src/utils/sla";
@@ -24,6 +25,7 @@ import { changesSince, snapshotOf } from "./src/utils/reportUpdates";
 import { hashRecoveryCode, issueRecoveryCode, normalizeRecoveryCode, ownerTokenHashes, RECOVERY_CODE_ALPHABET, safeHashEqual } from "./serverSecurity";
 import { buildReportPush, isAllowedPushEndpoint, parseSubscription, recipientsFor, upsertPushRecord } from "./pushNotify";
 import { hashSessionToken, MASTER_USERNAME, passwordError, publicAccount, SessionStore, usernameError, type StaffAccount, type StaffSession } from "./staffAuth";
+import { assignableRoles, canAssignOwner, canManageAccount, hasOwner, isAdminRole } from "./staffAuth";
 
 let passed = 0;
 let failed = 0;
@@ -431,6 +433,41 @@ console.log("\n=== 10) 운영진 개인 계정과 로그인 세션 ===\n");
   s2.revoke(c);
   check("로그아웃하면 세션 삭제", s2.get(c) === null);
   check("이상한 토큰은 조회하지 않음", s2.get("../../etc") === null && s2.get(null) === null);
+}
+
+console.log("\n=== 11) 총괄 (모든 계정 위의 1인자) ===\n");
+{
+  const owner = { role: "owner" as const };
+  const admin = { role: "admin" as const };
+  const staff = { role: "staff" as const };
+  const teacher = { role: "teacher" as const };
+  check("총괄·관리자만 관리자 기능", isAdminRole("owner") && isAdminRole("admin") && !isAdminRole("staff") && !isAdminRole("teacher"));
+  check("총괄 유무 판단", hasOwner([staff, owner]) && !hasOwner([admin, staff]));
+
+  check("총괄 계정은 관리자도 못 바꿈", !canManageAccount("admin", owner, true));
+  check("총괄 계정은 총괄 본인 화면에서도 바꾸기 버튼 대상 아님(넘기기로만)", !canManageAccount("owner", owner, true));
+  check("총괄이 있으면 관리자 계정은 총괄만 다룸", canManageAccount("owner", admin, true) && !canManageAccount("admin", admin, true));
+  check("총괄이 없으면 관리자가 관리자 계정을 다룸 (예전 방식)", canManageAccount("admin", admin, false));
+  check("운영진·교사 계정은 관리자 이상이면 다룸", canManageAccount("admin", staff, true) && canManageAccount("owner", teacher, true));
+  check("운영진·교사는 계정을 못 다룸", !canManageAccount("staff", teacher, false) && !canManageAccount("teacher", staff, false));
+
+  check("총괄은 관리자까지 줄 수 있음", assignableRoles("owner", true).join() === "admin,staff,teacher");
+  check("총괄이 있으면 관리자는 관리자 역할을 못 줌", assignableRoles("admin", true).join() === "staff,teacher");
+  check("총괄이 없으면 관리자가 관리자 역할을 줌", assignableRoles("admin", false).includes("admin"));
+  check("총괄 역할은 직접 줄 수 없음(지정·넘기기로만)", !assignableRoles("owner", true).includes("owner"));
+  check("운영진은 역할을 못 줌", assignableRoles("staff", false).length === 0);
+
+  check("총괄이 없으면 관리자가 처음 지정 가능 (공용 비밀번호 포함)", canAssignOwner({ role: "admin", accountId: null }, null));
+  check("총괄이 없어도 운영진은 지정 못 함", !canAssignOwner({ role: "staff", accountId: "acc_s" }, null));
+  check("총괄이 있으면 총괄 본인만 넘김", canAssignOwner({ role: "owner", accountId: "acc_o" }, "acc_o"));
+  check("총괄이 있으면 관리자는 넘기거나 빼앗지 못 함", !canAssignOwner({ role: "admin", accountId: null }, "acc_o") && !canAssignOwner({ role: "admin", accountId: "acc_a" }, "acc_o"));
+
+  const store = new SessionStore(async () => {});
+  const saved: StaffSession[] = [];
+  const persisting = new SessionStore(async (list) => { saved.splice(0, saved.length, ...list); });
+  const token = persisting.create({ role: "owner", accountId: "acc_o", name: "총괄", schoolId: null });
+  store.load(saved);
+  check("총괄 세션도 재시작 후 유지", store.get(token)?.role === "owner");
 }
 
 console.log(`\n${"=".repeat(60)}`);
