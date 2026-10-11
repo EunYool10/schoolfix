@@ -89,7 +89,6 @@ export function StaffAccountsPanel({ onRolesChanged }: StaffAccountsPanelProps) 
     () => [...accounts].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.createdAt.localeCompare(b.createdAt)),
     [accounts]
   );
-  const owner = accounts.find((account) => account.role === "owner") ?? null;
   const isOwnerViewer = viewer.role === "owner";
   const creatableRoles = assignableRoles(viewer.role, ownerExists);
   const schoolName = (id: string | null) => schools.find((school) => school.id === id)?.schoolName ?? id ?? "";
@@ -176,16 +175,7 @@ export function StaffAccountsPanel({ onRolesChanged }: StaffAccountsPanelProps) 
 
   return (
     <div className="space-y-4">
-      {ownerExists && owner ? (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-950">
-          <Crown className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <p>
-            <strong>총괄: {owner.displayName}</strong> <span className="font-mono text-xs">({owner.username})</span> — 모든 계정 위에 있는 1인자입니다.
-            총괄 계정은 다른 누구도 바꾸거나 끄거나 지울 수 없고, 관리자 계정을 만들고 바꾸는 일은 총괄만 합니다.
-            {isOwnerViewer ? " 총괄을 다른 사람에게 넘기려면 그 사람 계정의 '총괄 넘기기'를 누르세요." : ""}
-          </p>
-        </div>
-      ) : (
+      {!ownerExists && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm leading-relaxed text-amber-950">
           <Crown className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
           <p>
