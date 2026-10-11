@@ -28,7 +28,8 @@ import {
   ISSUE_CATEGORIES,
   SCHOOL_LOCATIONS,
 } from "../types";
-import { FormExampleItem, getRandomFormExamples } from "../data/formExamples";
+import { findTemplateBlanks, FREE_WRITING_TEMPLATE, type FormExampleItem, type TemplateBlank } from "../data/formExamples";
+import { QuickExamplePanel, type ExampleTask } from "./QuickExamplePanel";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 import { formatBytes, PHOTO_LIMITS, preparePhoto, type PreparedPhoto } from "../utils/imageCompress";
@@ -104,6 +105,12 @@ interface ClarifyState {
   sessionId: string;
   question: string;
   turns: { question: string; answer: string }[];
+}
+
+/** 예시를 고르기 전 입력값 (되돌리기용) */
+interface ExampleSnapshot {
+  title: string; location: string; locationId: string; locationDetail: string;
+  department: string; grade: string; className: string; category: string; description: string;
 }
 
 interface FieldErrors {
@@ -188,17 +195,12 @@ export function StudentReportView({
     return { willMask: t.masked || d.masked, preview: d.masked ? d.text : null };
   }, [title, description]);
 
-  // Example auto-fill notice banner state
-  const [autoFillNotice, setAutoFillNotice] = useState<boolean>(false);
-
-  // 33. 예시 추천 값 랜덤 제공 (화면 UI 전용, 실제 신고 DB와 완전히 분리)
-  // 학교별 등록 위치와 학교급에 맞는 문항 중 4개를 추천
+  // 빠른 작성 예시 (화면 전용, 신고 DB와 분리). 고르기 전 내용을 남겨 두어 되돌릴 수 있게 한다.
   const exampleLocationTypes = [...new Set([...locationTypes.map((item) => item.type), ...locations.map((item) => item.type)])];
-  const [displayedExamples, setDisplayedExamples] = useState<FormExampleItem[]>(() =>
-    getRandomFormExamples(4, undefined, [], school, exampleLocationTypes)
-  );
-  // 현재 선택/적용된 추천 버튼 상태 추적
-  const [selectedExampleKey, setSelectedExampleKey] = useState<string | null>(null);
+  const [appliedExample, setAppliedExample] = useState<{ key: string; label: string; location: string; detailHint: string; description: string } | null>(null);
+  const [exampleUndo, setExampleUndo] = useState<ExampleSnapshot | null>(null);
+  const [examplePanelKey, setExamplePanelKey] = useState(0);
+  const detailInputRef = useRef<HTMLInputElement>(null);
 
   // Field element refs for auto-focusing on invalid input
   const locationRef = useRef<HTMLSelectElement>(null);
@@ -210,8 +212,8 @@ export function StudentReportView({
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
 
   useEffect(() => {
-    setDisplayedExamples(getRandomFormExamples(4, undefined, [], school, exampleLocationTypes));
-    setSelectedExampleKey(null);
+    setAppliedExample(null);
+    setExampleUndo(null);
   }, [school.id]);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
@@ -291,7 +293,10 @@ export function StudentReportView({
     };
   }, [title, location, locationId, locationDetail, buildingName, floor, department, grade, className, roomName, category, description, draftReady, completedReport, reportDraftKey]);
 
-  const completedSteps = [Boolean(location), Boolean(category), description.trim().length >= 5].filter(Boolean).length;
+  const descriptionBlanks = useMemo(() => findTemplateBlanks(description), [description]);
+  const descriptionReady = description.trim().length >= 5 && descriptionBlanks.length === 0;
+  const hasPlace = Boolean(locationId) || [locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].some((value) => value.trim());
+  const completedSteps = [Boolean(location), Boolean(category), descriptionReady].filter(Boolean).length;
   const completionPercent = Math.round((completedSteps / 3) * 100);
 
   // Detect whether form contains unsaved user input
@@ -405,13 +410,6 @@ export function StudentReportView({
     placeText: [locations.find((item) => item.id === locationId)?.name, locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].filter(Boolean).join(" "),
   }), [location, locationId, category, locations, locationDetail, buildingName, floor, className, roomName]);
 
-  // "다른 예시 보기 ↻" 버튼 클릭 시 새로운 예시 조합 랜덤 선택 (DB 저장 없음)
-  const handleRefreshExamples = () => {
-    const currentKeys = displayedExamples.map((ex) => ex.key);
-    const nextExamples = getRandomFormExamples(4, location, currentKeys, school, exampleLocationTypes);
-    setDisplayedExamples(nextExamples);
-  };
-
   const handleResetForm = () => {
     setTitle("");
     setLocation("");
@@ -427,10 +425,10 @@ export function StudentReportView({
     setSubmitError(null);
     setCompletedReport(null);
     setCompletedRecoveryCode(null);
-    setAutoFillNotice(false);
-    setSelectedExampleKey(null);
+    setAppliedExample(null);
+    setExampleUndo(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
-    setDisplayedExamples(getRandomFormExamples(4, undefined, [], school, exampleLocationTypes));
+    setExamplePanelKey((n) => n + 1);
     clearSessionDraft(reportDraftKey);
     setDraftSavedAt(null);
     setDraftRestored(false);
@@ -438,23 +436,76 @@ export function StudentReportView({
 
   // Called when user clicks an example recommendation button
   // Note: Form fields are auto-filled ONLY; NO database submission occurs.
-  const handleApplyExample = (example: FormExampleItem) => {
-    const exampleLocation = availableLocationTypes.some((item) => item.type === example.location) ? example.location : "기타";
-    setTitle(example.label);
-    setLocation(exampleLocation);
-    if (exampleLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
-    setLocationId("");
-    setLocationDetail(example.location);
-    setCategory(example.category);
-    setDescription(example.description);
-    setSelectedExampleKey(example.key);
+  // 예시를 연달아 바꿔 고를 때는 처음 예시를 고르기 전 내용으로 돌아가게 한다.
+  const undoSnapshot = (): ExampleSnapshot =>
+    appliedExample && exampleUndo && description === appliedExample.description
+      ? exampleUndo
+      : { title, location, locationId, locationDetail, department, grade, className, category, description };
+
+  const afterExampleChange = () => {
     resetClarify();
     clearFieldError("title");
     clearFieldError("location");
     clearFieldError("category");
     clearFieldError("description");
-    setAutoFillNotice(true);
   };
+
+  const handleApplyExample = (example: FormExampleItem) => {
+    setExampleUndo(undoSnapshot());
+    const exampleLocation = availableLocationTypes.some((item) => item.type === example.location) ? example.location : "기타";
+    setTitle(example.label);
+    if (exampleLocation !== location) {
+      // 장소 유형이 바뀌면 이전 유형에서 고른 세부 장소는 맞지 않는다 (장소 목록에서 바꿀 때와 같게).
+      setLocation(exampleLocation);
+      setLocationId("");
+      setLocationDetail("");
+      if (exampleLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
+    }
+    setCategory(example.category);
+    setDescription(example.description);
+    setAppliedExample({ key: example.key, label: example.label, location: exampleLocation, detailHint: example.detailHint, description: example.description });
+    afterExampleChange();
+  };
+
+  const handleFreeWrite = () => {
+    setExampleUndo(undoSnapshot());
+    setDescription(FREE_WRITING_TEMPLATE);
+    setAppliedExample({ key: "free", label: "직접 쓰기", location: "", detailHint: "", description: FREE_WRITING_TEMPLATE });
+    afterExampleChange();
+  };
+
+  const handleUndoExample = () => {
+    if (exampleUndo) {
+      setTitle(exampleUndo.title); setLocation(exampleUndo.location); setLocationId(exampleUndo.locationId); setLocationDetail(exampleUndo.locationDetail);
+      setDepartment(exampleUndo.department); setGrade(exampleUndo.grade); setClassName(exampleUndo.className);
+      setCategory(exampleUndo.category); setDescription(exampleUndo.description);
+    }
+    setAppliedExample(null);
+    setExampleUndo(null);
+    afterExampleChange();
+  };
+
+  const scrollToField = (el: HTMLElement | null) => {
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
+  /** 설명 칸에서 빈칸을 골라 둔다. 바로 타이핑하면 빈칸이 바뀐다. */
+  const selectBlank = (blank: TemplateBlank) => {
+    const el = descriptionRef.current;
+    if (!el) return;
+    scrollToField(el);
+    el.setSelectionRange(blank.start, blank.end);
+  };
+
+  const exampleTasks: ExampleTask[] = [
+    !location && { key: "location", label: "장소 고르기", onClick: () => scrollToField(locationRef.current) },
+    location && !hasPlace && { key: "place", label: "세부 위치 적기", onClick: () => scrollToField(detailInputRef.current) },
+    !category && { key: "category", label: "문제 종류 고르기", onClick: () => scrollToField(categoryRef.current) },
+    descriptionBlanks.length > 0 && { key: "blanks", label: `빈칸 ${descriptionBlanks.length}개 채우기`, onClick: () => selectBlank(descriptionBlanks[0]) },
+    descriptionBlanks.length === 0 && description.trim().length < 5 && { key: "description", label: "상황 설명 적기", onClick: () => scrollToField(descriptionRef.current) },
+  ].filter((task): task is ExampleTask => Boolean(task));
 
   const validateForm = (): boolean => {
     const errors: FieldErrors = {};
@@ -476,6 +527,8 @@ export function StudentReportView({
       errors.description = "문제 내용을 입력해주세요.";
     } else if (trimmedDesc.length < 5) {
       errors.description = `상황을 구체적으로 파악할 수 있도록 최소 5자 이상 작성해주세요. (현재 ${trimmedDesc.length}자)`;
+    } else if (descriptionBlanks.length > 0) {
+      errors.description = `예시의 [ ] 빈칸 ${descriptionBlanks.length}개를 실제 상황으로 바꿔 주세요.`;
     }
 
     setFieldErrors(errors);
@@ -490,6 +543,7 @@ export function StudentReportView({
         setGlobalError(errors.category);
       } else if (errors.description && descriptionRef.current) {
         descriptionRef.current.focus();
+        if (descriptionBlanks[0]) descriptionRef.current.setSelectionRange(descriptionBlanks[0].start, descriptionBlanks[0].end);
         setGlobalError(errors.description);
       }
       return false;
@@ -536,7 +590,8 @@ export function StudentReportView({
       resetClarify();
       setFieldErrors({});
       setGlobalError(null);
-      setAutoFillNotice(false);
+      setAppliedExample(null);
+      setExampleUndo(null);
       return;
     }
 
@@ -781,7 +836,7 @@ export function StudentReportView({
           </div>
         </div>
         <div className="mt-3 grid flex-1 grid-cols-3 gap-2 sm:mt-0">
-          {[{ label: "장소", done: Boolean(location) }, { label: "분류", done: Boolean(category) }, { label: "상황 설명", done: description.trim().length >= 5 }].map((step, index) => (
+          {[{ label: "장소", done: Boolean(location) }, { label: "분류", done: Boolean(category) }, { label: "상황 설명", done: descriptionReady }].map((step, index) => (
             <div key={step.label} className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold ${step.done ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"}`}>
               <span className={`flex h-5 w-5 items-center justify-center rounded-full ${step.done ? "bg-emerald-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200"}`}>{step.done ? <Check className="h-3 w-3" /> : index + 1}</span>
               {step.label}
@@ -815,47 +870,19 @@ export function StudentReportView({
           <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">새로운 제보</p><h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">신고 내용을 작성해 주세요</h2></div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800"><CloudCheck className="h-3.5 w-3.5" />{draftSavedAt ? "이 탭에 임시 저장됨" : "자동 임시저장"}</span>
         </div>
-        {/* 빠른 작성 예시 (랜덤 추천 및 다른 예시 보기) */}
-        <div className="mb-6 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-xs font-bold text-slate-900 tracking-tight">
-              빠른 작성 예시
-            </span>
-            <button
-              type="button"
-              onClick={handleRefreshExamples}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-blue-700 hover:bg-slate-200/70 active:scale-95 px-2.5 py-1 rounded-md transition cursor-pointer"
-              title="새로운 예시 추천 목록으로 새로고침"
-            >
-              <RotateCw className="h-3.5 w-3.5 text-slate-500" />
-              <span>다른 예시 보기</span>
-            </button>
-          </div>
-          <p className="text-xs text-slate-500 mb-3">
-            {school.schoolName}에 맞는 예시입니다. 선택하면 내용이 입력되며, 실제 상황에 맞게 수정한 뒤 접수해 주세요.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {displayedExamples.map((example) => {
-              const isSelected = selectedExampleKey === example.key;
-              return (
-                <button
-                  key={example.key}
-                  type="button"
-                  onClick={() => handleApplyExample(example)}
-                  aria-pressed={isSelected}
-                  className={`inline-flex items-center justify-center min-h-[38px] px-3.5 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
-                    isSelected
-                      ? "border-blue-600 bg-blue-50 text-blue-900 font-bold ring-1 ring-blue-600 shadow-2xs"
-                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-900 active:bg-slate-100"
-                  }`}
-                >
-                  {isSelected && <span className="mr-1.5 text-blue-600 font-bold">✓</span>}
-                  {example.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        {/* 빠른 작성 예시 */}
+        <QuickExamplePanel
+          key={`${school.id}:${examplePanelKey}:${exampleLocationTypes.length}`}
+          school={school}
+          availableLocations={exampleLocationTypes}
+          currentLocation={location}
+          icons={CATEGORY_ICONS}
+          applied={appliedExample && { key: appliedExample.key, label: appliedExample.label, canRestore: Boolean(exampleUndo && [exampleUndo.title, exampleUndo.locationDetail, exampleUndo.description].some((value) => value.trim())) }}
+          tasks={exampleTasks}
+          onApply={handleApplyExample}
+          onFreeWrite={handleFreeWrite}
+          onUndo={handleUndoExample}
+        />
 
         {/* 접수 안내 — 로그인이 없으므로 신고자 개인정보를 수집하지 않는다(§32) */}
         <div className="mb-6 p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center gap-2.5 text-xs">
@@ -871,32 +898,6 @@ export function StudentReportView({
             </p>
           </div>
         </div>
-
-        {/* Auto-fill Info Notice (Disappears when user edits or resets) */}
-        {autoFillNotice && (
-          <div
-            role="status"
-            className="mb-6 flex items-start justify-between gap-2.5 rounded-lg border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900"
-          >
-            <div className="flex items-start gap-2.5">
-              <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-semibold text-slate-900">예시 내용이 입력되었습니다.</p>
-                <p className="mt-0.5 text-slate-600">
-                  내용을 확인하고 수정한 후 제출해주세요.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAutoFillNotice(false)}
-              className="text-slate-400 hover:text-slate-700 p-1 rounded cursor-pointer"
-              aria-label="안내 닫기"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
 
         {/* Validation Summary Alert */}
         {globalError && (
@@ -1001,13 +1002,7 @@ export function StudentReportView({
                 setLocationDetail("");
                 if (newLoc !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
                 clearFieldError("location");
-                setAutoFillNotice(false);
-                setSelectedExampleKey(null);
                 resetClarify();
-                if (newLoc) {
-                  // 위치 선택 시 해당 장소와 연관된 예시를 우선 배치하는 스마트 추천
-                  setDisplayedExamples(getRandomFormExamples(4, newLoc, [], school, exampleLocationTypes));
-                }
               }}
               aria-invalid={Boolean(fieldErrors.location)}
               aria-describedby={fieldErrors.location ? "location-error" : undefined}
@@ -1049,13 +1044,14 @@ export function StudentReportView({
                 <span className="text-[11px] text-slate-400">{locationDetail.length}/150자</span>
               </div>
               <input
+                ref={detailInputRef}
                 id="field-location-detail"
                 type="text"
                 maxLength={150}
                 value={locationDetail}
                 disabled={Boolean(locationId)}
                 onChange={(e) => { setLocationDetail(e.target.value); clearFieldError("location"); }}
-                placeholder="예: 본관 동쪽 2층, 급식실 출입구 옆"
+                placeholder={appliedExample?.detailHint && appliedExample.location === location ? appliedExample.detailHint : "예: 본관 동쪽 2층, 급식실 출입구 옆"}
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
               <p className="mt-1.5 text-[11px] text-slate-500">
@@ -1099,7 +1095,6 @@ export function StudentReportView({
                     onClick={() => {
                       setCategory(cat);
                       clearFieldError("category");
-                      setAutoFillNotice(false);
                       resetClarify();
                     }}
                     className={`group flex min-h-14 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition sm:text-sm ${selected ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"} ${fieldErrors.category ? "border-rose-300" : ""}`}
@@ -1148,21 +1143,29 @@ export function StudentReportView({
               onChange={(e) => {
                 setDescription(e.target.value);
                 clearFieldError("description");
-                setAutoFillNotice(false);
                 resetClarify();
               }}
               placeholder="예: 2학년 3반 앞 복도 천장 형광등이 깜빡거리며 소음이 발생합니다. 교체 부탁드립니다."
               aria-invalid={Boolean(fieldErrors.description)}
-              aria-describedby={
-                fieldErrors.description ? "description-error" : undefined
-              }
+              aria-describedby={[fieldErrors.description && descriptionBlanks.length === 0 ? "description-error" : "", descriptionBlanks.length ? "description-blanks" : ""].filter(Boolean).join(" ") || undefined}
               className={`w-full min-h-[140px] rounded-lg border p-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed ${
                 fieldErrors.description
                   ? "border-rose-400 bg-rose-50/20 focus:border-rose-500 focus:ring-1 focus:ring-rose-400"
                   : "border-slate-300 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               }`}
             />
-            {fieldErrors.description && (
+            {descriptionBlanks.length > 0 && (
+              <div id="description-blanks" className={`mt-2 rounded-lg border px-3 py-2.5 text-xs ${fieldErrors.description ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-200 bg-amber-50/80 text-amber-900"}`}>
+                <p className="font-semibold">[ ] 빈칸 {descriptionBlanks.length}개를 실제 상황으로 바꿔 주세요.</p>
+                <p className="mt-0.5 opacity-80">빈칸을 누르면 그 부분이 선택돼서 바로 고쳐 쓸 수 있어요.</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {descriptionBlanks.map((blank) => (
+                    <button key={blank.start} type="button" onClick={() => selectBlank(blank)} className="min-h-[32px] rounded-full border border-current/20 bg-white px-3 py-1 font-bold hover:bg-amber-100">{blank.prompt}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {fieldErrors.description && descriptionBlanks.length === 0 && (
               <p
                 id="description-error"
                 className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-rose-600"

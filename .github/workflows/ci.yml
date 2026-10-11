@@ -41,6 +41,7 @@ jobs:
           npm run test:filter
           npm run test:report
           npm run test:ops
+          npm run test:examples
 
       - name: 종단 간 테스트 (로컬 저장소)
         run: npm run test:e2e
