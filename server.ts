@@ -38,14 +38,10 @@ import {
   checkRateLimit,
   failureLimit,
   LIMITS,
-  verifyAdminPassword,
-  isAdminPasswordConfigured,
   isStaffPasswordConfigured,
   verifyStaffPassword,
   isTeacherPasswordConfigured,
   verifyTeacherPassword,
-  issueDeleteToken,
-  consumeDeleteToken,
   issueOwnerToken,
   ownerTokenHashes,
   issueRecoveryCode,
@@ -77,7 +73,7 @@ import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
 import { RISK_LEVELS } from "./riskAnalysis";
-import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
 import { feedbackPending } from "./src/utils/feedback";
@@ -108,6 +104,10 @@ import {
   type StaffSession,
 } from "./staffAuth";
 import { buildReportPush, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./pushNotify";
+import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
+import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
+import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./backupStore";
+import { appendAudit, auditCategory, newAuditEntry, type AuditAction, type AuditCategory, type AuditEntry } from "./auditLog";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.
@@ -225,6 +225,11 @@ interface StoredReport {
   history?: ReportHistoryEntry[];
   /** Soft Delete — 값이 있으면 모든 공개 기능에서 제외된다. */
   deletedAt?: string | null;
+  /** 누가 지웠는지. 이 기능 전에 지운 신고에는 없다. */
+  deletedBy?: { name: string; role: string; accountId: string | null } | null;
+  deleteReason?: string | null;
+  /** 신고한 학생이 나중에 덧붙인 설명 (신고한 학생과 운영진·교사만 본다) */
+  followups?: ReportFollowup[];
   reviewedAt?: string | null;
   assignedAt?: string | null;
   scheduledAt?: string | null;
@@ -240,10 +245,34 @@ interface ReportHistoryEntry {
   actor: "staff" | "teacher" | "reporter" | "system";
   /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력과 신고자 이력에는 없다. */
   actorName?: string | null;
-  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup";
   from?: string | null;
   to?: string | null;
 }
+
+interface ReportFollowup {
+  id: string;
+  at: string;
+  text: string;
+  photos: StoredPhoto[];
+  /** 자동 안전성 검사에서 확인이 필요하다고 본 경우. 운영진 화면에 경고와 함께 보인다. */
+  held: boolean;
+  heldReason: string | null;
+}
+
+/** 삭제한 신고의 사진을 남겨 두는 기간. 이 안에는 되살리면 사진도 돌아온다. */
+const DELETED_PHOTO_RETENTION_DAYS = envNumber("DELETED_PHOTO_RETENTION_DAYS", 30);
+
+/** 숫자 환경변수. 비었거나 숫자가 아니거나 min 보다 작으면 기본값 */
+function envNumber(name: string, fallback: number, min = 0): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= min ? value : fallback;
+}
+/** 신고 하나에 덧붙일 수 있는 설명 수와 설명 하나의 사진 수 */
+const MAX_FOLLOWUPS = 10;
+const MAX_FOLLOWUP_PHOTOS = 3;
 
 /** 이력이 끝없이 늘어나지 않게 최근 것만 남긴다. */
 const MAX_HISTORY = 100;
@@ -281,7 +310,6 @@ const useSupabaseStore = Boolean(SUPABASE_URL && SUPABASE_API_KEY);
 const requireSupabaseStore = process.env.REQUIRE_SUPABASE_STORE === "true";
 let cachedReports: StoredReport[] = [];
 let cachedSchoolApplications: SchoolApplication[] = [];
-let storeWriteQueue: Promise<void> = Promise.resolve();
 
 function localReports(): StoredReport[] {
   try {
@@ -323,6 +351,12 @@ function localSchoolApplications(): SchoolApplication[] {
   }
 }
 
+class SupabaseRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
 async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${pathname}`, {
     ...init,
@@ -337,34 +371,118 @@ async function supabaseStoreRequest(pathname: string, init?: RequestInit): Promi
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    throw new Error(`Supabase 저장소 요청 실패 (${response.status}): ${detail.slice(0, 300)}`);
+    throw new SupabaseRequestError(response.status, `Supabase 저장소 요청 실패 (${response.status}): ${detail.slice(0, 300)}`);
   }
   return response;
 }
 
-type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters" | "settings" | "staff_accounts" | "staff_sessions" | "push_subscriptions";
+type StoreKey = "reports" | "school_applications" | "custom_schools" | "blocked_reporters" | "settings" | "staff_accounts" | "staff_sessions" | "push_subscriptions" | "audit_log";
+const STORE_KEYS: StoreKey[] = ["reports", "school_applications", "custom_schools", "blocked_reporters", "settings", "staff_accounts", "staff_sessions", "push_subscriptions", "audit_log"];
 
-async function readSupabaseDocument(key: StoreKey): Promise<unknown | null> {
-  const query = new URLSearchParams({ select: "key,payload", key: `eq.${key}`, limit: "1" });
+/** 문서별로 마지막으로 읽거나 쓴 버전(updated_at). 문서가 아직 없으면 null (storeSync.ts 참고) */
+const storeVersions = new Map<StoreKey, string | null>();
+
+async function readSupabaseDocument(key: StoreKey): Promise<{ payload: unknown[] | null; updatedAt: string | null }> {
+  const query = new URLSearchParams({ select: "key,payload,updated_at", key: `eq.${key}`, limit: "1" });
   const response = await supabaseStoreRequest(`schoolfix_store?${query.toString()}`);
-  const rows = await response.json() as Array<{ key?: string; payload?: unknown }>;
-  if (rows.length === 0) return null;
+  const rows = await response.json() as Array<{ key?: string; payload?: unknown; updated_at?: string }>;
+  if (rows.length === 0) return { payload: null, updatedAt: null };
   if (rows.length !== 1 || rows[0].key !== key || !Array.isArray(rows[0].payload)) {
     throw new Error(`Supabase의 ${key} 문서 형식이 올바르지 않습니다. 기존 데이터를 덮어쓰지 않도록 시작을 중단합니다.`);
   }
-  return rows[0].payload;
+  return { payload: rows[0].payload, updatedAt: rows[0].updated_at ?? null };
 }
 
-function queueSupabaseDocument(key: StoreKey, payload: unknown): Promise<void> {
-  const write = storeWriteQueue.then(async () => {
-    await supabaseStoreRequest("schoolfix_store?on_conflict=key", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({ key, payload, updated_at: new Date().toISOString() }),
+/**
+ * 문서를 쓴다. 마지막으로 읽은 버전이 그대로일 때만 쓰고, 그사이 다른 서버가 바꿨으면
+ * StoreConflictError 를 던진다. withDocLock 이 최신 문서를 다시 읽고 작업을 다시 실행한다.
+ */
+async function writeSupabaseDocument(key: StoreKey, payload: unknown): Promise<void> {
+  const version = storeVersions.get(key) ?? null;
+  const updatedAt = nextStoreVersion(version);
+  let rows: Array<{ updated_at?: string }>;
+  if (version) {
+    const query = new URLSearchParams({ key: `eq.${key}`, updated_at: `eq.${version}`, select: "updated_at" });
+    const response = await supabaseStoreRequest(`schoolfix_store?${query.toString()}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ payload, updated_at: updatedAt }),
     });
-  });
-  storeWriteQueue = write.catch(() => undefined);
-  return write;
+    rows = await response.json();
+    if (rows.length === 0) throw new StoreConflictError<StoreKey>(key);
+  } else {
+    // 문서가 아직 없을 때. 다른 서버가 먼저 만들었으면 중복 키(409)로 실패한다.
+    try {
+      const response = await supabaseStoreRequest("schoolfix_store?select=updated_at", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ key, payload, updated_at: updatedAt }),
+      });
+      rows = await response.json();
+    } catch (err) {
+      if (err instanceof SupabaseRequestError && err.status === 409) throw new StoreConflictError<StoreKey>(key);
+      throw err;
+    }
+  }
+  storeVersions.set(key, rows[0]?.updated_at ?? updatedAt);
+}
+
+/** 문서마다 작업을 하나씩 실행하고, 다른 서버와 충돌하면 최신 문서를 읽어 다시 실행한다. */
+const withDocLock = createDocLocks<StoreKey>((key) => refreshDocument(key));
+
+/** 저장소에서 문서를 다시 읽어 메모리에 반영한다. */
+async function refreshDocument(key: StoreKey) {
+  if (!useSupabaseStore) return;
+  const { payload, updatedAt } = await readSupabaseDocument(key);
+  storeVersions.set(key, updatedAt);
+  applyDocument(key, payload ?? []);
+}
+
+/** 저장소에서 읽은 문서를 메모리 캐시에 넣는다. */
+function applyDocument(key: StoreKey, payload: unknown[]) {
+  switch (key) {
+    case "reports": {
+      const defaultSchool = loadSchools()[0];
+      cachedReports = (payload as StoredReport[])
+        .filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id))
+        .map((report) => structuredClone(report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName }));
+      // 다른 서버가 바꾼 신고가 들어왔으니 AI 요약 캐시를 버린다.
+      summaryCache = null;
+      break;
+    }
+    case "school_applications": cachedSchoolApplications = (payload as SchoolApplication[]).map((item) => ({ ...item })); break;
+    case "custom_schools": cachedCustomSchools = (payload as SchoolCatalogEntry[]).map((item) => structuredClone(item)); break;
+    case "blocked_reporters": cachedBlockedReporters = (payload as BlockedReporter[]).map((item) => ({ ...item })); break;
+    case "settings": cachedSettings = (payload as NotificationSettings[]).map((item) => ({ ...item })); break;
+    case "staff_accounts": cachedStaffAccounts = (payload as StaffAccount[]).map((item) => ({ ...item })); break;
+    case "staff_sessions": staffSessions.syncFromRemote(payload); break;
+    case "push_subscriptions": cachedPushRecords = (payload as PushRecord[]).map((item) => ({ ...item })); break;
+    case "audit_log": cachedAudit = (payload as AuditEntry[]).map((item) => ({ ...item })); break;
+  }
+}
+
+/**
+ * 다른 서버가 바꾼 문서를 가져온다. 버전만 가볍게 확인하고, 바뀐 문서만 다시 읽는다.
+ * 배포 중 옛 서버에 들어온 신고가 새 서버 화면에 늦게라도 나타나게 한다.
+ */
+let syncing = false;
+async function syncFromStore() {
+  // Supabase 가 느려 이전 확인이 아직 끝나지 않았으면 겹쳐 돌리지 않는다.
+  if (!useSupabaseStore || syncing) return;
+  syncing = true;
+  try {
+    const response = await supabaseStoreRequest("schoolfix_store?select=key,updated_at");
+    const rows = await response.json() as Array<{ key: string; updated_at: string }>;
+    for (const row of rows) {
+      const key = row.key as StoreKey;
+      if (!STORE_KEYS.includes(key) || storeVersions.get(key) === row.updated_at) continue;
+      await withDocLock(key, async () => {
+        if (storeVersions.get(key) !== row.updated_at) await refreshDocument(key);
+      });
+    }
+  } finally {
+    syncing = false;
+  }
 }
 
 async function initializeDataStore() {
@@ -382,7 +500,8 @@ async function initializeDataStore() {
     staffSessions.load(readLocalArray<StaffSession>(STAFF_SESSIONS_FILE, "staff-sessions"));
     return;
   }
-  if (!/^https:\/\//i.test(SUPABASE_URL)) {
+  // 로컬 개발용 Supabase(CLI, http://127.0.0.1:54321)와 테스트용 흉내 서버만 http 를 허용한다.
+  if (!/^https:\/\//i.test(SUPABASE_URL) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(SUPABASE_URL)) {
     throw new Error("SUPABASE_URL은 HTTPS 주소여야 합니다.");
   }
   // 대시보드 주소(supabase.com/dashboard/...)나 경로가 남은 주소는 REST 요청이 404(PGRST125)로 실패한다.
@@ -416,43 +535,41 @@ async function initializeDataStore() {
     }
   }
 
-  const [remoteReports, remoteApplications, remoteCustomSchools, remoteBlocked, remoteSettings, remoteAccounts, remoteSessions, remotePush] = await Promise.all([
-    readSupabaseDocument("reports"),
-    readSupabaseDocument("school_applications"),
-    readSupabaseDocument("custom_schools"),
-    readSupabaseDocument("blocked_reporters"),
-    readSupabaseDocument("settings"),
-    readSupabaseDocument("staff_accounts"),
-    readSupabaseDocument("staff_sessions"),
-    readSupabaseDocument("push_subscriptions"),
-  ]);
+  const documents = await Promise.all(STORE_KEYS.map(async (key) => ({ key, ...(await readSupabaseDocument(key)) })));
   // 나중에 추가된 문서들은 처음 쓸 때 만든다. 테이블 제약(supabase/schema.sql)을 아직 갱신하지 않은
   // 배포에서도 서버가 시작은 되도록, 시작 시점에는 쓰지 않는다.
-  cachedCustomSchools = Array.isArray(remoteCustomSchools) ? (remoteCustomSchools as SchoolCatalogEntry[]) : [];
-  cachedBlockedReporters = Array.isArray(remoteBlocked) ? (remoteBlocked as BlockedReporter[]) : [];
-  cachedSettings = Array.isArray(remoteSettings) ? (remoteSettings as NotificationSettings[]) : [];
-  cachedStaffAccounts = Array.isArray(remoteAccounts) ? (remoteAccounts as StaffAccount[]) : [];
-  cachedPushRecords = Array.isArray(remotePush) ? (remotePush as PushRecord[]) : [];
-  staffSessions.load(remoteSessions);
+  for (const { key, payload, updatedAt } of documents) {
+    storeVersions.set(key, updatedAt);
+    if (key === "staff_sessions") staffSessions.load(payload ?? []);
+    else if (key !== "reports" && key !== "school_applications") applyDocument(key, payload ?? []);
+  }
+  const remoteReports = documents.find((doc) => doc.key === "reports")?.payload ?? null;
+  const remoteApplications = documents.find((doc) => doc.key === "school_applications")?.payload ?? null;
   const reports = Array.isArray(remoteReports) ? remoteReports as StoredReport[] : localReports();
   const applications = Array.isArray(remoteApplications) ? remoteApplications as SchoolApplication[] : localSchoolApplications();
-  const defaultSchool = loadSchools()[0];
-  const realReports = reports
-    .filter((report) => !LEGACY_SAMPLE_REPORT_IDS.has(report.id))
-    .map((report) => report.schoolId || !defaultSchool ? report : { ...report, schoolId: defaultSchool.id, schoolName: defaultSchool.schoolName });
-  cachedReports = realReports.map((report) => structuredClone(report));
-  cachedSchoolApplications = applications.map((application) => ({ ...application }));
+  applyDocument("reports", reports);
+  applyDocument("school_applications", applications);
+  const realCount = cachedReports.length;
 
   // 첫 연결 시에는 기존 data/ JSON을 가져오고, 이후에는 Supabase를 기준 저장소로 삼습니다.
-  if (!Array.isArray(remoteReports) || realReports.length !== reports.length) {
-    if (!Array.isArray(remoteReports)) console.log(`[store] Supabase reports 문서가 없어 로컬 데이터 ${realReports.length}건을 가져옵니다.`);
-    await queueSupabaseDocument("reports", realReports);
+  // 다른 서버가 같은 순간 먼저 가져왔으면(충돌) 그쪽 내용을 그대로 쓴다.
+  const importDocument = async (key: StoreKey, payload: unknown[]) => {
+    try {
+      await writeSupabaseDocument(key, payload);
+    } catch (err) {
+      if (!(err instanceof StoreConflictError)) throw err;
+      await refreshDocument(key);
+    }
+  };
+  if (!Array.isArray(remoteReports) || realCount !== reports.length) {
+    if (!Array.isArray(remoteReports)) console.log(`[store] Supabase reports 문서가 없어 로컬 데이터 ${realCount}건을 가져옵니다.`);
+    await importDocument("reports", cachedReports);
   }
   if (!Array.isArray(remoteApplications)) {
     console.log(`[store] Supabase school_applications 문서가 없어 로컬 데이터 ${applications.length}건을 가져옵니다.`);
-    await queueSupabaseDocument("school_applications", applications);
+    await importDocument("school_applications", cachedSchoolApplications);
   }
-  console.log(`[store] Supabase 연결 완료: 신고 ${realReports.length}건, 학교 신청 ${applications.length}건`);
+  console.log(`[store] Supabase 연결 완료: 신고 ${cachedReports.length}건, 학교 신청 ${cachedSchoolApplications.length}건`);
 }
 
 function loadAllReports(): StoredReport[] {
@@ -497,6 +614,8 @@ interface NotificationSettings {
   monthly: boolean;
   /** 마지막으로 자동 발송한 월간 보고의 대상 월 "YYYY-MM" */
   lastMonthlyReport: string | null;
+  /** 이미 적용한 총괄 비상 복구(OWNER_RESET_*)의 지문. 재시작할 때마다 다시 적용하지 않게 한다. */
+  ownerResetApplied?: string | null;
 }
 
 const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = { allReports: true, urgent: true, applications: true, monthly: true, lastMonthlyReport: null };
@@ -508,7 +627,7 @@ function loadNotificationSettings(): NotificationSettings {
 
 async function saveNotificationSettings(settings: NotificationSettings) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("settings", [settings]);
+    await writeSupabaseDocument("settings", [settings]);
     cachedSettings = [{ ...settings }];
     return;
   }
@@ -542,7 +661,7 @@ function loadCustomSchools(): SchoolCatalogEntry[] {
 
 async function saveCustomSchools(list: SchoolCatalogEntry[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("custom_schools", list);
+    await writeSupabaseDocument("custom_schools", list);
     cachedCustomSchools = list.map((school) => structuredClone(school));
     return;
   }
@@ -558,7 +677,7 @@ function loadBlockedReporters(): BlockedReporter[] {
 
 async function saveBlockedReporters(list: BlockedReporter[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("blocked_reporters", list);
+    await writeSupabaseDocument("blocked_reporters", list);
     cachedBlockedReporters = list.map((entry) => ({ ...entry }));
     return;
   }
@@ -580,7 +699,7 @@ function loadStaffAccounts(): StaffAccount[] {
 
 async function saveStaffAccounts(list: StaffAccount[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("staff_accounts", list);
+    await writeSupabaseDocument("staff_accounts", list);
     cachedStaffAccounts = list.map((account) => ({ ...account }));
     return;
   }
@@ -588,20 +707,26 @@ async function saveStaffAccounts(list: StaffAccount[]) {
 }
 
 /** 계정 목록의 "읽기 → 수정 → 저장" 을 하나씩 실행한다. 동시에 두 계정을 만들어도 한쪽이 사라지지 않게 한다. */
-let accountsLock: Promise<unknown> = Promise.resolve();
 function withAccountsLock<T>(task: () => Promise<T>): Promise<T> {
-  const run = accountsLock.then(task, task);
-  accountsLock = run.catch(() => undefined);
-  return run;
+  return withDocLock("staff_accounts", task);
 }
 
-/** 로그인 세션 — 해시만 저장소에 남긴다 (staffAuth.ts) */
-const staffSessions = new SessionStore(async (sessions) => {
-  if (useSupabaseStore) {
-    await queueSupabaseDocument("staff_sessions", sessions);
-    return;
-  }
-  writeLocalArray(STAFF_SESSIONS_FILE, sessions);
+/**
+ * 로그인 세션 — 해시만 저장소에 남긴다 (staffAuth.ts).
+ * 저장할 목록은 차례가 왔을 때 snapshot() 으로 다시 뜬다. 그래서 차례를 기다리는 저장이 이미 있으면
+ * 하나 더 줄 세우지 않는다. 다른 서버와 충돌하면 그쪽 목록과 합친 뒤 다시 저장한다.
+ */
+let sessionWriteQueued = false;
+const staffSessions = new SessionStore(async () => {
+  if (sessionWriteQueued) return;
+  sessionWriteQueued = true;
+  await withDocLock("staff_sessions", async () => {
+    sessionWriteQueued = false;
+    const snapshot = staffSessions.snapshot();
+    if (useSupabaseStore) await writeSupabaseDocument("staff_sessions", snapshot);
+    else writeLocalArray(STAFF_SESSIONS_FILE, snapshot);
+    staffSessions.markPersisted(snapshot);
+  }).finally(() => { sessionWriteQueued = false; });
 });
 
 function loadPushRecords(): PushRecord[] {
@@ -611,18 +736,49 @@ function loadPushRecords(): PushRecord[] {
 
 async function savePushRecords(list: PushRecord[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("push_subscriptions", list);
+    await writeSupabaseDocument("push_subscriptions", list);
     cachedPushRecords = list.map((record) => ({ ...record }));
     return;
   }
   writeLocalArray(PUSH_SUBSCRIPTIONS_FILE, list);
 }
 
-let pushLock: Promise<unknown> = Promise.resolve();
 function withPushLock<T>(task: () => Promise<T>): Promise<T> {
-  const run = pushLock.then(task, task);
-  pushLock = run.catch(() => undefined);
-  return run;
+  return withDocLock("push_subscriptions", task);
+}
+
+// --- 운영 기록 (auditLog.ts) ------------------------------------------------------
+
+const AUDIT_FILE = path.join(DATA_DIR, "audit_log.json");
+let cachedAudit: AuditEntry[] = [];
+let auditWarned = false;
+
+function loadAudit(): AuditEntry[] {
+  return useSupabaseStore ? cachedAudit.map((entry) => ({ ...entry })) : readLocalArray<AuditEntry>(AUDIT_FILE, "audit-log");
+}
+
+async function saveAudit(list: AuditEntry[]) {
+  if (useSupabaseStore) {
+    await writeSupabaseDocument("audit_log", list);
+    cachedAudit = list.map((entry) => ({ ...entry }));
+    return;
+  }
+  writeLocalArray(AUDIT_FILE, list);
+}
+
+/**
+ * 중요한 일을 운영 기록에 남긴다. 응답을 기다리지 않는다 — 기록에 실패해도 그 일 자체는 막지 않는다.
+ * actor 가 null 이면 시스템이 한 일(자동 백업 등)이다.
+ */
+function audit(actor: StaffSession | null, action: AuditAction, target: string | null = null, detail: string | null = null) {
+  const entry = newAuditEntry(action, actor ? { name: actor.name, role: actor.role, accountId: actor.accountId } : null, target, detail);
+  void withDocLock("audit_log", async () => {
+    await saveAudit(appendAudit(loadAudit(), entry));
+  }).catch((err) => {
+    if (auditWarned) return;
+    auditWarned = true;
+    console.error("[audit] 운영 기록을 저장하지 못했습니다 (supabase/schema.sql 갱신 필요할 수 있음):", err instanceof Error ? err.message : err);
+  });
 }
 
 /**
@@ -656,7 +812,7 @@ function deviceHash(token: unknown, purpose: "reporter" | "metoo"): string | nul
 
 async function saveSchoolApplications(applications: SchoolApplication[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("school_applications", applications);
+    await writeSupabaseDocument("school_applications", applications);
     cachedSchoolApplications = applications.map((application) => structuredClone(application));
     return;
   }
@@ -712,17 +868,15 @@ async function moderateReport(title: string, description: string, images: string
  * 저장은 전체 목록을 통째로 덮어쓰므로, 두 요청이 같은 스냅샷을 읽고 각자 저장하면
  * 먼저 저장한 쪽의 변경(새 신고·상태 변경)이 사라지고 접수번호도 중복된다.
  * 잠금 안에서는 OpenAI 호출처럼 오래 걸리는 작업을 하지 않는다.
+ * 다른 서버(배포 중 옛 서버)가 그사이 목록을 바꿨으면 최신 목록을 읽어 작업을 다시 실행한다.
  */
-let reportsLock: Promise<unknown> = Promise.resolve();
 function withReportsLock<T>(task: () => Promise<T>): Promise<T> {
-  const run = reportsLock.then(task, task);
-  reportsLock = run.catch(() => undefined);
-  return run;
+  return withDocLock("reports", task);
 }
 
 async function saveReports(reports: StoredReport[]) {
   if (useSupabaseStore) {
-    await queueSupabaseDocument("reports", reports);
+    await writeSupabaseDocument("reports", reports);
     cachedReports = reports.map((report) => structuredClone(report));
     return;
   }
@@ -875,6 +1029,8 @@ function toMyReport(r: StoredReport) {
     reporterReply: r.reporterReply ?? null,
     reporterReplyAt: r.reporterReplyAt ?? null,
     feedback: r.feedback ?? null,
+    // 내가 덧붙인 설명. 사진은 운영진만 열 수 있어 장수만 알려 준다.
+    followups: (r.followups ?? []).map((followup) => ({ id: followup.id, at: followup.at, text: followup.text, photoCount: followup.photos.length })),
   };
 }
 
@@ -891,6 +1047,14 @@ function toStaffReport(r: StoredReport, all: StoredReport[], blocked: BlockedRep
     reporterReply: r.reporterReply ?? null,
     reporterReplyAt: r.reporterReplyAt ?? null,
     feedback: r.feedback ?? null,
+    followups: (r.followups ?? []).map((followup) => ({
+      id: followup.id,
+      at: followup.at,
+      text: followup.text,
+      held: followup.held,
+      heldReason: followup.heldReason,
+      photos: followup.photos.map((photo) => ({ url: `/api/photos/${photo.id}`, name: photo.name, size: photo.size })),
+    })),
     history: r.history ?? [],
     reporter: {
       /** 같은 기기에서 접수된 신고 수 (이 신고 포함). 기기 정보가 없으면 0 */
@@ -1083,7 +1247,7 @@ async function maybeSendMonthlyReport(now = Date.now()) {
     const sent = await sendMonthlyNotification(target, summarizeMonth(target), publicBaseUrl());
     if (!sent) return;
     monthlySentInProcess = target;
-    await saveNotificationSettings({ ...loadNotificationSettings(), lastMonthlyReport: target }).catch((err) => {
+    await withDocLock("settings", () => saveNotificationSettings({ ...loadNotificationSettings(), lastMonthlyReport: target })).catch((err) => {
       console.error("[notify] 월간 보고 발송 기록 저장 실패 (supabase/schema.sql 갱신 필요할 수 있음):", err instanceof Error ? err.message : err);
     });
     console.log(`[notify] ${target} 월간 보고를 보냈습니다.`);
@@ -1208,10 +1372,19 @@ app.get("/api/photos/:month/:file", async (req, res) => {
   if (!PHOTO_ID_PATTERN.test(id)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
   // 사진마다 전체 목록을 복제하지 않도록 저장소 원본을 읽기만 한다.
   const raw = useSupabaseStore ? cachedReports : localReports();
-  const report = raw.find((r) => r.photos?.some((photo) => photo.id === id));
+  let report = raw.find((r) => r.photos?.some((photo) => photo.id === id));
+  let isPublic = Boolean(report) && report?.moderationStatus !== "held";
+  const viewer = sessionOf(req);
+  // 공개 보류 신고의 사진은 운영진만 본다.
+  let canSeePrivate = Boolean(viewer && viewer.role !== "teacher");
+  if (!report) {
+    // 학생이 나중에 덧붙인 설명의 사진은 공개하지 않는다. 그 학교를 맡은 운영진·교사만 본다.
+    report = raw.find((r) => r.followups?.some((followup) => followup.photos?.some((photo) => photo.id === id)));
+    isPublic = false;
+    canSeePrivate = Boolean(viewer && report && (viewer.role !== "teacher" || viewer.schoolId === report.schoolId));
+  }
   if (!report || report.deletedAt) return safeError(res, 404, "사진을 찾을 수 없습니다.");
-  const isPublic = report.moderationStatus !== "held";
-  if (!isPublic && !staffSessionOf(req)) return safeError(res, 404, "사진을 찾을 수 없습니다.");
+  if (!isPublic && !canSeePrivate) return safeError(res, 404, "사진을 찾을 수 없습니다.");
 
   try {
     let buffer = photoCache.get(id);
@@ -1268,7 +1441,7 @@ app.post("/api/school-applications", rateLimit("schoolApplication", { windowMs: 
     status: "new", createdAt: now, updatedAt: now,
   };
   try {
-    await saveSchoolApplications([application, ...loadSchoolApplications()]);
+    await withDocLock("school_applications", () => saveSchoolApplications([application, ...loadSchoolApplications()]));
   } catch {
     return safeError(res, 500, "신청을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
@@ -1352,6 +1525,25 @@ function historyActor(session: StaffSession): Pick<ReportHistoryEntry, "actor" |
   return { actor: session.role === "teacher" ? "teacher" : "staff", actorName: session.name };
 }
 
+/**
+ * 신고를 지우는 일(삭제·장난 신고 처리·검토 대기 신고 삭제·영구 삭제)은 개인 계정으로만 한다.
+ * 공용 비밀번호로 지우면 누가 지웠는지 알 수 없기 때문이다.
+ */
+function requirePersonalAccount(session: StaffSession, res: express.Response): boolean {
+  if (session.accountId) return true;
+  safeError(res, 403, "신고를 지우는 일은 개인 계정으로 로그인해야 할 수 있습니다. '계정 관리'에서 내 계정을 만들어 로그인해주세요.");
+  return false;
+}
+
+function deletedByOf(session: StaffSession): StoredReport["deletedBy"] {
+  return { name: session.name, role: session.role, accountId: session.accountId };
+}
+
+/** 신고에 딸린 사진 전부 (본문 + 학생이 덧붙인 설명) */
+function allPhotosOf(report: StoredReport): StoredPhoto[] {
+  return [...(report.photos ?? []), ...(report.followups ?? []).flatMap((followup) => followup.photos ?? [])];
+}
+
 function sessionPayload(session: StaffSession) {
   return {
     ok: true,
@@ -1373,6 +1565,13 @@ function startSession(req: express.Request, res: express.Response, data: Omit<St
   const token = staffSessions.create(data);
   setSessionCookie(res, token);
   return staffSessions.get(token) as StaffSession;
+}
+
+/** 로그인 성공 — 세션을 시작하고 운영 기록에 남긴다. */
+function loginResponse(req: express.Request, res: express.Response, data: Omit<StaffSession, "tokenHash" | "createdAt" | "expiresAt">) {
+  const session = startSession(req, res, data);
+  audit(session, "login", session.schoolId ? findSchool(session.schoolId)?.schoolName ?? session.schoolId : null);
+  return res.json(sessionPayload(session));
 }
 
 /**
@@ -1439,12 +1638,12 @@ app.post("/api/staff/login", loginGate, async (req, res) => {
     if (!await verifyStaffPassword(req.body?.password)) {
       return loginFailed(req, res, username ? "아이디 또는 비밀번호가 올바르지 않습니다." : "비밀번호가 올바르지 않습니다.");
     }
-    return res.json(sessionPayload(startSession(req, res, { role: "admin", accountId: null, name: "공용 운영진 계정", schoolId: null })));
+    return loginResponse(req, res, { role: "admin", accountId: null, name: "공용 운영진 계정", schoolId: null });
   }
   const account = await verifyAccountLogin(username, req.body?.password);
   if (!account) return loginFailed(req, res, "아이디 또는 비밀번호가 올바르지 않습니다.");
   touchLastLogin(account.id);
-  return res.json(sessionPayload(startSession(req, res, accountSession(account))));
+  return loginResponse(req, res, accountSession(account));
 });
 
 /**
@@ -1461,11 +1660,11 @@ app.post("/api/staff/teacher-login", loginGate, async (req, res) => {
     if (!account) return loginFailed(req, res, "아이디 또는 비밀번호가 올바르지 않습니다.");
     if (account.role === "teacher" && account.schoolId !== school.id) return safeError(res, 403, "다른 학교의 교사 계정입니다. 소속 학교를 선택한 뒤 로그인해주세요.");
     touchLastLogin(account.id);
-    return res.json(sessionPayload(startSession(req, res, accountSession(account))));
+    return loginResponse(req, res, accountSession(account));
   }
   if (!isTeacherPasswordConfigured(school.id)) return safeError(res, 503, "이 학교의 교사 공용 비밀번호가 설정되지 않았습니다. 개인 계정이 있으면 아이디를 입력해주세요.");
   if (!await verifyTeacherPassword(req.body?.password, school.id)) return loginFailed(req, res, "학교 비밀번호가 올바르지 않습니다.");
-  return res.json(sessionPayload(startSession(req, res, { role: "teacher", accountId: null, name: `${school.schoolName} 교사(공용)`, schoolId: school.id })));
+  return loginResponse(req, res, { role: "teacher", accountId: null, name: `${school.schoolName} 교사(공용)`, schoolId: school.id });
 });
 
 app.post("/api/staff/logout", (req, res) => {
@@ -1499,6 +1698,7 @@ app.post("/api/staff/me/password", loginGate, async (req, res) => {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
   staffSessions.revokeAccount(session.accountId, readSessionToken(req));
+  audit(session, "account.password_change", current.username);
   return res.json({ ok: true });
 });
 
@@ -1517,6 +1717,20 @@ function manageDeniedMessage(target: StaffAccount): string {
     ? "총괄 계정은 다른 사람이 바꾸거나 끄거나 지울 수 없습니다. 총괄 본인은 '내 비밀번호'에서 비밀번호를 바꿀 수 있습니다."
     : "관리자 계정은 총괄만 바꿀 수 있습니다.";
 }
+
+/**
+ * 운영 기록 (관리자). 최근 것부터 보여 준다. category 로 거르고, before(시각)로 이전 기록을 이어 받는다.
+ */
+app.get("/api/staff/audit", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const category = typeof req.query.category === "string" ? req.query.category : "all";
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const before = typeof req.query.before === "string" ? req.query.before : null;
+  let list = loadAudit();
+  if (["login", "account", "report", "backup", "etc"].includes(category)) list = list.filter((entry) => auditCategory(entry.action) === (category as AuditCategory));
+  if (before) list = list.filter((entry) => entry.at < before);
+  return res.json({ ok: true, data: list.slice(0, limit), hasMore: list.length > limit });
+});
 
 /** 계정 목록 (관리자). 교사 계정의 학교를 고를 수 있도록 지원 학교 목록도 함께 준다. */
 app.get("/api/staff/accounts", (req, res) => {
@@ -1562,6 +1776,7 @@ app.post("/api/staff/accounts", async (req, res) => {
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+  audit(session, "account.create", account.username, `${account.displayName} · ${ROLE_LABEL[account.role]}${account.schoolId ? ` · ${findSchool(account.schoolId)?.schoolName ?? account.schoolId}` : ""}`);
   return res.status(201).json({ ok: true, data: publicAccount(account) });
 });
 
@@ -1583,12 +1798,13 @@ app.patch("/api/staff/accounts/:id", async (req, res) => {
   }
   const passwordHash = password !== undefined ? await bcrypt.hash(password, 12) : undefined;
 
-  let result: { error: number; message: string } | { account: StaffAccount; endSessions: boolean };
+  let result: { error: number; message: string } | { account: StaffAccount; endSessions: boolean; changes: Array<[AuditAction, string | null]> };
   try {
     result = await withAccountsLock(async () => {
       const list = loadStaffAccounts();
       const account = list.find((item) => item.id === req.params.id);
       if (!account) return { error: 404, message: "계정을 찾을 수 없습니다." };
+      const before = { ...account };
       const ownerExists = hasOwner(list);
       if (!canManageAccount(admin.role, account, ownerExists)) return { error: 403, message: manageDeniedMessage(account) };
       if (role && role !== account.role && !assignableRoles(admin.role, ownerExists).includes(role)) {
@@ -1608,7 +1824,17 @@ app.patch("/api/staff/accounts/:id", async (req, res) => {
       account.updatedAt = new Date().toISOString();
       if (leavesNoAdmin(list)) return { error: 400, message: "켜진 관리자 계정이 하나는 있어야 합니다. 다른 관리자 계정을 먼저 만들어주세요." };
       await saveStaffAccounts(list);
-      return { account, endSessions };
+      // 운영 기록에 남길 변경 내용
+      const changes: Array<[AuditAction, string | null]> = [];
+      if (before.disabled !== account.disabled) changes.push([account.disabled ? "account.disable" : "account.enable", null]);
+      if (passwordHash !== undefined) changes.push(["account.password_reset", null]);
+      const updates = [
+        before.displayName !== account.displayName ? `이름 ${before.displayName} → ${account.displayName}` : null,
+        before.role !== account.role ? `역할 ${ROLE_LABEL[before.role]} → ${ROLE_LABEL[account.role]}` : null,
+        before.schoolId !== account.schoolId && account.schoolId ? `학교 → ${findSchool(account.schoolId)?.schoolName ?? account.schoolId}` : null,
+      ].filter(Boolean).join(", ");
+      if (updates) changes.push(["account.update", updates]);
+      return { account, endSessions, changes };
     });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
@@ -1616,6 +1842,7 @@ app.patch("/api/staff/accounts/:id", async (req, res) => {
   if ("error" in result) return safeError(res, result.error, result.message);
   if (result.endSessions) staffSessions.revokeAccount(result.account.id);
   else staffSessions.renameAccount(result.account.id, result.account.displayName, result.account.role, result.account.schoolId);
+  for (const [action, detail] of result.changes) audit(admin, action, result.account.username, detail);
   return res.json({ ok: true, data: publicAccount(result.account) });
 });
 
@@ -1623,7 +1850,7 @@ app.delete("/api/staff/accounts/:id", async (req, res) => {
   const admin = requireAdmin(req, res);
   if (!admin) return;
   if (req.params.id === admin.accountId) return safeError(res, 400, "지금 로그인한 자기 계정은 삭제할 수 없습니다.");
-  let result: "ok" | 404 | 400 | { denied: string };
+  let result: { deleted: StaffAccount } | 404 | 400 | { denied: string };
   try {
     result = await withAccountsLock(async () => {
       const list = loadStaffAccounts();
@@ -1633,15 +1860,16 @@ app.delete("/api/staff/accounts/:id", async (req, res) => {
       const remaining = list.filter((item) => item.id !== req.params.id);
       if (leavesNoAdmin(remaining)) return 400;
       await saveStaffAccounts(remaining);
-      return "ok";
+      return { deleted: target };
     });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
   if (result === 404) return safeError(res, 404, "계정을 찾을 수 없습니다.");
   if (result === 400) return safeError(res, 400, "켜진 관리자 계정이 하나는 있어야 합니다. 다른 관리자 계정을 먼저 만들어주세요.");
-  if (typeof result === "object") return safeError(res, 403, result.denied);
+  if ("denied" in result) return safeError(res, 403, result.denied);
   staffSessions.revokeAccount(req.params.id);
+  audit(admin, "account.delete", result.deleted.username, `${result.deleted.displayName} · ${ROLE_LABEL[result.deleted.role]}`);
   return res.json({ ok: true });
 });
 
@@ -1682,47 +1910,174 @@ app.post("/api/staff/accounts/:id/owner", async (req, res) => {
   // 열려 있는 세션의 역할도 바로 바꾼다. 다시 로그인하지 않아도 새 권한이 적용된다.
   staffSessions.renameAccount(result.owner.id, result.owner.displayName, "owner", null);
   if (result.previous) staffSessions.renameAccount(result.previous.id, result.previous.displayName, "admin", null);
+  audit(session, result.previous ? "owner.transfer" : "owner.designate", result.owner.username, result.previous ? `${result.previous.displayName} → ${result.owner.displayName}` : result.owner.displayName);
   return res.json({ ok: true, data: publicAccount(result.owner), previousOwner: result.previous ? publicAccount(result.previous) : null });
 });
 
-/**
- * 전체 백업 (관리자). 저장소의 모든 문서를 JSON 파일 하나로 내려받는다.
- * 비밀번호 해시·로그인 세션·알림 구독 주소는 넣지 않는다. 계정은 복원 후 비밀번호를 다시 정해야 한다.
- * photos=1 이면 사진을 data URL 로 함께 담는다. 사진이 많으면 커지므로 한 장씩 흘려 보낸다.
- */
-app.get("/api/staff/backup", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const withPhotos = req.query.photos === "1";
+// ---------------------------------------------------------------------------
+// 백업 (backupStore.ts)
+//
+// 백업 파일에는 저장소 문서를 그대로 담는다. 비밀번호 해시·로그인 세션·학생 알림 구독은 넣지 않는다.
+// 신고의 소유 토큰·기기 해시는 원본이 아니라 해시라서 넣는다(되돌렸을 때 "내 신고" 가 그대로 이어지게).
+// ---------------------------------------------------------------------------
+
+const BACKUP_BUCKET = process.env.SUPABASE_BACKUP_BUCKET?.trim() || "schoolfix-backups";
+const backupStore: BackupStore = useSupabaseStore
+  ? supabaseBackupStore(SUPABASE_URL, SUPABASE_API_KEY, !SUPABASE_SECRET_KEY, BACKUP_BUCKET)
+  : localBackupStore(path.join(DATA_DIR, "backups"));
+let backupStoreReady = false;
+
+async function ensureBackupStore() {
+  if (!backupStoreReady) {
+    await backupStore.init();
+    backupStoreReady = true;
+  }
+}
+
+/** 지금 저장소 상태를 백업 형태로 뜬다 (사진 제외). */
+function buildBackupSnapshot(kind: string) {
   const reports = loadAllReports();
-  const exportedAt = new Date().toISOString();
-  const head = {
+  const applications = loadSchoolApplications();
+  return {
     meta: {
       app: "schoolfix",
       format: 1,
-      exportedAt,
+      kind,
+      exportedAt: new Date().toISOString(),
       dataStore: useSupabaseStore ? "supabase" : "local-json",
-      counts: { reports: reports.length, schoolApplications: loadSchoolApplications().length },
-      includesPhotos: withPhotos,
+      counts: { reports: reports.length, schoolApplications: applications.length },
+      includesPhotos: false,
       note: "비밀번호 해시, 로그인 세션, 학생 알림 구독은 포함하지 않습니다.",
     },
     reports,
-    schoolApplications: loadSchoolApplications(),
+    schoolApplications: applications,
     customSchools: loadCustomSchools(),
     blockedReporters: loadBlockedReporters(),
     settings: loadNotificationSettings(),
     staffAccounts: loadStaffAccounts().map(publicAccount),
   };
+}
+
+/** 백업을 보관소에 저장하고, 종류별로 오래된 것을 정리한다. */
+async function createStoredBackup(kind: BackupKind): Promise<BackupInfo> {
+  await ensureBackupStore();
+  const name = backupName(kind);
+  const body = JSON.stringify(buildBackupSnapshot(kind));
+  await backupStore.put(name, body);
+  try {
+    const expired = expiredBackups(await backupStore.list(kind), BACKUP_KEEP[kind]);
+    if (expired.length) await backupStore.remove(expired);
+  } catch (err) {
+    console.error("[backup] 오래된 백업 정리 실패:", err instanceof Error ? err.message : err);
+  }
+  return { name, size: Buffer.byteLength(body), createdAt: new Date().toISOString() };
+}
+
+/** 오늘(한국 날짜) 자동 백업이 없으면 만든다. 서버가 잠들어 있었으면 깨어날 때 만든다. */
+let lastAutoBackupDate: string | null = null;
+async function maybeAutoBackup() {
+  const today = kstDate();
+  if (lastAutoBackupDate === today) return;
+  await ensureBackupStore();
+  const existing = await backupStore.list("auto");
+  if (!existing.some((item) => item.name === backupName("auto"))) {
+    const info = await createStoredBackup("auto");
+    audit(null, "backup.auto", info.name);
+    console.log(`[backup] 자동 백업을 만들었습니다: ${info.name}`);
+  }
+  lastAutoBackupDate = today;
+}
+
+/**
+ * 삭제한 지 보관 기간이 지난 신고의 사진을 사진 저장소에서 지운다.
+ * 글은 '삭제됨' 표시로 남는다(완전 삭제는 관리자가 '영구 삭제' 로 한다).
+ */
+async function purgeDeletedPhotos() {
+  const cutoff = Date.now() - DELETED_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const due = loadAllReports().filter((report) => report.deletedAt && Date.parse(report.deletedAt) < cutoff && allPhotosOf(report).length > 0);
+  if (due.length === 0) return;
+  let removed: StoredPhoto[] = [];
+  await withReportsLock(async () => {
+    removed = [];
+    const all = loadAllReports();
+    for (const report of all) {
+      if (!report.deletedAt || Date.parse(report.deletedAt) >= cutoff) continue;
+      const photos = allPhotosOf(report);
+      if (photos.length === 0) continue;
+      removed.push(...photos);
+      report.photos = [];
+      for (const followup of report.followups ?? []) followup.photos = [];
+    }
+    if (removed.length) await saveReports(all);
+  });
+  await removePhotos(removed);
+  console.log(`[photos] 삭제한 지 ${DELETED_PHOTO_RETENTION_DAYS}일이 지난 신고의 사진 ${removed.length}장을 지웠습니다.`);
+}
+
+/** 매일 할 일 — 자동 백업과 오래된 삭제 사진 정리. 서버가 깨어 있을 때 30분마다 확인한다. */
+async function runMaintenance() {
+  await maybeAutoBackup().catch((err) => console.error("[backup] 자동 백업 실패:", err instanceof Error ? err.message : err));
+  await purgeDeletedPhotos().catch((err) => console.error("[photos] 삭제 사진 정리 실패:", err instanceof Error ? err.message : err));
+}
+
+/** 백업 파일 내용이 맞는 형태인지 확인한다. 틀리면 무엇이 틀렸는지 알려 준다. */
+function validateBackup(data: unknown): { ok: true; backup: ReturnType<typeof buildBackupSnapshot> } | { ok: false; error: string } {
+  const value = data as Record<string, unknown> | null;
+  if (!value || typeof value !== "object") return { ok: false, error: "백업 파일 형식이 아닙니다." };
+  const meta = value.meta as { app?: unknown } | undefined;
+  if (meta?.app !== "schoolfix") return { ok: false, error: "SchoolFix 백업 파일이 아닙니다." };
+  for (const key of ["reports", "schoolApplications", "customSchools", "blockedReporters"]) {
+    if (!Array.isArray(value[key])) return { ok: false, error: `백업 파일에 ${key} 목록이 없습니다.` };
+  }
+  const reports = value.reports as Array<Record<string, unknown>>;
+  if (!reports.every((report) => report && typeof report.id === "string" && typeof report.description === "string" && typeof report.createdAt === "string")) {
+    return { ok: false, error: "백업 파일의 신고 형식이 올바르지 않습니다." };
+  }
+  return { ok: true, backup: value as unknown as ReturnType<typeof buildBackupSnapshot> };
+}
+
+/** 백업 내용으로 되돌린다. 계정·로그인 세션·학생 알림 구독은 그대로 둔다. */
+async function applyBackup(backup: ReturnType<typeof buildBackupSnapshot>) {
+  await withReportsLock(() => saveReports(backup.reports as StoredReport[]));
+  await withDocLock("school_applications", () => saveSchoolApplications(backup.schoolApplications as SchoolApplication[]));
+  await withDocLock("custom_schools", () => saveCustomSchools(backup.customSchools as SchoolCatalogEntry[]));
+  await withDocLock("blocked_reporters", () => saveBlockedReporters(backup.blockedReporters as BlockedReporter[]));
+  if (backup.settings && typeof backup.settings === "object") {
+    const restored = backup.settings as Partial<NotificationSettings>;
+    await withDocLock("settings", async () => {
+      const current = loadNotificationSettings();
+      const next = { ...current };
+      for (const key of ["allReports", "urgent", "applications", "monthly"] as const) {
+        if (typeof restored[key] === "boolean") next[key] = restored[key] as boolean;
+      }
+      await saveNotificationSettings(next);
+    });
+  }
+  summaryCache = null;
+}
+
+/**
+ * 전체 백업 내려받기 (관리자). 지금 상태를 바로 떠서 받는다.
+ * photos=1 이면 사진을 data URL 로 함께 담는다. 사진이 많으면 커지므로 한 장씩 흘려 보낸다.
+ */
+app.get("/api/staff/backup", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  const withPhotos = req.query.photos === "1";
+  const snapshot = buildBackupSnapshot("download");
+  snapshot.meta.includesPhotos = withPhotos;
+  audit(session, "backup.download", withPhotos ? "지금 상태 (사진 포함)" : "지금 상태");
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
-  res.setHeader("Content-Disposition", `attachment; filename="schoolfix-backup-${exportedAt.slice(0, 10)}${withPhotos ? "-photos" : ""}.json"`);
-  const json = JSON.stringify(head);
+  res.setHeader("Content-Disposition", `attachment; filename="schoolfix-backup-${snapshot.meta.exportedAt.slice(0, 10)}${withPhotos ? "-photos" : ""}.json"`);
+  const json = JSON.stringify(snapshot);
   if (!withPhotos) return res.send(json);
 
   // 마지막 } 를 떼고 사진 항목을 이어 붙인다.
   res.write(`${json.slice(0, -1)},"photos":{`);
   let first = true;
   let missing = 0;
-  for (const photo of reports.flatMap((report) => report.photos ?? [])) {
+  for (const photo of snapshot.reports.flatMap(allPhotosOf)) {
     let buffer = photoCache.get(photo.id) ?? null;
     if (!buffer) {
       try {
@@ -1736,6 +2091,92 @@ app.get("/api/staff/backup", async (req, res) => {
     first = false;
   }
   res.end(`},"missingPhotos":${missing}}`);
+});
+
+/** 보관 중인 백업 목록 (관리자) */
+app.get("/api/staff/backups", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    await ensureBackupStore();
+    const [auto, manual, beforeRestore] = await Promise.all(BACKUP_KINDS.map((kind) => backupStore.list(kind)));
+    return res.json({ ok: true, store: backupStore.kind, keep: BACKUP_KEEP, data: { auto, manual, beforeRestore } });
+  } catch (err) {
+    return safeError(res, 502, "백업 목록을 불러오지 못했습니다.", err);
+  }
+});
+
+/** 지금 백업 만들기 (관리자) */
+app.post("/api/staff/backups", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  try {
+    const info = await createStoredBackup("manual");
+    audit(session, "backup.create", info.name);
+    return res.status(201).json({ ok: true, data: info });
+  } catch (err) {
+    return safeError(res, 502, "백업을 만들지 못했습니다.", err);
+  }
+});
+
+/** 보관 중인 백업 파일 내려받기 (관리자) */
+app.get("/api/staff/backups/file", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  const name = typeof req.query.name === "string" ? req.query.name : "";
+  if (!BACKUP_NAME_PATTERN.test(name)) return safeError(res, 400, "백업 이름이 올바르지 않습니다.");
+  try {
+    await ensureBackupStore();
+    const body = await backupStore.get(name);
+    if (body === null) return safeError(res, 404, "백업을 찾을 수 없습니다.");
+    audit(session, "backup.download", name);
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", `attachment; filename="schoolfix-${name.replace("/", "-")}"`);
+    return res.send(body);
+  } catch (err) {
+    return safeError(res, 502, "백업을 불러오지 못했습니다.", err);
+  }
+});
+
+/**
+ * 백업으로 되돌리기 (총괄만). 보관 중인 백업 이름(name) 또는 내려받아 둔 백업 파일 내용(data)을 받는다.
+ * 되돌리기 직전 상태를 before-restore 백업으로 먼저 남겨, 잘못 되돌렸어도 다시 되돌릴 수 있게 한다.
+ * 계정·로그인 세션·학생 알림 구독은 바꾸지 않는다.
+ */
+app.post("/api/staff/restore", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  if (session.role !== "owner") return safeError(res, 403, "백업으로 되돌리기는 총괄만 할 수 있습니다.");
+  let data: unknown = req.body?.data;
+  let source = "올린 파일";
+  if (typeof req.body?.name === "string") {
+    const name = req.body.name;
+    if (!BACKUP_NAME_PATTERN.test(name)) return safeError(res, 400, "백업 이름이 올바르지 않습니다.");
+    try {
+      await ensureBackupStore();
+      const body = await backupStore.get(name);
+      if (body === null) return safeError(res, 404, "백업을 찾을 수 없습니다.");
+      data = JSON.parse(body);
+      source = name;
+    } catch (err) {
+      return safeError(res, 502, "백업을 불러오지 못했습니다.", err);
+    }
+  }
+  const checked = validateBackup(data);
+  if (!checked.ok) return safeError(res, 400, checked.error);
+  let safety: BackupInfo;
+  try {
+    safety = await createStoredBackup("before-restore");
+  } catch (err) {
+    return safeError(res, 502, "되돌리기 전 상태를 백업하지 못해 중단했습니다. 잠시 후 다시 시도해주세요.", err);
+  }
+  try {
+    await applyBackup(checked.backup);
+  } catch (err) {
+    return safeError(res, 500, `되돌리는 중 오류가 났습니다. 직전 상태는 ${safety.name} 에 있습니다.`, err);
+  }
+  audit(session, "backup.restore", source, `신고 ${checked.backup.reports.length}건 · 직전 상태 ${safety.name}`);
+  return res.json({ ok: true, restored: { reports: checked.backup.reports.length }, safetyBackup: safety.name });
 });
 
 // ---------------------------------------------------------------------------
@@ -1793,14 +2234,17 @@ app.patch("/api/staff/school-applications/:id", async (req, res) => {
   if (!requireStaff(req, res)) return;
   const action = req.body?.action;
   if (action !== "mark-reviewed" && action !== "mark-new") return safeError(res, 400, "신청 처리 상태가 올바르지 않습니다.");
-  const applications = loadSchoolApplications();
-  const application = applications.find((item) => item.id === req.params.id);
-  if (!application) return safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
-  application.status = action === "mark-reviewed" ? "reviewed" : "new";
-  application.updatedAt = new Date().toISOString();
   try {
-    await saveSchoolApplications(applications);
-    return res.json({ ok: true });
+    const found = await withDocLock("school_applications", async () => {
+      const applications = loadSchoolApplications();
+      const application = applications.find((item) => item.id === req.params.id);
+      if (!application) return false;
+      application.status = action === "mark-reviewed" ? "reviewed" : "new";
+      application.updatedAt = new Date().toISOString();
+      await saveSchoolApplications(applications);
+      return true;
+    });
+    return found ? res.json({ ok: true }) : safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
   } catch {
     return safeError(res, 500, "신청 상태를 저장하지 못했습니다.");
   }
@@ -1808,12 +2252,15 @@ app.patch("/api/staff/school-applications/:id", async (req, res) => {
 
 app.delete("/api/staff/school-applications/:id", async (req, res) => {
   if (!requireStaff(req, res)) return;
-  const applications = loadSchoolApplications();
-  const remaining = applications.filter((item) => item.id !== req.params.id);
-  if (remaining.length === applications.length) return safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
   try {
-    await saveSchoolApplications(remaining);
-    return res.json({ ok: true });
+    const found = await withDocLock("school_applications", async () => {
+      const applications = loadSchoolApplications();
+      const remaining = applications.filter((item) => item.id !== req.params.id);
+      if (remaining.length === applications.length) return false;
+      await saveSchoolApplications(remaining);
+      return true;
+    });
+    return found ? res.json({ ok: true }) : safeError(res, 404, "학교 신청을 찾을 수 없습니다.");
   } catch {
     return safeError(res, 500, "학교 신청을 삭제하지 못했습니다.");
   }
@@ -1834,8 +2281,9 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   const action = req.body?.action;
   if (action !== "approve" && action !== "reject") return safeError(res, 400, "검토 작업이 올바르지 않습니다.");
+  // 공개하지 않고 지우는 것도 삭제다. 누가 지웠는지 남도록 개인 계정으로만 한다.
+  if (action === "reject" && !requirePersonalAccount(session, res)) return;
   let found: StoredReport | null;
-  let removedPhotos: StoredPhoto[] = [];
   try {
     found = await withReportsLock(async () => {
       const all = loadAllReports();
@@ -1846,10 +2294,10 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
         report.moderationStatus = "approved";
         report.moderationReason = null;
       } else {
+        // 사진은 다른 삭제와 같이 보관 기간 동안 비공개로 남겼다가 지운다. 삭제된 신고의 사진은 아무도 열 수 없다.
         report.deletedAt = now;
-        // 반려한 신고의 사진은 부적절할 수 있으므로 저장소에서도 지운다.
-        removedPhotos = report.photos ?? [];
-        report.photos = [];
+        report.deletedBy = deletedByOf(session);
+        report.deleteReason = `검토 후 삭제${report.moderationReason ? ` (${report.moderationReason})` : ""}`;
       }
       report.updatedAt = now;
       addHistory(report, { ...historyActor(session), action: "moderation", from: "held", to: action === "approve" ? "approved" : "deleted" }, now);
@@ -1860,8 +2308,8 @@ app.patch("/api/staff/reports/:id/moderation", async (req, res) => {
     return safeError(res, 500, "신고 검토 상태를 저장하지 못했습니다.", err);
   }
   if (!found) return safeError(res, 404, "검토 대기 신고를 찾을 수 없습니다.");
-  await removePhotos(removedPhotos);
   summaryCache = null;
+  audit(session, action === "approve" ? "report.approve" : "report.reject", req.params.id, school.schoolName);
   if (action === "approve") notifyReporter(found, { published: true });
   return res.json({ ok: true });
 });
@@ -1886,19 +2334,20 @@ app.get("/api/staff/reports", (req, res) => {
 app.post("/api/staff/reports/:id/spam", async (req, res) => {
   const session = requireStaff(req, res);
   if (!session) return;
+  if (!requirePersonalAccount(session, res)) return;
   const school = findSchool(req.query.schoolId);
   if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
   let reporterHash: string | null = null;
-  let removedPhotos: StoredPhoto[] = [];
   try {
     const found = await withReportsLock(async () => {
       const all = loadAllReports();
       const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt);
       if (!report) return false;
       const now = new Date().toISOString();
+      // 사진은 바로 지우지 않는다. 되살릴 수 있도록 일정 기간 남겨 두었다가 지운다 (purgeDeletedPhotos).
       report.deletedAt = now;
-      removedPhotos = report.photos ?? [];
-      report.photos = [];
+      report.deletedBy = deletedByOf(session);
+      report.deleteReason = "장난 신고로 처리";
       report.updatedAt = now;
       addHistory(report, { ...historyActor(session), action: "spam", to: "deleted" }, now);
       reporterHash = report.reporterHash ?? null;
@@ -1909,21 +2358,145 @@ app.post("/api/staff/reports/:id/spam", async (req, res) => {
   } catch (err) {
     return safeError(res, 500, "장난 신고 처리를 저장하지 못했습니다.", err);
   }
-  await removePhotos(removedPhotos);
   summaryCache = null;
+  audit(session, "report.spam", req.params.id, school.schoolName);
 
   // 기기 정보가 없는 과거 신고는 지우기만 한다.
   if (!reporterHash) return res.json({ ok: true, blocked: false });
   try {
     const hash: string = reporterHash;
-    const list = loadBlockedReporters().filter((entry) => entry.hash !== hash);
-    list.push({ hash, until: blockUntil(), reason: "운영진이 장난 신고로 처리", reportId: req.params.id, createdAt: new Date().toISOString() });
-    await saveBlockedReporters(list);
+    await withDocLock("blocked_reporters", async () => {
+      const list = loadBlockedReporters().filter((entry) => entry.hash !== hash);
+      list.push({ hash, until: blockUntil(), reason: "운영진이 장난 신고로 처리", reportId: req.params.id, createdAt: new Date().toISOString() });
+      await saveBlockedReporters(list);
+    });
     return res.json({ ok: true, blocked: true });
   } catch (err) {
     console.error("[abuse] 차단 목록 저장 실패:", err);
     return res.status(207).json({ ok: true, blocked: false, warning: STORE_SCHEMA_HINT });
   }
+});
+
+/**
+ * 신고 삭제 — 운영진(개인 계정)만, 사유를 꼭 적는다. 누가 언제 왜 지웠는지 처리 이력과 운영 기록에 남는다.
+ * 기록은 지우지 않고 '삭제됨' 표시만 한다. 관리자는 '삭제된 신고' 에서 되살릴 수 있다.
+ */
+app.delete("/api/staff/reports/:id", async (req, res) => {
+  const session = requireStaff(req, res);
+  if (!session) return;
+  if (!requirePersonalAccount(session, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason.length < 2 || reason.length > 300) return safeError(res, 400, "삭제 사유를 2~300자로 적어주세요.");
+  try {
+    const found = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && !item.deletedAt);
+      if (!report) return false;
+      const now = new Date().toISOString();
+      report.deletedAt = now;
+      report.deletedBy = deletedByOf(session);
+      report.deleteReason = reason;
+      report.updatedAt = now;
+      addHistory(report, { ...historyActor(session), action: "delete", to: reason }, now);
+      await saveReports(all);
+      return true;
+    });
+    if (!found) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+  } catch (err) {
+    return safeError(res, 500, "신고를 삭제하지 못했습니다.", err);
+  }
+  summaryCache = null;
+  audit(session, "report.delete", req.params.id, `${school.schoolName} · ${reason}`);
+  return res.json({ ok: true });
+});
+
+/** 삭제된 신고 목록 (관리자). 누가 언제 왜 지웠는지와 사진을 언제까지 되살릴 수 있는지 보여 준다. */
+app.get("/api/staff/deleted-reports", (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const deleted = loadAllReports()
+    .filter((report) => report.deletedAt && report.schoolId === school.id)
+    .sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt)));
+  return res.json({
+    ok: true,
+    data: deleted.map((report) => ({
+      id: report.id,
+      title: maskProfanity(report.title ?? "").text,
+      description: maskProfanity(report.description).text,
+      location: [report.locationType ?? report.location, report.locationDetail, report.buildingName, report.floor, report.roomName].filter(Boolean).join(" · "),
+      category: report.category,
+      createdAt: report.createdAt,
+      deletedAt: report.deletedAt,
+      deletedBy: report.deletedBy ?? null,
+      deleteReason: report.deleteReason ?? null,
+      photoCount: allPhotosOf(report).length,
+      photosKeptUntil: allPhotosOf(report).length > 0
+        ? new Date(Date.parse(report.deletedAt as string) + DELETED_PHOTO_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+        : null,
+      history: report.history ?? [],
+    })),
+  });
+});
+
+/** 삭제한 신고 되살리기 (관리자). 사진 보관 기간이 지났으면 글만 돌아온다. */
+app.post("/api/staff/reports/:id/restore", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  try {
+    const found = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && item.deletedAt);
+      if (!report) return false;
+      const now = new Date().toISOString();
+      addHistory(report, { ...historyActor(session), action: "restore", from: report.deleteReason ?? "삭제됨", to: "되살림" }, now);
+      report.deletedAt = null;
+      report.deletedBy = null;
+      report.deleteReason = null;
+      report.updatedAt = now;
+      await saveReports(all);
+      return true;
+    });
+    if (!found) return safeError(res, 404, "삭제된 신고를 찾을 수 없습니다.");
+  } catch (err) {
+    return safeError(res, 500, "신고를 되살리지 못했습니다.", err);
+  }
+  summaryCache = null;
+  audit(session, "report.restore", req.params.id, school.schoolName);
+  return res.json({ ok: true });
+});
+
+/**
+ * 영구 삭제 (관리자, 개인 계정) — 신고를 저장소에서 완전히 지우고 사진도 지운다. 되돌릴 수 없다.
+ * 개인정보가 담긴 신고의 완전 삭제 요청을 처리할 때 쓴다. 먼저 삭제(휴지통)된 신고만 지울 수 있다.
+ */
+app.delete("/api/staff/deleted-reports/:id", async (req, res) => {
+  const session = requireAdmin(req, res);
+  if (!session) return;
+  if (!requirePersonalAccount(session, res)) return;
+  const school = findSchool(req.query.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  let removedPhotos: StoredPhoto[] = [];
+  try {
+    const found = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((item) => item.id === req.params.id && item.schoolId === school.id && item.deletedAt);
+      if (!report) return false;
+      removedPhotos = allPhotosOf(report);
+      await saveReports(all.filter((item) => item !== report));
+      return true;
+    });
+    if (!found) return safeError(res, 404, "삭제된 신고를 찾을 수 없습니다.");
+  } catch (err) {
+    return safeError(res, 500, "신고를 영구 삭제하지 못했습니다.", err);
+  }
+  await removePhotos(removedPhotos);
+  audit(session, "report.purge", req.params.id, school.schoolName);
+  return res.json({ ok: true });
 });
 
 /** 공개 보류 중인 기기 목록. 기기 해시 원문 대신 앞부분만 보여 준다. */
@@ -1942,18 +2515,24 @@ app.get("/api/staff/blocked-reporters", (req, res) => {
 });
 
 app.delete("/api/staff/blocked-reporters/:id", async (req, res) => {
-  if (!requireStaff(req, res)) return;
+  const session = requireStaff(req, res);
+  if (!session) return;
   const id = String(req.params.id);
   if (!/^[a-f0-9]{12}$/.test(id)) return safeError(res, 400, "요청이 올바르지 않습니다.");
-  const list = loadBlockedReporters();
-  const remaining = list.filter((entry) => !entry.hash.startsWith(id));
-  if (remaining.length === list.length) return safeError(res, 404, "보류 중인 기기를 찾을 수 없습니다.");
   try {
-    await saveBlockedReporters(remaining);
-    return res.json({ ok: true });
+    const found = await withDocLock("blocked_reporters", async () => {
+      const list = loadBlockedReporters();
+      const remaining = list.filter((entry) => !entry.hash.startsWith(id));
+      if (remaining.length === list.length) return false;
+      await saveBlockedReporters(remaining);
+      return true;
+    });
+    if (!found) return safeError(res, 404, "보류 중인 기기를 찾을 수 없습니다.");
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+  audit(session, "device.unblock", `기기 ${id}…`);
+  return res.json({ ok: true });
 });
 
 // --- 운영진 화면 "알림" 탭 ------------------------------------------------------
@@ -1978,18 +2557,22 @@ app.get("/api/staff/notifications", (req, res) => {
 });
 
 app.patch("/api/staff/notifications", async (req, res) => {
-  if (!requireStaff(req, res)) return;
+  const session = requireStaff(req, res);
+  if (!session) return;
   const body = req.body || {};
-  const next = { ...loadNotificationSettings() };
-  for (const key of ["allReports", "urgent", "applications", "monthly"] as const) {
-    if (typeof body[key] === "boolean") next[key] = body[key];
-  }
+  const keys = ["allReports", "urgent", "applications", "monthly"] as const;
+  const changes = keys.filter((key) => typeof body[key] === "boolean");
   try {
-    await saveNotificationSettings(next);
-    return res.json({ ok: true });
+    await withDocLock("settings", async () => {
+      const next = { ...loadNotificationSettings() };
+      for (const key of changes) next[key] = body[key];
+      await saveNotificationSettings(next);
+    });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+  if (changes.length) audit(session, "settings.notifications", null, changes.map((key) => `${key}=${body[key] ? "켬" : "끔"}`).join(", "));
+  return res.json({ ok: true });
 });
 
 app.post("/api/staff/notifications/test", rateLimit("notifyTest", { windowMs: 10 * 60 * 1000, max: 5, message: "테스트 알림은 10분에 5번까지 보낼 수 있습니다." }), async (req, res) => {
@@ -2027,7 +2610,8 @@ app.get("/api/staff/schools", (req, res) => {
  * 시설 정보는 공식 확인 전이므로 기본 위치 유형만 "확인 필요" 상태로 둔다.
  */
 app.post("/api/staff/schools", async (req, res) => {
-  if (!requireStaff(req, res)) return;
+  const session = requireStaff(req, res);
+  if (!session) return;
   const body = req.body || {};
   const id = typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
   const schoolName = typeof body.schoolName === "string" ? body.schoolName.trim() : "";
@@ -2046,12 +2630,6 @@ app.post("/api/staff/schools", async (req, res) => {
     return safeError(res, 400, "학교 공식 홈페이지 주소를 확인해주세요.");
   }
 
-  const existing = [...loadSeedSchools(), ...loadCustomSchools()];
-  if (existing.some((school) => school.id === id)) return safeError(res, 409, "이미 사용 중인 학교 ID입니다.");
-  if (existing.some((school) => school.schoolName === schoolName && school.supportStatus === "active")) {
-    return safeError(res, 409, "같은 이름의 학교가 이미 지원 중입니다.");
-  }
-
   const today = new Date().toISOString().slice(0, 10);
   const entry: SchoolCatalogEntry = {
     id, schoolName, officialWebsite, address, highSchoolType,
@@ -2063,39 +2641,57 @@ app.post("/api/staff/schools", async (req, res) => {
     locationTypes: DEFAULT_LOCATION_TYPES,
     locations: [],
   };
+  let conflict: string | null = null;
   try {
-    await saveCustomSchools([...loadCustomSchools(), entry]);
+    conflict = await withDocLock("custom_schools", async () => {
+      // 중복 확인도 잠금 안에서 한다. 두 운영진이 같은 학교를 동시에 등록해도 하나만 들어간다.
+      const existing = [...loadSeedSchools(), ...loadCustomSchools()];
+      if (existing.some((school) => school.id === id)) return "이미 사용 중인 학교 ID입니다.";
+      if (existing.some((school) => school.schoolName === schoolName && school.supportStatus === "active")) return "같은 이름의 학교가 이미 지원 중입니다.";
+      await saveCustomSchools([...loadCustomSchools(), entry]);
+      return null;
+    });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+  if (conflict) return safeError(res, 409, conflict);
+  audit(session, "school.register", id, schoolName);
 
   if (applicationId) {
-    const applications = loadSchoolApplications();
-    const application = applications.find((item) => item.id === applicationId);
-    if (application) {
+    // 학교 등록은 이미 끝났다. 신청함 표시만 실패한 경우 등록을 되돌리지 않는다.
+    await withDocLock("school_applications", async () => {
+      const applications = loadSchoolApplications();
+      const application = applications.find((item) => item.id === applicationId);
+      if (!application) return;
       application.status = "reviewed";
       application.registeredSchoolId = id;
       application.updatedAt = new Date().toISOString();
-      // 학교 등록은 이미 끝났다. 신청함 표시만 실패한 경우 등록을 되돌리지 않는다.
-      await saveSchoolApplications(applications).catch((err) => console.error("[schools] 신청 상태 갱신 실패:", err));
-    }
+      await saveSchoolApplications(applications);
+    }).catch((err) => console.error("[schools] 신청 상태 갱신 실패:", err));
   }
   return res.status(201).json({ ok: true, data: { id, schoolName } });
 });
 
 /** 운영진이 등록한 학교의 지원 중지. 기존 신고는 남지만 학교 선택 화면에서 사라진다. */
 app.delete("/api/staff/schools/:id", async (req, res) => {
-  if (!requireStaff(req, res)) return;
-  const list = loadCustomSchools();
-  const target = list.find((school) => school.id === req.params.id);
-  if (!target) return safeError(res, 404, "운영진이 등록한 학교만 지원을 중지할 수 있습니다.");
-  target.supportStatus = "rejected";
+  const session = requireStaff(req, res);
+  if (!session) return;
+  let stopped: string | null = null;
   try {
-    await saveCustomSchools(list);
-    return res.json({ ok: true });
+    stopped = await withDocLock("custom_schools", async () => {
+      const list = loadCustomSchools();
+      const target = list.find((school) => school.id === req.params.id);
+      if (!target) return null;
+      target.supportStatus = "rejected";
+      await saveCustomSchools(list);
+      return target.schoolName;
+    });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
+  if (!stopped) return safeError(res, 404, "운영진이 등록한 학교만 지원을 중지할 수 있습니다.");
+  audit(session, "school.stop", req.params.id, stopped);
+  return res.json({ ok: true });
 });
 
 app.patch("/api/staff/reports/:id", async (req, res) => {
@@ -2334,6 +2930,80 @@ app.post("/api/reports/:id/feedback", rateLimit("feedback", LIMITS.feedback), as
   if (result === 409) return safeError(res, 409, "처리 완료된 신고에 한 번만 응답할 수 있습니다.");
   summaryCache = null;
   return res.json({ ok: true, data: toMyReport(saved as unknown as StoredReport) });
+});
+
+/**
+ * 추가 설명 — 신고한 학생이 접수 뒤에 설명이나 사진을 덧붙인다(소유 토큰으로 확인).
+ * 학교 답변에 이어 "아직 그대로예요, 이 사진을 보세요" 처럼 대화를 이어 갈 수 있다.
+ * 공개 목록에는 나오지 않고 신고한 학생과 운영진·교사만 본다. 글과 사진은 신고와 같은 안전성 검사를 거친다.
+ */
+app.post("/api/reports/:id/followups", rateLimit("followup", LIMITS.followup), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const hashes = ownerTokenHashes(req.body?.tokens);
+  const rawText = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (rawText.length < 2 || rawText.length > 1000) return safeError(res, 400, "추가 설명은 2~1000자로 적어주세요.");
+  const parsedPhotos = parseIncomingPhotos({ photos: Array.isArray(req.body?.photos) ? req.body.photos : [] });
+  if (!parsedPhotos.ok) return safeError(res, 400, parsedPhotos.error);
+  if (parsedPhotos.photos.length > MAX_FOLLOWUP_PHOTOS) return safeError(res, 400, `추가 설명에는 사진을 ${MAX_FOLLOWUP_PHOTOS}장까지 붙일 수 있습니다.`);
+
+  // 먼저 주인인지 확인한다. 아니면 사진을 올리거나 검사하지 않는다.
+  const target = loadAllReports().find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt);
+  if (!target) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+  if (!ownsReport(target, hashes)) return safeError(res, 403, "이 기기에서 접수했거나 불러온 신고에만 설명을 덧붙일 수 있습니다.");
+  if ((target.followups ?? []).length >= MAX_FOLLOWUPS) return safeError(res, 409, `추가 설명은 신고 하나에 ${MAX_FOLLOWUPS}번까지 남길 수 있습니다.`);
+
+  const text = maskProfanity(rawText).text;
+  const moderation = await moderateReport("", text, photosAsAttachments(parsedPhotos.photos).map((photo) => photo.dataUrl));
+  let storedPhotos: StoredPhoto[];
+  try {
+    storedPhotos = await uploadPhotos(parsedPhotos.photos);
+  } catch (err) {
+    return safeError(res, 503, "사진을 저장하지 못했습니다. 잠시 후 다시 시도하거나 사진을 빼고 보내주세요.", err);
+  }
+  const followup: ReportFollowup = {
+    id: `F${Date.now().toString(36)}${crypto.randomBytes(3).toString("hex")}`,
+    at: new Date().toISOString(),
+    text,
+    photos: storedPhotos,
+    held: moderation.hold,
+    heldReason: moderation.reason,
+  };
+
+  let saved: StoredReport | 403 | 404 | 409;
+  try {
+    saved = await withReportsLock(async () => {
+      const all = loadAllReports();
+      const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt);
+      if (!report) return 404;
+      if (!ownsReport(report, hashes)) return 403;
+      if ((report.followups ?? []).length >= MAX_FOLLOWUPS) return 409;
+      report.followups = [...(report.followups ?? []), followup];
+      addHistory(report, { actor: "reporter", action: "followup", to: storedPhotos.length ? `추가 설명 (사진 ${storedPhotos.length}장)` : "추가 설명" }, followup.at);
+      // updatedAt 은 바꾸지 않는다. 공개 내용이 바뀐 것이 아니다.
+      await saveReports(all);
+      return report;
+    });
+  } catch (err) {
+    await removePhotos(storedPhotos);
+    return safeError(res, 500, "추가 설명을 저장하지 못했습니다.", err);
+  }
+  if (typeof saved === "number") {
+    await removePhotos(storedPhotos);
+    return saved === 409 ? safeError(res, 409, `추가 설명은 신고 하나에 ${MAX_FOLLOWUPS}번까지 남길 수 있습니다.`) : safeError(res, saved, "해당 신고를 찾을 수 없습니다.");
+  }
+
+  // 운영진에게 알린다 ("모든 신고" 알림이 켜져 있을 때). 내용은 앞부분만, 사진은 장수만 보낸다.
+  if (process.env.NOTIFY_WEBHOOK_URL && loadNotificationSettings().allReports) {
+    const link = publicBaseUrl();
+    void sendText([
+      `📝 신고 추가 설명 — ${school.schoolName} ${saved.id}${followup.held ? " (안전성 확인 필요)" : ""}`,
+      text.slice(0, 300),
+      storedPhotos.length ? `사진 ${storedPhotos.length}장` : null,
+      link ? `${link} → 운영진 화면에서 확인` : null,
+    ].filter(Boolean).join("\n"), process.env, "추가 설명");
+  }
+  return res.status(201).json({ ok: true, data: toMyReport(saved) });
 });
 
 /**
@@ -2817,88 +3487,6 @@ app.post("/api/ai/summary", async (req, res) => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// 신고 삭제 — 유일하게 관리자 권한이 필요한 기능 (§2, §3)
-// ---------------------------------------------------------------------------
-
-/**
- * 1단계: 관리자 비밀번호 검증.
- * 성공하면 해당 신고에만 쓸 수 있는 1회용·단기 삭제 토큰을 발급한다.
- * 비밀번호 자체는 응답·로그 어디에도 남기지 않는다.
- */
-app.post("/api/admin/verify-delete", rateLimit("adminVerify", LIMITS.adminVerify), async (req, res) => {
-  const { reportId, password } = req.body || {};
-  const school = findSchool(req.body?.schoolId);
-  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
-
-  if (!isAdminPasswordConfigured()) {
-    // 설정 미비 사실을 사용자에게 자세히 알리지 않는다 (§9)
-    console.error("[admin] ADMIN_PASSWORD_HASH 환경변수가 설정되지 않았습니다.");
-    return safeError(res, 503, "요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.");
-  }
-
-  if (typeof reportId !== "string" || !reportId) {
-    return safeError(res, 400, "요청이 올바르지 않습니다.");
-  }
-
-  const exists = loadReports().some((r) => r.id === reportId && r.schoolId === school.id);
-  if (!exists) {
-    return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
-  }
-
-  const valid = await verifyAdminPassword(password);
-  if (!valid) {
-    // 시도 횟수·인증 방식 등 내부 정보를 노출하지 않는다
-    return res.status(401).json({ ok: false, error: "관리자 비밀번호가 올바르지 않습니다." });
-  }
-
-  return res.json({ ok: true, deleteToken: issueDeleteToken(reportId) });
-});
-
-/**
- * 2단계: 실제 삭제.
- * 삭제 API 자체가 권한을 검사하므로, 프론트엔드 상태를 조작하거나
- * 개발자도구에서 직접 호출해도 토큰 없이는 삭제할 수 없다 (§7, §8).
- */
-app.delete("/api/reports/:id", async (req, res) => {
-  const { id } = req.params;
-  const token = req.headers["x-delete-token"];
-
-  if (!consumeDeleteToken(token, id)) {
-    return safeError(res, 401, "삭제 권한이 확인되지 않았습니다. 다시 시도해주세요.");
-  }
-
-  let found: boolean;
-  let removedPhotos: StoredPhoto[] = [];
-  try {
-    found = await withReportsLock(async () => {
-      const reports = loadAllReports();
-      const target = reports.find((r) => r.id === id && !r.deletedAt);
-      if (!target) return false;
-
-      // Soft Delete — 기록은 남기되 모든 공개 기능에서 제외된다 (§11, §12)
-      target.deletedAt = new Date().toISOString();
-      target.updatedAt = target.deletedAt;
-      // 사진은 기록으로 남길 이유가 없으므로 저장소에서 지운다.
-      removedPhotos = target.photos ?? [];
-      target.photos = [];
-      await saveReports(reports);
-      return true;
-    });
-  } catch (err) {
-    return safeError(res, 500, "신고를 삭제하지 못했습니다.", err);
-  }
-  if (!found) {
-    return safeError(res, 404, "삭제할 신고를 찾을 수 없습니다.");
-  }
-  await removePhotos(removedPhotos);
-
-  // 삭제로 집합이 바뀌었으므로 AI 요약 캐시를 무효화한다
-  summaryCache = null;
-
-  return res.json({ ok: true, message: `신고 [${id}]가 삭제되었습니다.` });
-});
-
 // 정의되지 않은 API 경로는 여기서 끝낸다.
 // 이 핸들러가 없으면 프로덕션의 SPA fallback(app.get("*"))이 /api/* 요청까지 받아
 // 존재하지 않는 엔드포인트가 200과 함께 index.html 을 돌려준다.
@@ -2909,8 +3497,69 @@ app.use("/api", (_req, res) => {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * 총괄 비상 복구 — 총괄이 비밀번호를 잊었거나 연락이 닿지 않을 때, Render 환경변수로 한 번만 적용한다.
+ *  - OWNER_RESET_PASSWORD_HASH: 새 비밀번호의 bcrypt 해시 (필수)
+ *  - OWNER_RESET_USERNAME: 이 계정을 새 총괄로 만든다 (선택. 비우면 지금 총괄의 비밀번호만 바꾼다)
+ * 같은 값으로는 한 번만 적용한다(설정 문서에 지문을 남긴다). 적용 뒤에는 환경변수를 지운다.
+ * Render 환경변수를 바꿀 수 있는 사람만 쓸 수 있으므로, 서버를 운영하는 사람의 마지막 수단이다.
+ */
+async function applyOwnerReset() {
+  const hash = process.env.OWNER_RESET_PASSWORD_HASH?.trim();
+  if (!hash) return;
+  if (!/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(hash)) {
+    console.error("[owner-reset] OWNER_RESET_PASSWORD_HASH 는 bcrypt 해시여야 합니다. 적용하지 않았습니다.");
+    return;
+  }
+  const username = normalizeUsername(process.env.OWNER_RESET_USERNAME);
+  const fingerprint = crypto.createHash("sha256").update(`${username}:${hash}`).digest("hex");
+  if (loadNotificationSettings().ownerResetApplied === fingerprint) return;
+
+  const result = await withAccountsLock(async () => {
+    const list = loadStaffAccounts();
+    const current = list.find((item) => item.role === "owner") ?? null;
+    const target = username ? list.find((item) => item.username === username) ?? null : current;
+    if (!target) return null;
+    const now = new Date().toISOString();
+    const previous = current && current.id !== target.id ? current : null;
+    if (previous) {
+      previous.role = "admin";
+      previous.updatedAt = now;
+    }
+    target.role = "owner";
+    target.schoolId = null;
+    target.disabled = false;
+    target.passwordHash = hash;
+    target.updatedAt = now;
+    await saveStaffAccounts(list);
+    return { target, previous };
+  });
+  if (!result) {
+    console.error(`[owner-reset] ${username ? `아이디 ${username} 계정을` : "총괄 계정을"} 찾지 못해 적용하지 않았습니다.`);
+    return;
+  }
+  staffSessions.revokeAccount(result.target.id);
+  if (result.previous) staffSessions.renameAccount(result.previous.id, result.previous.displayName, "admin", null);
+  await withDocLock("settings", () => saveNotificationSettings({ ...loadNotificationSettings(), ownerResetApplied: fingerprint }));
+  audit(null, "owner.reset", result.target.username, result.previous ? `${result.previous.username} → ${result.target.username}` : "비밀번호 재설정");
+  console.warn(`[owner-reset] 총괄 비상 복구를 적용했습니다 (${result.target.username}). 로그인해서 비밀번호를 바꾸고 OWNER_RESET_* 환경변수를 지워 주세요.`);
+}
+
+/** 낮 시간에 10분마다 자기 주소를 불러 무료 플랜 서버가 잠들지 않게 한다 (keepAwake.ts). */
+function startKeepAwake() {
+  const window = parseKeepAwakeHours(process.env.KEEP_AWAKE_HOURS);
+  const url = keepAwakeUrl();
+  if (!window || !url || process.env.NODE_ENV !== "production") return;
+  console.log(`[keep-awake] 한국 시간 ${window.start}시~${window.end}시에는 10분마다 깨어 있게 합니다.`);
+  setInterval(() => {
+    if (!withinKeepAwake(window)) return;
+    fetch(url, { signal: AbortSignal.timeout(10000) }).catch(() => undefined);
+  }, 10 * 60 * 1000).unref?.();
+}
+
 async function startServer() {
   await initializeDataStore();
+  await applyOwnerReset().catch((err) => console.error("[owner-reset] 적용 실패:", err instanceof Error ? err.message : err));
   // 사진 버킷 준비는 기동을 막지 않는다. 실패하면 첫 사진 업로드 때 다시 시도한다.
   void ensurePhotoBackend();
   const isProduction =
@@ -2951,6 +3600,19 @@ async function startServer() {
     });
     setTimeout(checkMonthly, 15_000).unref?.();
     setInterval(checkMonthly, 30 * 60 * 1000).unref?.();
+
+    // 자동 백업·오래된 삭제 사진 정리: 깨어날 때 한 번, 이후 30분마다 확인한다.
+    setTimeout(() => void runMaintenance(), envNumber("MAINTENANCE_START_DELAY_MS", 30_000, 100)).unref?.();
+    setInterval(() => void runMaintenance(), 30 * 60 * 1000).unref?.();
+
+    // 다른 서버(배포 중 옛 서버)가 바꾼 문서를 30초마다 확인해 가져온다.
+    if (useSupabaseStore) {
+      setInterval(() => {
+        syncFromStore().catch((err) => console.error("[store] 다른 서버 변경 확인 실패:", err instanceof Error ? err.message : err));
+      }, envNumber("STORE_SYNC_INTERVAL_MS", 30_000, 200)).unref?.();
+    }
+
+    startKeepAwake();
   });
 }
 

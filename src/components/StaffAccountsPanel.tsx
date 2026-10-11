@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Crown, DatabaseBackup, KeyRound, Loader2, Power, Trash2, UserCog, UserPlus } from "lucide-react";
+import { Crown, KeyRound, Loader2, Power, Trash2, UserCog, UserPlus } from "lucide-react";
 import type { StaffAccountInfo } from "../types";
 
 type Role = StaffAccountInfo["role"];
@@ -263,24 +263,6 @@ export function StaffAccountsPanel({ onRolesChanged }: StaffAccountsPanelProps) 
             </li>
           );
         })}</ul>}
-    </div>
-  );
-}
-
-/** 관리자 전용 — 전체 데이터 백업 내려받기 */
-export function StaffBackupPanel() {
-  return (
-    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5">
-      <h2 className="flex items-center gap-2 font-bold text-slate-900"><DatabaseBackup className="h-5 w-5 text-blue-700" /> 전체 데이터 백업</h2>
-      <p className="text-sm leading-relaxed text-slate-600">
-        모든 학교의 신고(처리 이력 포함), 학교 신청함, 화면에서 등록한 학교, 검토 대상 기기, 알림 설정, 계정 목록을 JSON 파일 하나로 내려받습니다.
-        비밀번호·로그인 세션·학생 알림 구독은 넣지 않습니다. 파일에는 학교 신청자의 회신 이메일이 들어 있으니 안전한 곳에 보관하세요.
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <a href="/api/staff/backup" download className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white">기록만 내려받기</a>
-        <a href="/api/staff/backup?photos=1" download className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700">사진까지 포함해 내려받기</a>
-      </div>
-      <p className="text-xs text-slate-500">사진을 포함하면 파일이 커지고 시간이 걸립니다. 정기적으로(예: 매달 1일) 내려받아 두는 것을 권합니다.</p>
     </div>
   );
 }

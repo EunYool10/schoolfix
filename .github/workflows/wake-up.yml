@@ -1,0 +1,38 @@
+# 첫 접속 지연 줄이기 — Render 무료 플랜은 15분 동안 요청이 없으면 서버를 재운다.
+#
+#  - 아침(한국 06:50)에 서버를 깨운다. 첫 학생이 30~60초를 기다리지 않게.
+#  - 낮(한국 07:00~20:59)에는 14분마다 한 번 더 부른다. 서버도 스스로 10분마다 자기를 부르지만(keepAwake.ts),
+#    재배포 직후 등 그게 멈췄을 때를 대비한 안전망이다.
+#  - 밤에는 부르지 않아 서버가 잠든다. 무료 사용 시간(월 750시간)을 아끼기 위해서다.
+#
+# 주소는 저장소 Settings → Secrets and variables → Actions → Variables 의 SCHOOLFIX_URL 로 바꿀 수 있다.
+# GitHub 는 예약 실행을 몇 분씩 늦게 돌리기도 한다. 저장소에 60일 동안 활동이 없으면 예약 실행이 멈춘다.
+name: 서버 깨우기
+
+on:
+  schedule:
+    - cron: "50 21 * * *"
+    - cron: "*/14 22-23 * * *"
+    - cron: "*/14 0-11 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: /api/health 부르기
+        env:
+          BASE_URL: ${{ vars.SCHOOLFIX_URL || 'https://schoolfix.onrender.com' }}
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 60 "$BASE_URL/api/health" > /dev/null; then
+              echo "깨어 있음 ($attempt번째 시도)"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "서버가 응답하지 않습니다: $BASE_URL"
+          exit 1

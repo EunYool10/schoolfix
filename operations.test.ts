@@ -9,7 +9,11 @@
  *  8) 확인 코드로 내 신고 불러오기
  *  9) 학생 알림 (Web Push) — 구독 주소 검증, 묶기, 문구
  * 10) 운영진 개인 계정 규칙과 로그인 세션 (해시 저장, 재시작 후 유지, 강제 종료)
- * 11) 총괄 — 모든 계정 위의 1인자 (지정·넘기기, 아무도 못 건드림)
+ * 11) 총괄 — 모든 계정 위의 1인자 (지정·넘기기, 아무도 못 건드림), 다른 서버와 세션 합치기
+ * 12) 서버 여러 대 저장 충돌 — 버전 확인과 재시도
+ * 13) 백업 보관 — 이름 규칙, 보관 개수, 로컬 보관소
+ * 14) 첫 접속 지연 줄이기 — 깨어 있을 시간
+ * 15) 운영 기록
  */
 
 import { computeSla, slaLabel } from "./src/utils/sla";
@@ -26,6 +30,13 @@ import { hashRecoveryCode, issueRecoveryCode, normalizeRecoveryCode, ownerTokenH
 import { buildReportPush, isAllowedPushEndpoint, parseSubscription, recipientsFor, upsertPushRecord } from "./pushNotify";
 import { hashSessionToken, MASTER_USERNAME, passwordError, publicAccount, SessionStore, usernameError, type StaffAccount, type StaffSession } from "./staffAuth";
 import { assignableRoles, canAssignOwner, canManageAccount, hasOwner, isAdminRole } from "./staffAuth";
+import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
+import { BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore } from "./backupStore";
+import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
+import { appendAudit, auditCategory, newAuditEntry } from "./auditLog";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 let passed = 0;
 let failed = 0;
@@ -468,14 +479,132 @@ console.log("\n=== 11) 총괄 (모든 계정 위의 1인자) ===\n");
   const token = persisting.create({ role: "owner", accountId: "acc_o", name: "총괄", schoolId: null });
   store.load(saved);
   check("총괄 세션도 재시작 후 유지", store.get(token)?.role === "owner");
+
+  // 다른 서버와 세션 합치기 (세 방향 비교)
+  const a = new SessionStore(async () => {});
+  const shared = a.create({ role: "staff", accountId: "acc_x", name: "X", schoolId: null });
+  const persistedList = a.snapshot();
+  a.markPersisted(persistedList);
+  const b = new SessionStore(async () => {});
+  b.load(persistedList);
+  check("다른 서버에 저장된 세션을 불러옴", b.get(shared)?.name === "X");
+  const onlyOnB = b.create({ role: "staff", accountId: "acc_y", name: "Y", schoolId: null });
+  b.syncFromRemote([]);
+  check("다른 서버에서 끝난 세션(저장소에서 사라짐)은 여기서도 끝남", b.get(shared) === null);
+  check("여기서 새로 만들고 아직 저장하지 못한 세션은 남김", b.get(onlyOnB)?.name === "Y");
+  const c = new SessionStore(async () => {});
+  c.load([]);
+  const revokedHere = c.create({ role: "staff", accountId: "acc_z", name: "Z", schoolId: null });
+  const zList = c.snapshot();
+  c.revoke(revokedHere);
+  c.syncFromRemote(zList);
+  check("여기서 로그아웃한 세션은 옛 목록과 합쳐도 되살아나지 않음", c.get(revokedHere) === null);
 }
 
-console.log(`\n${"=".repeat(60)}`);
-console.log(`통과 ${passed} / 실패 ${failed}`);
-if (failures.length) {
-  console.log("\n실패 목록:");
-  failures.forEach((f) => console.log(`  - ${f}`));
-}
-console.log("=".repeat(60));
+async function asyncSections() {
+  console.log("\n=== 12) 서버 여러 대 저장 충돌 (storeSync) ===\n");
+  {
+    check("다음 버전은 이전보다 항상 뒤", Date.parse(nextStoreVersion("2026-10-11T03:00:00.500+00:00", Date.parse("2026-10-11T03:00:00.100Z"))) === Date.parse("2026-10-11T03:00:00.501Z"));
+    check("처음 버전은 지금 시각", nextStoreVersion(null, Date.parse("2026-10-11T00:00:00Z")) === "2026-10-11T00:00:00.000Z");
 
-process.exit(failed > 0 ? 1 : 0);
+    let refreshed = 0;
+    const withLock = createDocLocks<string>(async () => { refreshed += 1; });
+    let attempts = 0;
+    const value = await withLock("reports", async () => {
+      attempts += 1;
+      if (attempts < 3) throw new StoreConflictError("reports");
+      return "saved";
+    });
+    check("충돌하면 다시 읽고 재시도해 성공", value === "saved" && attempts === 3 && refreshed === 2, `${attempts}/${refreshed}`);
+
+    let gaveUp = false;
+    try {
+      await withLock("reports", async () => { throw new StoreConflictError("reports"); });
+    } catch (err) {
+      gaveUp = err instanceof StoreConflictError;
+    }
+    check("계속 충돌하면 정해진 횟수 뒤 포기", gaveUp);
+
+    let otherError = "";
+    try {
+      await withLock("reports", async () => { throw new Error("네트워크 오류"); });
+    } catch (err) {
+      otherError = err instanceof Error ? err.message : "";
+    }
+    check("충돌이 아닌 오류는 재시도하지 않고 그대로", otherError === "네트워크 오류");
+
+    const order: string[] = [];
+    const slow = withLock("doc", async () => { await new Promise((r) => setTimeout(r, 30)); order.push("first"); });
+    const fast = withLock("doc", async () => { order.push("second"); });
+    const elsewhere = withLock("other", async () => { order.push("other-doc"); });
+    await Promise.all([slow, fast, elsewhere]);
+    check("같은 문서는 차례대로", order.indexOf("first") < order.indexOf("second"), order.join());
+    check("다른 문서는 기다리지 않음", order[0] === "other-doc", order.join());
+  }
+
+  console.log("\n=== 13) 백업 보관 (backupStore) ===\n");
+  {
+    check("한국 날짜 (UTC 15시 = 다음 날)", kstDate(new Date("2026-10-11T15:30:00Z")) === "2026-10-12");
+    check("자동 백업 이름", backupName("auto", new Date("2026-10-11T15:30:00Z")) === "auto/2026-10-12.json");
+    check("직접 만든 백업 이름", backupName("manual", new Date("2026-10-11T03:04:05.678Z")) === "manual/2026-10-11T03-04-05Z.json");
+    check("이름 형식 통과", BACKUP_NAME_PATTERN.test("auto/2026-10-12.json") && BACKUP_NAME_PATTERN.test("before-restore/2026-10-11T03-04-05Z.json"));
+    check("경로 넘나들기 이름 거부", !BACKUP_NAME_PATTERN.test("../secret.json") && !BACKUP_NAME_PATTERN.test("auto/../../x.json") && !BACKUP_NAME_PATTERN.test("other/2026-10-12.json"));
+    const list = ["auto/2026-10-01.json", "auto/2026-10-03.json", "auto/2026-10-02.json"].map((name) => ({ name, size: 1, createdAt: null }));
+    check("오래된 것부터 정리", expiredBackups(list, 2).join() === "auto/2026-10-01.json");
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "schoolfix-backup-test-"));
+    try {
+      const store = localBackupStore(dir);
+      await store.init();
+      await store.put("auto/2026-10-01.json", "{\"a\":1}");
+      await store.put("auto/2026-10-02.json", "{\"a\":2}");
+      check("로컬 보관소 목록 (최신 순)", (await store.list("auto")).map((item) => item.name).join() === "auto/2026-10-02.json,auto/2026-10-01.json");
+      check("로컬 보관소 읽기", (await store.get("auto/2026-10-01.json")) === "{\"a\":1}" && (await store.get("auto/2026-09-01.json")) === null);
+      await store.remove(["auto/2026-10-01.json"]);
+      check("로컬 보관소 지우기", (await store.list("auto")).length === 1);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  console.log("\n=== 14) 첫 접속 지연 줄이기 (keepAwake) ===\n");
+  {
+    check("기본은 한국 시간 7~21시", JSON.stringify(parseKeepAwakeHours(undefined)) === JSON.stringify({ start: 7, end: 21 }));
+    check("off 면 끔", parseKeepAwakeHours("off") === null);
+    check("잘못된 값은 기본값", JSON.stringify(parseKeepAwakeHours("abc")) === JSON.stringify({ start: 7, end: 21 }));
+    const day = { start: 7, end: 21 };
+    check("한국 9시는 깨어 있음 (UTC 0시)", withinKeepAwake(day, Date.parse("2026-10-11T00:00:00Z")));
+    check("한국 21시는 잠듦 (UTC 12시)", !withinKeepAwake(day, Date.parse("2026-10-11T12:00:00Z")));
+    check("한국 6시는 잠듦 (UTC 21시)", !withinKeepAwake(day, Date.parse("2026-10-10T21:00:00Z")));
+    const night = parseKeepAwakeHours("22-6")!;
+    check("자정을 넘는 구간 (한국 23시)", withinKeepAwake(night, Date.parse("2026-10-11T14:00:00Z")) && !withinKeepAwake(night, Date.parse("2026-10-11T03:00:00Z")));
+    check("https 공개 주소만 부름", keepAwakeUrl({ RENDER_EXTERNAL_URL: "https://schoolfix.onrender.com/" }) === "https://schoolfix.onrender.com/api/health" && keepAwakeUrl({ PUBLIC_BASE_URL: "http://x" }) === null && keepAwakeUrl({}) === null);
+  }
+
+  console.log("\n=== 15) 운영 기록 (auditLog) ===\n");
+  {
+    const entry = newAuditEntry("report.delete", { name: "김선생", role: "staff", accountId: "acc_1" }, "REP-1", "x".repeat(900));
+    check("자세한 내용은 500자까지만", entry.detail?.length === 500);
+    let list = [] as ReturnType<typeof newAuditEntry>[];
+    for (let i = 0; i < 5; i++) list = appendAudit(list, newAuditEntry("login", null), 3);
+    check("정해진 개수만 남기고 최신이 앞", list.length === 3);
+    check("분류", auditCategory("owner.transfer") === "account" && auditCategory("report.purge") === "report" && auditCategory("backup.auto") === "backup" && auditCategory("login") === "login" && auditCategory("school.stop") === "etc");
+  }
+}
+
+asyncSections()
+  .catch((err) => {
+    failed++;
+    failures.push(`비동기 검사 중 오류: ${err instanceof Error ? err.stack : err}`);
+  })
+  .finally(() => {
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`통과 ${passed} / 실패 ${failed}`);
+    if (failures.length) {
+      console.log("\n실패 목록:");
+      failures.forEach((f) => console.log(`  - ${f}`));
+    }
+    console.log("=".repeat(60));
+
+    process.exit(failed > 0 ? 1 : 0);
+  });

@@ -23,7 +23,6 @@ const loadReportDetailModal = () => import("./components/ReportDetailModal").the
 const StudentReportView = lazyScreen(loadStudentReportView);
 const ReportListView = lazyScreen(loadReportListView);
 const ReportDetailModal = lazyScreen(loadReportDetailModal);
-const DeleteReportModal = lazyScreen(() => import("./components/DeleteReportModal").then((m) => m.DeleteReportModal));
 const StaffPortal = lazyScreen(() => import("./components/StaffPortal").then((m) => m.StaffPortal));
 const ServicePolicyDialog = lazyScreen(() => import("./components/ServicePolicyDialog").then((m) => m.ServicePolicyDialog));
 
@@ -72,7 +71,6 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [detailReport, setDetailReport] = useState<SchoolReport | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const [isFormDirty, setIsFormDirty] = useState(false);
   const [pendingView, setPendingView] = useState<View | null>(null);
@@ -309,14 +307,6 @@ export default function App() {
     }
   };
 
-  const handleDeleted = (reportId: string) => {
-    setReports((prev) => prev.filter((r) => r.id !== reportId));
-    setMyReports((prev) => prev.filter((r) => r.id !== reportId));
-    setDetailReport(null);
-    showToast("info", `신고 [${reportId}]가 삭제되었습니다.`);
-    // 삭제로 통계가 바뀌므로 서버에서 다시 받아온다.
-    refreshAll();
-  };
 
   /** 작성 중 이탈 경고 */
   const requestView = (next: View) => {
@@ -475,7 +465,7 @@ export default function App() {
                     locationsError={schoolLocationsError}
                     onSubmitReport={handleSubmitReport}
                     isSubmitting={isSubmitting}
-                    onSuccessNavToMyReports={() => setView("REPORTS")}
+                    onSuccessNavToMyReports={() => { setReportsTab("MINE"); setView("REPORTS"); }}
                     onDirtyChange={setIsFormDirty}
                     existingReports={allReportsMarked}
                     onOpenReport={openReport}
@@ -538,18 +528,7 @@ export default function App() {
             schoolId={selectedSchool?.id || ""}
             isOpen={Boolean(detailReport)}
             onClose={() => setDetailReport(null)}
-            onRequestDelete={(id) => setDeleteTargetId(id)}
             onReportUpdated={handleReportUpdated}
-          />
-        )}
-
-        {deleteTargetId && (
-          <DeleteReportModal
-            schoolId={selectedSchool?.id || ""}
-            isOpen={Boolean(deleteTargetId)}
-            reportId={deleteTargetId}
-            onClose={() => setDeleteTargetId(null)}
-            onDeleted={handleDeleted}
           />
         )}
       </Suspense>

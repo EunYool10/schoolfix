@@ -1,8 +1,14 @@
-import { useState } from "react";
-import { HandHeart, Loader2, MessageSquareReply, ThumbsDown, ThumbsUp } from "lucide-react";
+import { useRef, useState } from "react";
+import { HandHeart, ImagePlus, Loader2, MessageSquarePlus, MessageSquareReply, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { SchoolReport } from "../types";
 import { getDeviceToken, loadMeTooIds, loadOwnerTokens, setMeToo } from "../utils/clientTokens";
 import { feedbackPending } from "../utils/feedback";
+import { formatBytes, preparePhoto, type PreparedPhoto } from "../utils/imageCompress";
+
+/** 추가 설명 하나에 붙일 수 있는 사진 수 (서버 MAX_FOLLOWUP_PHOTOS 와 같아야 한다) */
+const FOLLOWUP_MAX_PHOTOS = 3;
+/** 신고 하나에 남길 수 있는 추가 설명 수 (서버 MAX_FOLLOWUPS 와 같아야 한다) */
+const FOLLOWUP_MAX_COUNT = 10;
 
 interface Props {
   report: SchoolReport;
@@ -38,6 +44,7 @@ export function ReportEngagement({ report, schoolId, onReportUpdated }: Props) {
           {report.feedback.resolved ? "👍 해결됐다고 응답했어요. 알려주셔서 고마워요." : "다시 확인해 달라고 응답했어요. 담당자가 다시 살펴봅니다."}
         </p>
       )}
+      {report.isMine && <FollowupBox report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />}
       {!report.isMine && report.moderationStatus !== "held" && report.status !== "completed" && (
         <MeTooButton report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
       )}
@@ -93,6 +100,116 @@ export function MeTooButton({ report, schoolId, onReportUpdated, compact = false
         </p>
       )}
       {error && <p role="alert" className="w-full text-xs text-rose-700">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * 추가 설명 — 신고한 학생이 접수 뒤에 설명이나 사진을 덧붙인다.
+ * 학교 답변에 이어 "아직 그대로예요" 같은 내용을 사진과 함께 보낼 수 있다. 신고한 나와 학교만 본다.
+ */
+function FollowupBox({ report, schoolId, onReportUpdated }: Props) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [photos, setPhotos] = useState<PreparedPhoto[]>([]);
+  const [preparing, setPreparing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const fileInput = useRef<HTMLInputElement>(null);
+  const followups = report.followups ?? [];
+  const full = followups.length >= FOLLOWUP_MAX_COUNT;
+
+  const addFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setError("");
+    const room = FOLLOWUP_MAX_PHOTOS - photos.length;
+    if (room <= 0) { setError(`사진은 ${FOLLOWUP_MAX_PHOTOS}장까지 붙일 수 있어요.`); return; }
+    setPreparing(true);
+    try {
+      const prepared: PreparedPhoto[] = [];
+      for (const file of Array.from(files).slice(0, room)) prepared.push(await preparePhoto(file));
+      setPhotos((current) => [...current, ...prepared].slice(0, FOLLOWUP_MAX_PHOTOS));
+      if (files.length > room) setError(`사진은 ${FOLLOWUP_MAX_PHOTOS}장까지 붙일 수 있어 앞의 ${room}장만 넣었어요.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "사진을 준비하지 못했어요.");
+    } finally {
+      setPreparing(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const submit = async () => {
+    if (busy) return;
+    if (text.trim().length < 2) { setError("설명을 2자 이상 적어 주세요."); return; }
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(report.id)}/followups`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId, tokens: loadOwnerTokens(), text: text.trim(), photos: photos.map((photo) => ({ dataUrl: photo.dataUrl, name: photo.name })) }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "추가 설명을 보내지 못했어요.");
+      setText(""); setPhotos([]); setOpen(false);
+      setNotice("추가 설명을 보냈어요. 학교에서 확인할게요.");
+      onReportUpdated?.(json.data as SchoolReport);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "추가 설명을 보내지 못했어요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {followups.length > 0 && (
+        <div className="space-y-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700"><MessageSquarePlus className="h-3.5 w-3.5 text-violet-600" /> 내가 덧붙인 설명 <span className="font-normal text-slate-400">· 나와 학교만 보여요</span></span>
+          {followups.map((followup) => (
+            <div key={followup.id} className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
+              <p className="text-[11px] text-violet-700">{new Date(followup.at).toLocaleString("ko-KR")}{followup.photoCount ? ` · 사진 ${followup.photoCount}장` : ""}</p>
+              <p className="mt-1 whitespace-pre-wrap leading-relaxed">{followup.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {notice && <p role="status" className="text-xs font-semibold text-emerald-700">{notice}</p>}
+      {!open ? (
+        !full && (
+          <button type="button" onClick={() => { setOpen(true); setNotice(""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-bold text-violet-800 hover:bg-violet-50">
+            <MessageSquarePlus className="h-4 w-4" /> 설명·사진 덧붙이기
+          </button>
+        )
+      ) : (
+        <div className="space-y-2 rounded-xl border border-violet-200 bg-white p-3">
+          <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} rows={3} placeholder="예: 답변 고마워요. 아직 물이 새고 있어서 사진을 더 보내요." className="w-full rounded-lg border border-slate-300 p-2.5 text-sm" />
+          {photos.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {photos.map((photo) => (
+                <li key={photo.key} className="relative">
+                  <img src={photo.dataUrl} alt={photo.name} className="h-16 w-16 rounded-lg object-cover" />
+                  <button type="button" onClick={() => setPhotos((current) => current.filter((item) => item.key !== photo.key))} aria-label={`${photo.name} 빼기`} className="absolute -right-1.5 -top-1.5 rounded-full bg-slate-900 p-0.5 text-white"><X className="h-3 w-3" /></button>
+                  <span className="mt-0.5 block text-center text-[10px] text-slate-500">{formatBytes(photo.size)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input ref={fileInput} type="file" accept="image/*" multiple className="hidden" onChange={(event) => void addFiles(event.target.files)} />
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => fileInput.current?.click()} disabled={preparing || photos.length >= FOLLOWUP_MAX_PHOTOS} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-50">
+              {preparing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} 사진 ({photos.length}/{FOLLOWUP_MAX_PHOTOS})
+            </button>
+            <button type="button" onClick={() => void submit()} disabled={busy || preparing} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3.5 py-2 text-xs font-bold text-white disabled:opacity-60">
+              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} 보내기
+            </button>
+            <button type="button" onClick={() => { setOpen(false); setError(""); }} className="text-xs font-semibold text-slate-500">취소</button>
+          </div>
+          <p className="text-[11px] text-slate-500">이름·연락처 같은 개인정보는 적지 마세요. 부적절한 내용은 학교가 확인한 뒤 처리합니다.</p>
+        </div>
+      )}
+      {full && <p className="text-[11px] text-slate-500">추가 설명은 신고 하나에 {FOLLOWUP_MAX_COUNT}번까지 남길 수 있어요.</p>}
+      {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
     </div>
   );
 }
