@@ -1,0 +1,49 @@
+# PR 자동 검사 — main 에 병합되면 Render 가 바로 배포하므로, 병합 전에 깨진 코드를 걸러 낸다.
+# PR 화면 아래쪽에 결과가 표시된다. 빨간 X 가 뜨면 병합하지 말고 원인부터 고친다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 타입 검사 · 빌드 · 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: 타입 검사
+        run: npm run lint
+
+      - name: 배포용 빌드
+        run: npm run build
+
+      - name: 단위 테스트
+        run: |
+          npm run test:risk
+          npm run test:location
+          npm run test:clarify
+          npm run test:filter
+          npm run test:report
+          npm run test:ops
+
+      - name: 종단 간 테스트 (로컬 저장소)
+        run: npm run test:e2e
+
+      - name: 종단 간 테스트 (Supabase 흉내 서버 · 서버 두 대)
+        run: npm run test:e2e:supabase

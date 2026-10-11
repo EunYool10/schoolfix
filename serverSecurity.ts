@@ -1,10 +1,10 @@
 /**
  * SchoolFix 서버 보안 모듈
  *
- * 로그인이 없는 공개 서비스이므로, 인증 대신 다음으로 보호한다.
- *  - Rate Limit (신고 등록 / AI 요약 / 관리자 비밀번호 검증)
+ * 학생은 로그인 없이 쓰는 공개 서비스이므로, 다음으로 보호한다.
+ *  - Rate Limit (신고 등록 / AI 요약 / 확인 코드 / 운영진 로그인 실패)
  *  - 입력값 검증 (길이·허용값)
- *  - 관리자 비밀번호 bcrypt 검증 (삭제 전용)
+ *  - 공용 비밀번호 bcrypt 검증 (개인 계정과 세션은 staffAuth.ts)
  *  - 보안 헤더 / CORS
  *  - 오류 정보 비노출
  *
@@ -156,13 +156,6 @@ export const LIMITS = {
     message: "신고 내용 확인 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
 
-  /** 관리자 비밀번호 검증: 무차별 대입 방어 (§9) */
-  adminVerify: {
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    blockMs: 10 * 60 * 1000,
-    message: "인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
-  } as RateLimitRule,
   /** 운영진·교사 로그인: 틀린 비밀번호만 센다 (failureLimit). */
   staffLogin: {
     windowMs: 15 * 60 * 1000,
@@ -193,6 +186,13 @@ export const LIMITS = {
     max: 30,
     blockMs: 15 * 60 * 1000,
     message: "시도가 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
+  /** 신고한 학생의 추가 설명 (사진 포함 가능) */
+  followup: {
+    windowMs: 10 * 60 * 1000,
+    max: 30,
+    blockMs: 5 * 60 * 1000,
+    message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
   /** 알림 구독 등록·해제 */
   push: {
@@ -240,67 +240,6 @@ export async function verifyTeacherPassword(password: unknown, schoolId: string)
   const hash = teacherPasswordHashes()[schoolId];
   if (!hash || typeof password !== "string" || !password) return false;
   try { return await bcrypt.compare(password, hash); } catch { return false; }
-}
-
-// ---------------------------------------------------------------------------
-// 관리자 비밀번호 (신고 삭제 전용)
-// ---------------------------------------------------------------------------
-
-/**
- * 비밀번호 원문은 서버 코드·프론트엔드·DB·로그 어디에도 두지 않는다.
- * bcrypt 해시만 환경변수 ADMIN_PASSWORD_HASH 로 주입받는다.
- */
-export function isAdminPasswordConfigured(): boolean {
-  const h = process.env.ADMIN_PASSWORD_HASH;
-  return Boolean(h && h.startsWith("$2"));
-}
-
-export async function verifyAdminPassword(password: unknown): Promise<boolean> {
-  const hash = process.env.ADMIN_PASSWORD_HASH;
-  if (!hash || typeof password !== "string" || !password) return false;
-
-  try {
-    return await bcrypt.compare(password, hash);
-  } catch {
-    // 오류 내용을 호출측에 전달하지 않는다 (§9 — 인증 방식 비노출)
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 삭제 토큰
-//
-// 비밀번호를 두 번 전송하지 않도록, 검증 성공 시 짧은 수명의 1회용 토큰을 발급한다.
-// 토큰은 특정 신고 ID에 묶이며 메모리에만 존재한다.
-// ---------------------------------------------------------------------------
-
-interface DeleteGrant {
-  reportId: string;
-  expiresAt: number;
-}
-
-const deleteGrants = new Map<string, DeleteGrant>();
-const DELETE_TOKEN_TTL_MS = 2 * 60 * 1000;
-
-export function issueDeleteToken(reportId: string): string {
-  const token = crypto.randomBytes(32).toString("hex");
-  deleteGrants.set(token, { reportId, expiresAt: Date.now() + DELETE_TOKEN_TTL_MS });
-  return token;
-}
-
-/** 1회용 — 성공하면 즉시 폐기한다. */
-export function consumeDeleteToken(token: unknown, reportId: string): boolean {
-  if (typeof token !== "string" || !token) return false;
-
-  const grant = deleteGrants.get(token);
-  if (!grant) return false;
-
-  deleteGrants.delete(token);
-
-  if (grant.expiresAt < Date.now()) return false;
-  if (grant.reportId !== reportId) return false;
-
-  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -556,7 +495,7 @@ export function corsPolicy() {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type,X-Delete-Token");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     }
 
     if (req.method === "OPTIONS") {

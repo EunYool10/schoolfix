@@ -4,8 +4,6 @@ import {
   MapPin,
   Tag,
   Clock,
-  Trash2,
-  UserCog,
 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
 import { loadRecoveryCodes } from "../utils/clientTokens";
@@ -19,8 +17,6 @@ interface ReportDetailModalProps {
   schoolId: string;
   isOpen: boolean;
   onClose: () => void;
-  /** 삭제 요청 — 관리자 비밀번호 확인은 DeleteReportModal 이 담당한다. */
-  onRequestDelete?: (reportId: string) => void;
   /** 공감·만족도 응답으로 신고가 바뀌었을 때 */
   onReportUpdated?: (report: SchoolReport) => void;
 }
@@ -37,7 +33,6 @@ export function ReportDetailModal({
   schoolId,
   isOpen,
   onClose,
-  onRequestDelete,
   onReportUpdated,
 }: ReportDetailModalProps) {
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -160,27 +155,6 @@ export function ReportDetailModal({
               </div>
             )}
 
-            {/*
-              삭제 — 관리자 비밀번호가 필요한 유일한 기능.
-              더보기 메뉴에 숨겨 두었더니 있는 줄도 모르는 상태여서 밖으로 꺼냈다.
-              다만 주요 동작은 아니므로 본문 맨 아래, 약한 스타일로 배치한다.
-            */}
-            {onRequestDelete && (
-              <div className="border-t border-slate-200 pt-4 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] text-slate-400 inline-flex items-center gap-1.5">
-                  <UserCog className="h-3.5 w-3.5" />
-                  신고 삭제에는 관리자 비밀번호가 필요합니다.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onRequestDelete(report.id)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-200 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-50 transition cursor-pointer"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>삭제하기</span>
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -15,10 +15,15 @@ create table if not exists public.schoolfix_store (
 --   staff_accounts     운영진·교사 개인 계정 (비밀번호는 bcrypt 해시만)
 --   staff_sessions     로그인 세션 (쿠키 토큰의 SHA-256 해시만. 서버 재시작 후에도 로그인 유지)
 --   push_subscriptions 학생 알림 구독 (브라우저 푸시 주소와 소유 토큰 해시)
+--   audit_log          운영 기록 (운영진·교사가 한 중요한 일, 최근 1000건)
 -- 예전 버전의 제약을 새 목록으로 바꿉니다.
 alter table public.schoolfix_store drop constraint if exists schoolfix_store_key_check;
 alter table public.schoolfix_store add constraint schoolfix_store_key_check
-  check (key in ('reports', 'school_applications', 'custom_schools', 'blocked_reporters', 'settings', 'staff_accounts', 'staff_sessions', 'push_subscriptions'));
+  check (key in ('reports', 'school_applications', 'custom_schools', 'blocked_reporters', 'settings', 'staff_accounts', 'staff_sessions', 'push_subscriptions', 'audit_log'));
+
+-- 서버는 문서를 저장할 때 updated_at 이 마지막으로 읽은 값과 같을 때만 고친다(배포 중 서버 두 대가 서로 덮어쓰지 않게).
+-- 그래서 updated_at 을 바꾸는 트리거를 달지 마세요. 서버가 직접 정합니다.
+-- 백업 파일은 Storage 의 비공개 버킷(schoolfix-backups)에 서버가 알아서 만들어 저장합니다.
 
 alter table public.schoolfix_store enable row level security;
 

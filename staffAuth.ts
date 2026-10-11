@@ -140,23 +140,62 @@ export function hashSessionToken(token: string): string {
   return crypto.createHash("sha256").update(`session:${token}`).digest("hex");
 }
 
+function validSessions(list: unknown, now: number): StaffSession[] {
+  if (!Array.isArray(list)) return [];
+  return (list as StaffSession[]).filter((item) =>
+    Boolean(item)
+    && typeof item.tokenHash === "string" && /^[a-f0-9]{64}$/.test(item.tokenHash)
+    && typeof item.expiresAt === "number" && item.expiresAt > now
+    && ["owner", "admin", "staff", "teacher"].includes(item.role));
+}
+
 export class SessionStore {
   private sessions = new Map<string, StaffSession>();
+  /** 저장소에 마지막으로 있던 세션들. 다른 서버에서 끝낸 세션을 알아보는 데 쓴다. */
+  private persisted = new Set<string>();
+  /** 여기서 끝낸 세션(만료 시각까지 기억). 다른 서버의 옛 목록을 합칠 때 되살리지 않는다. */
+  private revoked = new Map<string, number>();
   private persistWarned = false;
 
-  /** persist 는 변경될 때마다 전체 목록(해시)을 저장한다. 실패해도 로그인은 메모리로 계속 동작한다. */
+  /**
+   * persist 는 세션이 바뀔 때마다 불린다. 저장할 목록은 snapshot() 으로 다시 얻을 수 있다.
+   * 실패해도 로그인은 메모리로 계속 동작한다.
+   */
   constructor(private persist: (sessions: StaffSession[]) => Promise<void>) {}
 
   /** 서버 시작 시 저장소에서 읽은 세션을 불러온다. 만료된 것은 버린다. */
   load(list: unknown, now = Date.now()) {
     this.sessions.clear();
-    if (!Array.isArray(list)) return;
-    for (const item of list as StaffSession[]) {
-      if (!item || typeof item.tokenHash !== "string" || !/^[a-f0-9]{64}$/.test(item.tokenHash)) continue;
-      if (typeof item.expiresAt !== "number" || item.expiresAt <= now) continue;
-      if (!["owner", "admin", "staff", "teacher"].includes(item.role)) continue;
-      this.sessions.set(item.tokenHash, { ...item });
+    for (const item of validSessions(list, now)) this.sessions.set(item.tokenHash, { ...item });
+    this.persisted = new Set(this.sessions.keys());
+  }
+
+  /**
+   * 다른 서버가 저장한 목록과 합친다 (세 방향 비교).
+   *  - 저장소에 있다가 사라진 세션 → 다른 서버에서 로그아웃·계정 중지된 것이므로 여기서도 끝낸다.
+   *  - 저장소에 새로 생긴 세션 → 다른 서버에서 로그인한 것이므로 받아들인다(여기서 끝낸 것은 제외).
+   *  - 여기서 새로 만들고 아직 저장하지 못한 세션은 그대로 둔다.
+   */
+  syncFromRemote(list: unknown, now = Date.now()) {
+    const remote = validSessions(list, now);
+    const remoteHashes = new Set(remote.map((session) => session.tokenHash));
+    for (const hash of [...this.sessions.keys()]) {
+      if (this.persisted.has(hash) && !remoteHashes.has(hash)) this.sessions.delete(hash);
     }
+    for (const session of remote) {
+      if (!this.sessions.has(session.tokenHash) && !this.revoked.has(session.tokenHash)) this.sessions.set(session.tokenHash, { ...session });
+    }
+    this.persisted = remoteHashes;
+  }
+
+  /** 지금 저장할 목록 (만료된 것 제외) */
+  snapshot(now = Date.now()): StaffSession[] {
+    return [...this.sessions.values()].filter((session) => session.expiresAt > now).map((session) => ({ ...session }));
+  }
+
+  /** 저장에 성공한 목록을 기억한다. */
+  markPersisted(sessions: StaffSession[]) {
+    this.persisted = new Set(sessions.map((session) => session.tokenHash));
   }
 
   create(data: Omit<StaffSession, "tokenHash" | "createdAt" | "expiresAt">, now = Date.now()): string {
@@ -171,7 +210,7 @@ export class SessionStore {
     const session = this.sessions.get(hashSessionToken(token));
     if (!session) return null;
     if (session.expiresAt <= now) {
-      this.sessions.delete(session.tokenHash);
+      this.end(session.tokenHash);
       this.save(now);
       return null;
     }
@@ -180,18 +219,15 @@ export class SessionStore {
 
   revoke(token: string | null) {
     if (!token) return;
-    if (this.sessions.delete(hashSessionToken(token))) this.save();
+    if (this.end(hashSessionToken(token))) this.save();
   }
 
   /** 계정을 끄거나 지우거나 비밀번호를 바꾸면 그 계정의 세션을 모두 끝낸다. keepToken 세션은 남긴다. */
   revokeAccount(accountId: string, keepToken?: string | null) {
     const keep = keepToken ? hashSessionToken(keepToken) : null;
     let changed = false;
-    for (const [hash, session] of this.sessions) {
-      if (session.accountId === accountId && hash !== keep) {
-        this.sessions.delete(hash);
-        changed = true;
-      }
+    for (const [hash, session] of [...this.sessions]) {
+      if (session.accountId === accountId && hash !== keep) changed = this.end(hash) || changed;
     }
     if (changed) this.save();
   }
@@ -214,12 +250,22 @@ export class SessionStore {
     return this.sessions.size;
   }
 
+  private end(hash: string): boolean {
+    const session = this.sessions.get(hash);
+    if (!session) return false;
+    this.sessions.delete(hash);
+    this.revoked.set(hash, session.expiresAt);
+    return true;
+  }
+
   private save(now = Date.now()) {
-    for (const [hash, session] of this.sessions) {
-      if (session.expiresAt <= now) this.sessions.delete(hash);
+    for (const [hash, session] of [...this.sessions]) {
+      if (session.expiresAt <= now) this.end(hash);
     }
-    const snapshot = [...this.sessions.values()].map((session) => ({ ...session }));
-    this.persist(snapshot).catch((err) => {
+    for (const [hash, expiresAt] of [...this.revoked]) {
+      if (expiresAt <= now) this.revoked.delete(hash);
+    }
+    this.persist(this.snapshot(now)).catch((err) => {
       if (this.persistWarned) return;
       this.persistWarned = true;
       console.error("[staff] 로그인 세션을 저장하지 못했습니다. 서버가 재시작되면 다시 로그인해야 합니다 (supabase/schema.sql 갱신 필요할 수 있음):", err instanceof Error ? err.message : err);

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, RefreshCw, Save, School as SchoolIcon, Search, ShieldAlert, ShieldCheck, Trash2, UserCog } from "lucide-react";
+import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport, type StaffSessionInfo } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
 import { StaffStatsPanel } from "./StaffStatsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { PhotoGallery } from "./PhotoGallery";
-import { MyPasswordForm, StaffAccountsPanel, StaffBackupPanel } from "./StaffAccountsPanel";
+import { MyPasswordForm, StaffAccountsPanel } from "./StaffAccountsPanel";
+import { StaffBackupPanel } from "./StaffBackupPanel";
+import { StaffDeletedReportsPanel } from "./StaffDeletedReportsPanel";
+import { StaffAuditPanel } from "./StaffAuditPanel";
 
 /** 운영진 화면이 신고 목록을 다시 받아오는 간격 */
 const AUTO_REFRESH_MS = 30 * 1000;
@@ -50,7 +53,10 @@ interface BlockedDevice {
   createdAt: string;
 }
 
-type Section = "reports" | "stats" | "applications" | "blocked" | "notifications" | "accounts" | "backup";
+type Section = "reports" | "stats" | "applications" | "blocked" | "notifications" | "accounts" | "deleted" | "audit" | "backup";
+
+/** 자동 갱신으로 알게 된 새 소식 — 새 신고, 또는 학생이 덧붙인 설명 */
+type Freshness = "new" | "followup";
 
 const ACTOR_LABEL: Record<ReportHistoryEntry["actor"], string> = { staff: "운영진", teacher: "교사", reporter: "신고자", system: "시스템" };
 
@@ -72,6 +78,9 @@ function describeHistory(entry: ReportHistoryEntry): string {
     case "moderation": return entry.to === "approved" ? "안전성 검토 승인·공개" : "안전성 검토에서 삭제";
     case "feedback": return `만족도 응답: ${entry.to}`;
     case "spam": return "장난 신고로 처리";
+    case "delete": return `삭제 — 사유: ${entry.to ?? "-"}`;
+    case "restore": return "삭제한 신고 되살림";
+    case "followup": return entry.to ?? "추가 설명";
     default: return entry.action;
   }
 }
@@ -95,10 +104,12 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  /** 자동 갱신으로 새로 들어온 신고. 운영진이 확인을 누르면 비운다. */
-  const [freshIds, setFreshIds] = useState<Set<string>>(() => new Set());
+  /** 자동 갱신으로 알게 된 새 신고·새 추가 설명. 운영진이 확인을 누르면 비운다. */
+  const [fresh, setFresh] = useState<Map<string, Freshness>>(() => new Map());
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const knownIdsRef = useRef<Set<string> | null>(null);
+  /** 마지막으로 받은 목록 — 신고 id → 추가 설명 수 */
+  const knownRef = useRef<Map<string, number> | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -115,7 +126,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
 
   // 운영진 목록을 받기 전에는 공개 목록으로 먼저 보여 준다(이력·기기 정보만 비어 있다).
   const displayedReports: StaffReport[] = useMemo(
-    () => staffReports ?? reports.map((report) => ({ ...report, history: [], reporter: { deviceReportCount: 0, blocked: false } })),
+    () => staffReports ?? reports.map(({ followups: _mine, ...report }) => ({ ...report, history: [], reporter: { deviceReportCount: 0, blocked: false } })),
     [staffReports, reports]
   );
 
@@ -211,12 +222,23 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       }
       if (!res.ok || !json.ok) return;
       const list: StaffReport[] = Array.isArray(json.data) ? json.data : [];
-      const known = knownIdsRef.current;
+      const known = knownRef.current;
       if (known) {
-        const added = list.filter((report) => !known.has(report.id)).map((report) => report.id);
-        if (added.length) setFreshIds((current) => new Set([...current, ...added]));
+        const changes: Array<[string, Freshness]> = [];
+        for (const report of list) {
+          const before = known.get(report.id);
+          if (before === undefined) changes.push([report.id, "new"]);
+          else if ((report.followups?.length ?? 0) > before) changes.push([report.id, "followup"]);
+        }
+        if (changes.length) setFresh((current) => {
+          const next = new Map(current);
+          // 새 신고 표시는 추가 설명 표시보다 우선한다.
+          for (const [id, kind] of changes) if (next.get(id) !== "new") next.set(id, kind);
+          return next;
+        });
       }
-      knownIdsRef.current = new Set(list.map((report) => report.id));
+      // 한 번 본 신고는 목록에서 빠져도(삭제) 기억해 둔다. 되살린 신고를 "새로 들어옴" 으로 착각하지 않게.
+      knownRef.current = new Map([...(known ?? []), ...list.map((report): [string, number] => [report.id, report.followups?.length ?? 0])]);
       setStaffReports(list);
       setLastSyncedAt(new Date());
     } catch { /* keep existing list */ }
@@ -224,8 +246,8 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
 
   useEffect(() => {
     setStaffReports(null);
-    knownIdsRef.current = null;
-    setFreshIds(new Set());
+    knownRef.current = null;
+    setFresh(new Map());
     if (authenticated) void refreshStaffReports();
   }, [authenticated, role, refreshStaffReports]);
 
@@ -251,12 +273,14 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     };
   }, [authenticated, refreshStaffReports]);
 
-  // 새 신고가 있으면 브라우저 탭 제목에도 표시한다(다른 탭을 보고 있어도 알 수 있게).
+  // 새 소식이 있으면 브라우저 탭 제목에도 표시한다(다른 탭을 보고 있어도 알 수 있게).
   useEffect(() => {
     const original = document.title.replace(/^\(\d+\) /, "");
-    document.title = freshIds.size > 0 ? `(${freshIds.size}) ${original}` : original;
+    document.title = fresh.size > 0 ? `(${fresh.size}) ${original}` : original;
     return () => { document.title = original; };
-  }, [freshIds]);
+  }, [fresh]);
+  const freshNew = [...fresh.values()].filter((kind) => kind === "new").length;
+  const freshFollowups = fresh.size - freshNew;
 
   const refreshApplications = async () => {
     try {
@@ -358,7 +382,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     } catch (err) { setError(err instanceof Error ? err.message : "보류를 해제하지 못했습니다."); }
   };
 
-  const moderate = async (report: SchoolReport, action: "approve" | "reject") => {
+  const moderate = async (report: StaffReport, action: "approve" | "reject") => {
     setBusyId(report.id); setError(""); setNotice("");
     try {
       const res = await fetch(`/api/staff/reports/${encodeURIComponent(report.id)}/moderation?schoolId=${encodeURIComponent(schoolId)}`, {
@@ -372,8 +396,26 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     finally { setBusyId(null); }
   };
 
-  const markSpam = async (report: SchoolReport) => {
-    if (!window.confirm(`${report.id} 신고를 장난 신고로 처리할까요?\n신고가 삭제되고, 같은 기기에서 오는 신고는 30일 동안 공개 전에 운영진 검토를 거칩니다.`)) return;
+  /** 신고 삭제 — 사유를 적어야 하고, 누가 지웠는지 처리 이력과 운영 기록에 남는다. 관리자가 되살릴 수 있다. */
+  const deleteReport = async (event: FormEvent<HTMLFormElement>, report: StaffReport) => {
+    event.preventDefault();
+    const reason = String(new FormData(event.currentTarget).get("reason") || "").trim();
+    setBusyId(report.id); setError(""); setNotice("");
+    try {
+      const res = await fetch(`/api/staff/reports/${encodeURIComponent(report.id)}?schoolId=${encodeURIComponent(schoolId)}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "신고를 삭제하지 못했습니다.");
+      setNotice(`${report.id} 신고를 삭제했습니다. 관리자는 '삭제된 신고'에서 되살릴 수 있습니다.`);
+      setDeletingId(null);
+      await afterChange();
+    } catch (err) { setError(err instanceof Error ? err.message : "신고를 삭제하지 못했습니다."); }
+    finally { setBusyId(null); }
+  };
+
+  const markSpam = async (report: StaffReport) => {
+    if (!window.confirm(`${report.id} 신고를 장난 신고로 처리할까요?\n신고가 삭제되고, 같은 기기에서 오는 신고는 30일 동안 공개 전에 운영진 검토를 거칩니다. 관리자는 '삭제된 신고'에서 되살릴 수 있습니다.`)) return;
     setBusyId(report.id); setError(""); setNotice("");
     try {
       const res = await fetch(`/api/staff/reports/${encodeURIComponent(report.id)}/spam?schoolId=${encodeURIComponent(schoolId)}`, { method: "POST" });
@@ -426,8 +468,11 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   };
 
   const isAdmin = Boolean(sessionInfo?.isAdmin);
+  // 신고를 지우는 일은 누가 했는지 남도록 개인 계정으로만 한다(서버도 같은 규칙으로 막는다).
+  const canDelete = Boolean(sessionInfo?.hasAccount);
+  const deleteHint = "삭제는 개인 계정으로 로그인해야 할 수 있습니다";
 
-  const saveReport = async (event: FormEvent<HTMLFormElement>, report: SchoolReport) => {
+  const saveReport = async (event: FormEvent<HTMLFormElement>, report: StaffReport) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setBusyId(report.id);
@@ -495,12 +540,14 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       {showPasswordForm && <MyPasswordForm onDone={() => setShowPasswordForm(false)} />}
 
       <div className="flex flex-wrap gap-2">
-        {sectionButton("reports", "신고 관리", ShieldCheck, freshIds.size > 0 ? freshIds.size : undefined)}
+        {sectionButton("reports", "신고 관리", ShieldCheck, fresh.size > 0 ? fresh.size : undefined)}
         {sectionButton("stats", "월별 통계", BarChart3)}
         {role === "staff" && sectionButton("applications", "학교 신청 메일함", Inbox, schoolApplications.filter((item) => item.status === "new").length)}
         {role === "staff" && sectionButton("blocked", "검토 대상 기기", Ban, blockedDevices.length)}
         {role === "staff" && sectionButton("notifications", "알림", BellRing)}
         {isAdmin && sectionButton("accounts", "계정 관리", UserCog)}
+        {isAdmin && sectionButton("deleted", "삭제된 신고", ArchiveRestore)}
+        {isAdmin && sectionButton("audit", "운영 기록", ScrollText)}
         {isAdmin && sectionButton("backup", "백업", DatabaseBackup)}
       </div>
 
@@ -513,7 +560,11 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
 
       {isAdmin && activeSection === "accounts" && <StaffAccountsPanel onRolesChanged={() => { fetch("/api/staff/session").then((res) => res.json()).then((json) => { applySession(json); }).catch(() => undefined); }} />}
 
-      {isAdmin && activeSection === "backup" && <StaffBackupPanel />}
+      {isAdmin && activeSection === "deleted" && <StaffDeletedReportsPanel schoolId={schoolId} schoolName={schoolName} canPurge={Boolean(sessionInfo?.hasAccount)} onRestored={() => void afterChange()} />}
+
+      {isAdmin && activeSection === "audit" && <StaffAuditPanel />}
+
+      {isAdmin && activeSection === "backup" && <StaffBackupPanel isOwner={Boolean(sessionInfo?.isOwner)} onRestored={() => void afterChange()} />}
 
       {role === "staff" && activeSection === "blocked" && <div className="space-y-3">
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">장난 신고로 처리한 신고의 접수 기기입니다. 이 기기에서 오는 신고는 막지 않고 <strong>공개 전에 운영진 검토</strong>를 거칩니다. 짧은 시간에 여러 건을 보낸 기기의 신고도 자동으로 검토 대기가 됩니다.</p>
@@ -572,10 +623,10 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
         </select>
         <button type="button" onClick={exportCsv} disabled={visibleReports.length === 0} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download className="h-4 w-4" /> CSV 내보내기</button>
       </div>
-      {freshIds.size > 0 && (
+      {fresh.size > 0 && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          <span><strong>새 신고 {freshIds.size}건</strong>이 들어왔습니다. 목록에 "새로 들어옴" 으로 표시했습니다.</span>
-          <button type="button" onClick={() => setFreshIds(new Set())} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-800 shadow-sm">확인</button>
+          <span><strong>{[freshNew ? `새 신고 ${freshNew}건` : null, freshFollowups ? `학생 추가 설명 ${freshFollowups}건` : null].filter(Boolean).join(" · ")}</strong>이 들어왔습니다. 목록에 표시했습니다.</span>
+          <button type="button" onClick={() => setFresh(new Map())} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-800 shadow-sm">확인</button>
         </div>
       )}
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
@@ -588,10 +639,11 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
         const suspicious = report.reporter.blocked || report.reporter.deviceReportCount >= 5;
         return (
         <article key={`${report.id}-${report.updatedAt}`} className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${sla.overdue && report.moderationStatus !== "held" ? "border-rose-300" : "border-slate-200"}`}>
-          {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button></div></div>}
+          {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button>{!canDelete && <span className="self-center text-[11px] text-amber-800">{deleteHint}</span>}</div></div>}
           <div className="mb-4">
             <div className="flex flex-wrap items-center gap-2">
-              {freshIds.has(report.id) && <span className="rounded-full bg-blue-600 px-2 py-1 text-xs font-bold text-white">새로 들어옴</span>}
+              {fresh.get(report.id) === "new" && <span className="rounded-full bg-blue-600 px-2 py-1 text-xs font-bold text-white">새로 들어옴</span>}
+              {fresh.get(report.id) === "followup" && <span className="rounded-full bg-violet-600 px-2 py-1 text-xs font-bold text-white">새 추가 설명</span>}
               <span className="font-mono text-xs text-slate-500">{report.id}</span>
               <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{[report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ")} · {report.category}</span>
               <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${report.riskLevel ? RISK_LEVEL_MAP[report.riskLevel].badgeClass : "border-slate-200 bg-slate-50 text-slate-500"}`}>{report.riskLevel || "분석 대기"}</span>
@@ -604,6 +656,18 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
             <h2 className="mt-2 font-bold text-slate-900">{report.title || "시설 문제 신고"}</h2>
             <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{report.description}</p>
             {report.feedback?.comment && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">신고자 의견: {report.feedback.comment}</p>}
+            {(report.followups?.length ?? 0) > 0 && (
+              <div className="mt-3 space-y-2 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-bold text-violet-900"><MessageSquarePlus className="h-3.5 w-3.5" /> 학생이 덧붙인 설명 {report.followups!.length}건 <span className="font-normal text-violet-700">· 신고한 학생과 운영진·교사만 봅니다</span></p>
+                {report.followups!.map((followup) => (
+                  <div key={followup.id} className="rounded-lg bg-white p-3 text-sm">
+                    <p className="text-[11px] text-slate-500">{new Date(followup.at).toLocaleString("ko-KR")}{followup.held ? ` · ⚠ 안전성 확인 필요 (${followup.heldReason || "자동 검사"})` : ""}</p>
+                    <p className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{followup.text}</p>
+                    {followup.photos.length > 0 && <div className="mt-2"><PhotoGallery photos={followup.photos} title="추가 설명 사진" /></div>}
+                  </div>
+                ))}
+              </div>
+            )}
             <p className="mt-2 text-xs text-slate-500">접수 {new Date(report.createdAt).toLocaleString("ko-KR")} · 기한 {new Date(sla.dueAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}{report.assignee ? ` · 담당 ${report.assignee}` : " · 담당자 미지정"}</p>
           </div>
           <form onSubmit={(event) => saveReport(event, report)} className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-2">
@@ -613,9 +677,23 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
             <label className="text-xs font-semibold text-slate-600">신고한 학생에게 답변 <span className="font-normal text-slate-400">(신고한 학생에게만 보임)</span><textarea name="reporterReply" defaultValue={report.reporterReply || ""} maxLength={1000} rows={2} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="예: 알려줘서 고마워요. 이번 주 금요일에 교체할 예정이에요." /></label>
             <div className="flex flex-wrap items-center gap-2 md:col-span-2">
               <button disabled={busyId === report.id} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"><Save className="h-4 w-4" />{busyId === report.id ? "저장 중…" : "처리 내용 저장"}</button>
-              {role === "staff" && <button type="button" disabled={busyId === report.id} onClick={() => markSpam(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 disabled:opacity-60"><Ban className="h-4 w-4" />장난 신고로 처리</button>}
+              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => markSpam(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 disabled:opacity-60"><Ban className="h-4 w-4" />장난 신고로 처리</button>}
+              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => setDeletingId(deletingId === report.id ? null : report.id)} aria-expanded={deletingId === report.id} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-700 disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제</button>}
+              {role === "staff" && !canDelete && <span className="text-[11px] text-slate-500">{deleteHint}</span>}
             </div>
           </form>
+          {deletingId === report.id && (
+            <form onSubmit={(event) => deleteReport(event, report)} className="mt-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+              <label className="block text-xs font-semibold text-rose-900">삭제 사유 (필수 — 처리 이력과 운영 기록에 남습니다)
+                <textarea name="reason" required minLength={2} maxLength={300} rows={2} placeholder="예: 같은 내용 중복 신고 (REP-…와 같음)" className="mt-1 block w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm" />
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button disabled={busyId === report.id} className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제하기</button>
+                <button type="button" onClick={() => setDeletingId(null)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">취소</button>
+                <span className="text-[11px] text-slate-600">공개 목록에서 내려가고, 관리자는 '삭제된 신고'에서 되살릴 수 있습니다. 사진은 30일 동안 보관됩니다.</span>
+              </div>
+            </form>
+          )}
           {report.history.length > 0 && <details className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
             <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold text-slate-600"><History className="h-3.5 w-3.5" /> 처리 이력 {report.history.length}건</summary>
             <ol className="mt-2 space-y-1">{[...report.history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-slate-600"><span className="font-mono text-slate-400">{new Date(entry.at).toLocaleString("ko-KR")}</span> · <strong className="text-slate-700">{actorLabel(entry)}</strong> · {describeHistory(entry)}</li>)}</ol>

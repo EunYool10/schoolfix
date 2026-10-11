@@ -34,8 +34,7 @@ services:
       # 아래 두 값은 커밋하지 않습니다 — Render 대시보드 > Environment 에서 직접 입력하세요.
       - key: OPENAI_API_KEY
         sync: false
-      # 신고 삭제에 필요한 관리자 비밀번호의 bcrypt 해시.
-      # 이 항목이 없으면 삭제 기능이 영구히 503 을 반환한다.
+      # 더 이상 쓰지 않습니다(신고 삭제는 운영진 화면에서 개인 계정으로 합니다). Render 에서 지워도 됩니다.
       - key: ADMIN_PASSWORD_HASH
         sync: false
       # 공용 운영진 계정(아이디 admin, 관리자 권한) 비밀번호의 bcrypt 해시.

@@ -237,6 +237,8 @@ export interface SchoolReport {
   reporterReplyAt?: string | null;
   /** 처리 완료 후 신고한 학생의 만족도 응답 */
   feedback?: ReportFeedback | null;
+  /** 신고한 학생이 덧붙인 설명 ("내 신고" 에만 있다. 사진은 운영진만 열 수 있어 장수만 온다) */
+  followups?: MyFollowup[];
   createdAt: string;
   updatedAt: string;
 }
@@ -259,7 +261,7 @@ export interface ReportHistoryEntry {
   actor: "staff" | "teacher" | "reporter" | "system";
   /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력에는 없다. */
   actorName?: string | null;
-  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup";
   from?: string | null;
   to?: string | null;
 }
@@ -292,7 +294,59 @@ export interface StaffAccountInfo {
 }
 
 /** GET /api/staff/reports — 운영진·교사 화면 전용 형태 */
-export interface StaffReport extends SchoolReport {
+/** 학생이 덧붙인 설명 — 신고한 학생에게 보이는 형태 */
+export interface MyFollowup {
+  id: string;
+  at: string;
+  text: string;
+  photoCount: number;
+}
+
+/** 학생이 덧붙인 설명 — 운영진·교사 화면 형태 */
+export interface StaffFollowup {
+  id: string;
+  at: string;
+  text: string;
+  held: boolean;
+  heldReason: string | null;
+  photos: ReportPhoto[];
+}
+
+/** GET /api/staff/deleted-reports */
+export interface DeletedReportInfo {
+  id: string;
+  title: string;
+  description: string;
+  location: string;
+  category: string;
+  createdAt: string;
+  deletedAt: string;
+  deletedBy: { name: string; role: string; accountId: string | null } | null;
+  deleteReason: string | null;
+  photoCount: number;
+  photosKeptUntil: string | null;
+  history: ReportHistoryEntry[];
+}
+
+/** GET /api/staff/audit */
+export interface AuditEntryInfo {
+  id: string;
+  at: string;
+  action: string;
+  actor: { name: string; role: string; accountId: string | null } | null;
+  target: string | null;
+  detail: string | null;
+}
+
+/** GET /api/staff/backups */
+export interface BackupFileInfo {
+  name: string;
+  size: number | null;
+  createdAt: string | null;
+}
+
+export interface StaffReport extends Omit<SchoolReport, "followups"> {
+  followups?: StaffFollowup[];
   history: ReportHistoryEntry[];
   reporter: {
     /** 같은 기기에서 접수된 신고 수 (이 신고 포함) */
