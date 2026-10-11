@@ -418,7 +418,9 @@ async function restartScenarios(server, storage, ctx) {
     return list.find((r) => r.id === ctx.r2)?.photoCount === 0;
   }, 6000, 300);
   check("보관 기간이 지난 삭제 신고의 사진 정리", purged);
-  check("사진 파일도 저장소에서 지워짐", !(await storage.photoExists(ctx.photoIds[0])) && !(await storage.photoExists(ctx.photoIds[1])));
+  // 서버는 신고에서 사진을 먼저 빼고 저장한 뒤 파일을 지운다. 파일 삭제가 끝날 때까지 기다린다.
+  const filesGone = await waitFor(async () => !(await storage.photoExists(ctx.photoIds[0])) && !(await storage.photoExists(ctx.photoIds[1])), 6000, 200);
+  check("사진 파일도 저장소에서 지워짐", filesGone);
   const audit = await call("GET", "/api/staff/audit?category=account", undefined, reset.cookie);
   check("운영 기록에 비상 복구", audit.json.data.some((entry) => entry.action === "owner.reset" && entry.actor === null));
   const changed = await call("POST", "/api/staff/me/password", { currentPassword: "reset-pass-99", newPassword: "boss-new-pass-1" }, reset.cookie);
