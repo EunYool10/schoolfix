@@ -13,6 +13,8 @@
 - **신고 등록** — 선택한 학교의 공식 확인 위치를 고르고, 공개되지 않은 건물·층·학과·학년·반·호실은 필요할 때 직접 입력합니다. 이름·학번·연락처는 **수집하지 않습니다.**
 - **학교 지원** — 지원 학교는 학교 선택 화면에서 고릅니다. 학교 추가 신청은 웹 내부 신청함(운영진 메일함) 또는 `mailto:` 메일 초안으로 보낼 수 있고, 운영진이 메일함에서 승인하면 바로 지원 학교로 등록됩니다.
 - **작성 도우미** — 학교급·장소에 맞춘 예시 89종(문제 종류별로 거르기)을 제공합니다. 예시를 고르면 제목·장소·분류·설명이 채워지고, 설명의 [ ] 빈칸만 실제 상황으로 바꾸면 됩니다. 빈칸이 남아 있으면 접수되지 않으며, 고르기 전 내용으로 되돌릴 수 있습니다.
+- **사진 한 장으로 신고** — 문제가 보이게 사진을 찍거나 고르면 AI가 제목·장소·문제 종류·설명 초안을 채우고, 사진은 신고에 붙습니다. 장소·문제 종류는 학교 목록에 있는 값만 받고, 설명에는 "언제부터"·"불편한 점" 빈칸을 넣어 학생이 확인해야 접수되게 했습니다. 사진에 사람이 보이면 얼굴 자리를 모자이크하고, 학생이 **가리기** 도구로 더 가릴 수 있습니다(가린 사진만 올라감). 서버에 `OPENAI_API_KEY`가 없으면 이 기능은 보이지 않습니다. 사진 분석 요청은 저장하지 않습니다.
+- **소음 재기** — 문제 종류로 "소음 문제"를 고르면 휴대폰 마이크로 10초 동안 소리 크기를 재서 평균·최고 dB를 신고에 붙입니다. 소리는 녹음하지 않고 숫자만 남깁니다. 휴대폰마다 마이크가 달라 화면과 운영진 화면 모두 "추정치"로 보여 줍니다.
 - **AI 추가 질문** — 내용이 애매하면 바로 접수하지 않고, 가장 중요한 질문 **하나**를 되묻습니다. 답변을 합쳐 다시 판단하고, 충분해지면 그때 저장합니다.
 - **내 신고 / 전체 신고** — 탭으로 구분해 조회합니다. 검색, 카테고리·위험도·처리 상태·기간 필터를 조합할 수 있습니다.
 - **다른 기기에서 내 신고 불러오기** — 접수할 때 접수번호와 함께 **확인 코드**(예: `ABCDE-FGHJK`)를 한 번 보여 줍니다. 휴대폰을 바꾸거나 브라우저 데이터를 지워도 "내 신고" 탭에서 두 값을 넣으면 다시 연결되어 학교 답변과 만족도 응답을 이어서 할 수 있습니다.
@@ -50,6 +52,8 @@
 
 - **나도 겪었어요** — 같은 문제를 겪은 학생은 새로 신고하는 대신 기존 신고에 공감합니다. 기기마다 한 번만 세며, 운영진은 공감 많은 순으로 정렬할 수 있습니다.
 - **처리 완료 후 만족도 확인** — 처리 완료된 내 신고에 "해결됐어요 / 아직 그대로예요"로 응답합니다. 미해결로 응답하면 신고가 다시 "확인 중"이 됩니다.
+- **진짜 고쳐졌나요?** — 처리 완료되면 "나도 겪었어요"를 눌렀던 학생에게 알림이 가고(알림을 켠 기기), 그 학생들이 👍 고쳐졌어요 / 👎 아직 그대로예요를 누릅니다. 👎가 2명 이상이고 👍보다 많으면 신고가 자동으로 다시 "확인 중"이 되고, 처리 이력에 이유가 남습니다. 공감했던 기기만 누를 수 있고, 처리 완료 뒤에는 새로 공감할 수 없습니다(장난으로 다시 열지 못하게). 다시 완료되면 처음부터 새로 셉니다.
+- **내가 바꾼 학교** — "내 신고" 탭 위에 이 기기에서 한 신고·공감·확인으로 고쳐진 곳을 학년도(3월 시작)별로 보여 주고, 학교 이름과 숫자, 고쳐진 곳 제목만 담은 카드 이미지로 저장할 수 있습니다. 서버에 묻지 않고 이 기기에 남은 기록으로 계산합니다.
 - **학교의 답변** — 운영진·교사가 신고한 학생에게만 보이는 답변을 남깁니다. 공개 "처리 결과"(처리 메모)와는 별개입니다.
 - **처리 기한** — 긴급 1일·높음 3일·중간 7일·낮음 14일(분석 전 7일). 기한을 넘긴 신고는 운영진 화면에 빨간색으로 표시하고 "기한 초과"로 필터·정렬할 수 있습니다.
 - **처리 이력** — 상태·담당자·학생 답변 변경, 안전성 검토, 삭제·되살림, 학생 추가 설명, 만족도 응답을 누가(운영진/교사/신고자, 개인 계정이면 이름) 언제 했는지 기록합니다.
@@ -193,6 +197,8 @@ npm run test:location # 위치 정규화·집계 검증 (API 호출 없음)
 npm run test:filter   # 욕설 필터 검증
 npm run test:report   # PDF·인쇄 문서 검증
 npm run test:ops      # 처리 기한·월별 통계·긴급 알림·반복 신고·확인 코드·학생 알림·계정과 세션·저장 충돌·백업 검증
+npm run test:examples # 빠른 작성 예시 데이터·빈칸·학교별 예시 검증
+npm run test:features # 사진으로 신고(AI 답 검사)·진짜 고쳐졌나요·소음 재기·공감 알림·내가 바꾼 학교 검증
 npm run test:e2e      # 빌드한 서버를 띄워 API 를 처음부터 끝까지 확인 (먼저 npm run build)
 npm run test:e2e:supabase  # 같은 확인을 Supabase 흉내 서버로 — 서버 두 대가 동시에 쓰는 상황 포함
 ```
@@ -219,6 +225,8 @@ aiSummary.ts                   AI 요약 + Prompt Injection 방어
 abuseGuard.ts                  반복 신고 기기 판단 (공개 보류 규칙)
 notify.ts                      운영진 웹훅 알림 (Discord·Slack 등)
 photoStore.ts                  신고 사진 저장 (Supabase Storage 또는 로컬 파일)
+photoDraft.ts                  사진 한 장으로 신고 — AI 초안 검사·설명 조립(빈칸 포함)·얼굴 위치
+reportVerify.ts                "진짜 고쳐졌나요?" — 공감 학생 확인 표 세기·다시 여는 기준
 schools.seed.json              지원 학교·위치 카탈로그
 supabase/schema.sql            Supabase 테이블 생성 SQL
 src/
@@ -229,11 +237,15 @@ src/
   utils/reportDocument.ts      PDF·인쇄용 문서 생성
   hooks/useReportFilters.ts    필터 상태 (위 규칙에 React 상태를 붙인 껍데기)
   hooks/useLocationStats.ts    위치 통계 조회
-  data/formExamples.ts         신고 작성 예시 문구
+  data/formExamples.ts         신고 작성 예시 문구와 빈칸 규칙
+  utils/noise.ts               소음 재기 dB 계산·측정값 검사 (화면·서버가 함께 쓴다)
+  utils/redact.ts              사진 모자이크 (얼굴·이름표 가리기)
+  utils/impact.ts              "내가 바꾼 학교" 숫자 계산
   utils/push.ts                학생 알림 켜기·끄기 (브라우저 쪽)
   utils/lazyScreen.ts          화면 나눠 불러오기 (배포 후 예전 파일이 없으면 한 번 새로고침)
   components/                  화면 (StaffAccountsPanel: 계정, StaffBackupPanel: 백업, StaffDeletedReportsPanel: 삭제된 신고,
-                               StaffAuditPanel: 운영 기록, MyReportTools: 신고 불러오기·알림, ReportEngagement: 추가 설명)
+                               StaffAuditPanel: 운영 기록, MyReportTools: 신고 불러오기·알림, ReportEngagement: 추가 설명·공감·확인 표,
+                               PhotoStartCard·PhotoRedactor: 사진으로 신고·가리기, NoiseMeter: 소음 재기, MyImpactCard: 내가 바꾼 학교)
 public/sw.js                   서비스 워커 — 학생 알림 표시 전용 (페이지 캐시 안 함)
 data/                          JSON 저장소·사진·백업 (Supabase 미사용 시, git 제외)
 e2e/                           종단 간 테스트와 Supabase 흉내 서버
@@ -261,7 +273,7 @@ e2e/                           종단 간 테스트와 Supabase 흉내 서버
 | POST | `/api/reports/mine` | 공개 | 소유 토큰으로 내 신고 조회 |
 | POST | `/api/reports/recover` | 공개 (접수번호 + 확인 코드, Rate Limit) | 다른 기기에서 내 신고 불러오기 — 이 기기용 소유 토큰 발급 |
 | GET | `/api/push/config` | 공개 | 학생 알림 사용 가능 여부와 공개 키 |
-| POST | `/api/push/subscribe` · `/api/push/unsubscribe` | 공개 (소유 토큰, Rate Limit) | 이 기기로 내 신고 알림 받기·끊기 |
+| POST | `/api/push/subscribe` · `/api/push/unsubscribe` | 공개 (소유 토큰·기기 토큰, Rate Limit) | 이 기기로 내 신고 알림 받기·끊기. 공감한 신고가 있는 기기면 처리 완료 때 "진짜 고쳐졌나요?" 알림도 받음 |
 | POST | `/api/ai/summary` | 공개 | 요청 본문 `schoolId`에 해당하는 학교 AI 요약 (Rate Limit + 캐시) |
 | GET | `/api/staff/session` | 공개 | 운영진 또는 교사 로그인 상태 확인 |
 | POST | `/api/staff/login` | 아이디 + 비밀번호 | 운영진 로그인. 아이디를 비우거나 `admin`이면 공용 비밀번호 (HttpOnly 세션 쿠키, 8시간) |
@@ -276,7 +288,10 @@ e2e/                           종단 간 테스트와 Supabase 흉내 서버
 | GET | `/api/staff/backups/file?name=...` | 관리자 세션 | 보관 중인 백업 내려받기 |
 | POST | `/api/staff/restore` | 총괄 세션 | 백업으로 되돌리기 (`name` 또는 파일 내용 `data`). 직전 상태는 자동 백업 |
 | GET | `/api/staff/audit` | 관리자 세션 | 운영 기록 (`category`, `before`, `limit`) |
-| POST | `/api/reports/:id/me-too` | 공개 (기기 토큰) | "나도 겪었어요" 추가·취소 |
+| POST | `/api/reports/:id/me-too` | 공개 (기기 토큰) | "나도 겪었어요" 추가·취소 (처리 완료된 신고에는 새로 추가할 수 없음) |
+| POST | `/api/reports/:id/verify` | 공감한 기기 토큰 (Rate Limit) | "진짜 고쳐졌나요?" 👍/👎 (`fixed`). 👎 2개 이상이고 👍보다 많으면 "확인 중"으로 되돌림 |
+| GET | `/api/features` | 공개 | 서버 설정에 따라 켜지는 기능 (`photoDraft`: AI 키가 있을 때) |
+| POST | `/api/reports/photo-draft` | 공개 (Rate Limit) | 사진 한 장으로 신고 초안 (`photo` data URL). 저장하지 않음 |
 | POST | `/api/reports/:id/feedback` | 소유 토큰 | 처리 완료 신고의 만족도 응답. 미해결이면 "확인 중"으로 되돌림 |
 | POST | `/api/reports/:id/followups` | 소유 토큰 (Rate Limit) | 추가 설명·사진(3장) 덧붙이기. 신고한 학생과 운영진·교사만 봄 |
 | GET | `/api/staff/reports?schoolId=...` | 운영진 또는 대상 학교 교사 세션 | 운영진 화면용 목록 (이력·학생 답변·반복 신고 정보 포함, 운영진은 보류 신고 포함) |

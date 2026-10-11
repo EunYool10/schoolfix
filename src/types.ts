@@ -1,3 +1,5 @@
+import type { NoiseMeasurement } from "./utils/noise";
+
 export type ReportStatus = "pending" | "reviewing" | "assigned" | "scheduled" | "in_progress" | "completed";
 
 export interface SchoolDepartment {
@@ -232,6 +234,10 @@ export interface SchoolReport {
   completedAt?: string | null;
   /** "나도 겪었어요" 공감 수 */
   meTooCount?: number;
+  /** 신고할 때 휴대폰으로 잰 소음 (추정치, 숫자만) */
+  noise?: NoiseMeasurement | null;
+  /** 처리 완료 뒤 공감했던 학생들의 "진짜 고쳐졌나요?" 응답 수. 완료 상태가 아니면 null */
+  verification?: { fixed: number; notFixed: number } | null;
   /** 학교가 신고한 학생에게만 보여 주는 답변 ("내 신고" 와 운영진 화면에만 있다) */
   reporterReply?: string | null;
   reporterReplyAt?: string | null;
@@ -261,7 +267,7 @@ export interface ReportHistoryEntry {
   actor: "staff" | "teacher" | "reporter" | "system";
   /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력에는 없다. */
   actorName?: string | null;
-  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup" | "verify";
   from?: string | null;
   to?: string | null;
 }

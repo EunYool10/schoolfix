@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
-import { HandHeart, ImagePlus, Loader2, MessageSquarePlus, MessageSquareReply, ThumbsDown, ThumbsUp, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BellRing, HandHeart, ImagePlus, Loader2, MessageSquarePlus, MessageSquareReply, ThumbsDown, ThumbsUp, X } from "lucide-react";
 import type { SchoolReport } from "../types";
-import { getDeviceToken, loadMeTooIds, loadOwnerTokens, setMeToo } from "../utils/clientTokens";
+import { getDeviceToken, loadMeTooIds, loadOwnerTokens, loadVerifyVotes, saveVerifyVote, setMeToo } from "../utils/clientTokens";
+import { enablePush, getPushConfig, isIosBrowserTab, pushIsOn, pushSupported, syncPush } from "../utils/push";
 import { feedbackPending } from "../utils/feedback";
 import { formatBytes, preparePhoto, type PreparedPhoto } from "../utils/imageCompress";
 
@@ -23,8 +24,15 @@ interface Props {
  *  - 만족도 확인: 처리 완료된 내 신고가 정말 해결됐는지 묻는다. 아니면 다시 확인 중으로 돌아간다.
  */
 export function ReportEngagement({ report, schoolId, onReportUpdated }: Props) {
+  // 확인 표로 신고가 다시 열리면 상태가 바뀌어 확인 상자가 사라진다. 안내는 여기서 이어서 보여 준다.
+  const [reopened, setReopened] = useState(false);
   return (
     <div className="space-y-3">
+      {reopened && (
+        <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-3 text-sm font-semibold text-amber-950">
+          알려 줘서 고마워요. 아직 그대로라는 학생이 많아서 신고가 다시 ‘확인 중’으로 바뀌었어요.
+        </p>
+      )}
       {report.reporterReply && (
         <div className="space-y-1.5">
           <span className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
@@ -45,6 +53,14 @@ export function ReportEngagement({ report, schoolId, onReportUpdated }: Props) {
         </p>
       )}
       {report.isMine && <FollowupBox report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />}
+      {!report.isMine && report.status === "completed" && loadMeTooIds().has(report.id) && (
+        <VerifyBox report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} onReopened={() => setReopened(true)} />
+      )}
+      {report.status === "completed" && !(!report.isMine && loadMeTooIds().has(report.id)) && report.verification && report.verification.fixed + report.verification.notFixed > 0 && (
+        <p className="rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
+          같은 문제를 겪은 학생들의 확인 · 👍 고쳐졌어요 {report.verification.fixed} · 👎 아직 그대로예요 {report.verification.notFixed}
+        </p>
+      )}
       {!report.isMine && report.moderationStatus !== "held" && report.status !== "completed" && (
         <MeTooButton report={report} schoolId={schoolId} onReportUpdated={onReportUpdated} />
       )}
@@ -73,6 +89,8 @@ export function MeTooButton({ report, schoolId, onReportUpdated, compact = false
       setJoined(json.joined);
       setCount(json.meTooCount);
       setMeToo(report.id, json.joined);
+      // 알림이 켜져 있는 기기면 이 공감도 알림에 묶는다(처리 완료되면 "진짜 고쳐졌나요?" 를 묻는다).
+      if (json.joined) void syncPush();
       onReportUpdated?.({ ...report, meTooCount: json.meTooCount });
     } catch (err) {
       setError(err instanceof Error ? err.message : "공감을 저장하지 못했습니다.");
@@ -99,7 +117,104 @@ export function MeTooButton({ report, schoolId, onReportUpdated, compact = false
           같은 문제를 겪었다면 새로 신고하지 말고 눌러 주세요. 많은 학생이 겪는 문제를 먼저 확인할 수 있어요.
         </p>
       )}
+      {!compact && joined && <FixAlertOffer />}
       {error && <p role="alert" className="w-full text-xs text-rose-700">{error}</p>}
+    </div>
+  );
+}
+
+/** 공감한 뒤 — 알림이 꺼져 있으면 "고쳐지면 알려 드릴까요?" 를 묻는다. */
+function FixAlertOffer() {
+  const [state, setState] = useState<"hidden" | "offer" | "busy" | "on">("hidden");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const config = await getPushConfig();
+      if (cancelled || !config.enabled || !pushSupported() || isIosBrowserTab()) return;
+      setState((await pushIsOn()) ? "on" : "offer");
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (state === "hidden") return null;
+  if (state === "on") return <p className="w-full text-[11px] font-semibold text-emerald-700">처리되면 이 기기로 알려 드릴게요. 정말 고쳐졌는지 확인해 주세요.</p>;
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2">
+      <button
+        type="button"
+        disabled={state === "busy"}
+        onClick={async () => {
+          setState("busy"); setMessage("");
+          try { await enablePush(); setState("on"); } catch (err) { setState("offer"); setMessage(err instanceof Error ? err.message : "알림을 켜지 못했어요."); }
+        }}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 disabled:opacity-60"
+      >
+        {state === "busy" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BellRing className="h-3.5 w-3.5" />} 고쳐지면 알림 받기
+      </button>
+      {message && <span role="alert" className="text-[11px] text-rose-700">{message}</span>}
+    </div>
+  );
+}
+
+/**
+ * "진짜 고쳐졌나요?" — 공감했던 신고가 처리 완료되면, 정말 고쳐졌는지 알려 준다.
+ * 아직 그대로라는 학생이 충분히 모이면 서버가 신고를 다시 연다(reportVerify.ts).
+ */
+function VerifyBox({ report, schoolId, onReportUpdated, onReopened }: Props & { onReopened: () => void }) {
+  const saved = loadVerifyVotes()[report.id];
+  const [vote, setVote] = useState<boolean | null>(saved && saved.completedAt === (report.completedAt ?? null) ? saved.fixed : null);
+  const [counts, setCounts] = useState(report.verification ?? { fixed: 0, notFixed: 0 });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const send = async (fixed: boolean) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/reports/${encodeURIComponent(report.id)}/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId, deviceToken: getDeviceToken(), fixed }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "응답을 저장하지 못했어요.");
+      setVote(fixed);
+      setCounts(json.verification);
+      saveVerifyVote(report.id, { fixed, completedAt: report.completedAt ?? null, at: new Date().toISOString() });
+      if (json.reopened) {
+        onReopened();
+        onReportUpdated?.({ ...report, status: "reviewing", completedAt: null, verification: null });
+      } else {
+        onReportUpdated?.({ ...report, verification: json.verification });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "응답을 저장하지 못했어요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+      <div>
+        <p className="text-sm font-bold text-emerald-950">같이 겪은 문제가 처리됐대요. 정말 고쳐졌나요?</p>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-emerald-900/80">‘나도 겪었어요’를 눌렀던 학생만 답할 수 있어요. ‘아직 그대로예요’가 2명 이상이고 ‘고쳐졌어요’보다 많으면 신고가 다시 열려요.</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => void send(true)} disabled={busy} aria-pressed={vote === true} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold disabled:opacity-60 ${vote === true ? "bg-emerald-700 text-white" : "border border-emerald-300 bg-white text-emerald-800"}`}>
+          <ThumbsUp className="h-4 w-4" /> 고쳐졌어요
+        </button>
+        <button type="button" onClick={() => void send(false)} disabled={busy} aria-pressed={vote === false} className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-bold disabled:opacity-60 ${vote === false ? "bg-amber-600 text-white" : "border border-amber-300 bg-white text-amber-800"}`}>
+          <ThumbsDown className="h-4 w-4" /> 아직 그대로예요
+        </button>
+        {busy && <Loader2 className="h-4 w-4 self-center animate-spin text-emerald-700" />}
+      </div>
+      <p className="text-xs text-emerald-900">
+        {vote === null ? "지금까지" : vote ? "고쳐졌다고 알려 줬어요. 바꾸려면 다른 쪽을 누르세요." : "아직 그대로라고 알려 줬어요. 바꾸려면 다른 쪽을 누르세요."} · 👍 {counts.fixed} · 👎 {counts.notFixed}
+      </p>
+      {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
     </div>
   );
 }

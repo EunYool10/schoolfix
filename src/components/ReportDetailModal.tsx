@@ -4,9 +4,11 @@ import {
   MapPin,
   Tag,
   Clock,
+  Volume2,
 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
 import { loadRecoveryCodes } from "../utils/clientTokens";
+import { formatNoise, noiseLevelLabel } from "../utils/noise";
 import { ReportTimeline } from "./ReportTimeline";
 import { RiskAnalysisPanel } from "./RiskAnalysisPanel";
 import { PhotoGallery } from "./PhotoGallery";
@@ -122,6 +124,13 @@ export function ReportDetailModal({
                 {report.description}
               </div>
             </div>
+
+            {report.noise && (
+              <p className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-xs leading-relaxed text-indigo-950">
+                <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+                <span><strong>휴대폰으로 잰 소음</strong> {formatNoise(report.noise)} · {noiseLevelLabel(report.noise.avgDb)} <span className="text-indigo-700">(휴대폰마다 차이가 있는 추정치)</span></span>
+              </p>
+            )}
 
             <PhotoGallery photos={report.photos ?? []} locked={report.moderationStatus === "held"} onViewerChange={setIsLightboxOpen} />
 

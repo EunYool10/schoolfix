@@ -84,6 +84,36 @@ export function getDeviceToken(): string {
   return memoryDeviceToken;
 }
 
+const VERIFY_KEY = "schoolfix_verify_v1";
+
+export interface MyVerifyVote {
+  fixed: boolean;
+  /** 표를 낸 완료 시각. 다시 열렸다가 또 완료되면 새로 물어본다. */
+  completedAt: string | null;
+  at: string;
+}
+
+/** 이 브라우저가 "진짜 고쳐졌나요?" 에 낸 표 (신고 id → 표) */
+export function loadVerifyVotes(): Record<string, MyVerifyVote> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(VERIFY_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveVerifyVote(reportId: string, vote: MyVerifyVote) {
+  try {
+    const votes = loadVerifyVotes();
+    delete votes[reportId];
+    votes[reportId] = vote;
+    localStorage.setItem(VERIFY_KEY, JSON.stringify(Object.fromEntries(Object.entries(votes).slice(-500))));
+  } catch {
+    // 화면 표시용 기록일 뿐이다. 서버가 표를 센다.
+  }
+}
+
 /** 이 브라우저에서 "나도 겪었어요" 를 누른 신고 id 목록 */
 export function loadMeTooIds(): Set<string> {
   try {

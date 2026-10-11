@@ -6,7 +6,7 @@
  * 새 신고를 접수하거나 확인 코드로 신고를 불러오면 syncPush 로 토큰 목록을 다시 보낸다.
  */
 
-import { loadOwnerTokens } from "./clientTokens";
+import { getDeviceToken, loadOwnerTokens } from "./clientTokens";
 
 export interface PushConfig {
   enabled: boolean;
@@ -62,7 +62,8 @@ async function sendSubscription(subscription: PushSubscription): Promise<void> {
   const res = await fetch("/api/push/subscribe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ subscription: subscription.toJSON(), tokens: loadOwnerTokens() }),
+    // 기기 토큰은 "나도 겪었어요" 한 신고가 처리 완료되면 "진짜 고쳐졌나요?" 를 묻는 데 쓴다.
+    body: JSON.stringify({ subscription: subscription.toJSON(), tokens: loadOwnerTokens(), deviceToken: getDeviceToken() }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || !json.ok) throw new Error(json.error || "알림을 설정하지 못했습니다.");
@@ -92,6 +93,17 @@ export async function disablePush(): Promise<void> {
     body: JSON.stringify({ endpoint: subscription.endpoint }),
   }).catch(() => undefined);
   await subscription.unsubscribe();
+}
+
+/** 이 기기에서 알림이 켜져 있는지 */
+export async function pushIsOn(): Promise<boolean> {
+  try {
+    const config = await getPushConfig();
+    if (!config.enabled || !pushSupported()) return false;
+    return Boolean(await currentSubscription()) && Notification.permission === "granted";
+  } catch {
+    return false;
+  }
 }
 
 /** 알림이 켜져 있으면 지금 가진 소유 토큰으로 다시 등록한다(새로 접수한 신고도 알림을 받도록). */

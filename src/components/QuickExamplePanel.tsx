@@ -63,7 +63,7 @@ export function QuickExamplePanel({ school, availableLocations, currentLocation,
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-2 text-sm font-bold text-slate-900">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"><Check className="h-3.5 w-3.5" /></span>
-            ‘{applied.label}’ {applied.key === "free" ? "틀을 넣었어요" : "예시로 채웠어요"}
+            {applied.key === "photo" ? "사진을 보고 AI가 초안을 채웠어요" : `‘${applied.label}’ ${applied.key === "free" ? "틀을 넣었어요" : "예시로 채웠어요"}`}
           </p>
           <div className="flex gap-1">
             <button type="button" onClick={onUndo} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-white hover:text-slate-900">

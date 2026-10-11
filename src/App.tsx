@@ -60,6 +60,8 @@ export default function App() {
   const [schoolLoading, setSchoolLoading] = useState(true);
   const [schoolError, setSchoolError] = useState("");
   const [reportsTab, setReportsTab] = useState<"MINE" | "ALL">("ALL");
+  /** 알림을 누르고 들어와 열어야 할 신고 (/?view=report&id=…) */
+  const [pendingReportId, setPendingReportId] = useState<string | null>(null);
   const riskRefreshAttempts = useRef(0);
   const riskRefreshSchoolId = useRef("");
 
@@ -151,14 +153,19 @@ export default function App() {
       if (!available.some((school) => school.id === savedId)) {
         try { localStorage.removeItem("schoolfix_selected_school_v1"); } catch { /* selection starts fresh */ }
       }
-      // 학생 알림을 누르고 들어온 경우(/?view=mine&school=…) 학교 선택을 건너뛰고 내 신고로 바로 보낸다.
+      // 학생 알림을 누르고 들어온 경우 학교 선택을 건너뛴다.
+      //  /?view=mine&school=…          → 내 신고
+      //  /?view=report&id=…&school=…   → 그 신고 상세 ("진짜 고쳐졌나요?" 알림)
       const params = new URLSearchParams(window.location.search);
-      const linkedSchool = params.get("view") === "mine" ? available.find((school) => school.id === params.get("school")) : undefined;
+      const linkView = params.get("view");
+      const linkedSchool = linkView === "mine" || linkView === "report" ? available.find((school) => school.id === params.get("school")) : undefined;
+      const linkedReportId = linkView === "report" ? params.get("id") : null;
       if (params.has("view")) window.history.replaceState(null, "", window.location.pathname);
       if (linkedSchool) {
         setSelectedSchool(linkedSchool);
         try { localStorage.setItem("schoolfix_selected_school_v1", linkedSchool.id); } catch { /* school remains selected in memory */ }
-        setReportsTab("MINE");
+        setReportsTab(linkedReportId ? "ALL" : "MINE");
+        if (linkedReportId && /^REP-\d{8}-\d{4,}$/.test(linkedReportId)) setPendingReportId(linkedReportId);
         setView("REPORTS");
         return;
       }
@@ -372,6 +379,15 @@ export default function App() {
     [reports, myReportsById]
   );
 
+  // 알림으로 들어온 신고는 목록을 받은 뒤 상세 창으로 연다.
+  useEffect(() => {
+    if (!pendingReportId) return;
+    const found = allReportsMarked.find((report) => report.id === pendingReportId);
+    if (!found) return;
+    setPendingReportId(null);
+    openReport(found);
+  }, [pendingReportId, allReportsMarked]);
+
   /** 상세 창에서 공감·만족도 응답으로 신고가 바뀌었을 때 */
   const handleReportUpdated = (updated: SchoolReport) => {
     setDetailReport(updated);
@@ -510,6 +526,7 @@ export default function App() {
                 initialTab={reportsTab}
                 updates={myUpdates}
                 onRecoverReport={handleRecoverReport}
+                schoolName={selectedSchool.schoolName}
               />
             )}
             {view === "STAFF" && (
