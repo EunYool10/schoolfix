@@ -31,6 +31,7 @@ import { buildReportHtml } from "../utils/reportDocument";
 import { feedbackPending } from "../utils/feedback";
 import { UPDATE_LABEL, type UpdateKind } from "../utils/reportUpdates";
 import { MyReportTools } from "./MyReportTools";
+import { MyImpactCard } from "./MyImpactCard";
 
 export type ReportTab = "MINE" | "ALL";
 
@@ -49,6 +50,8 @@ interface ReportListViewProps {
   updates?: Map<string, UpdateKind[]>;
   /** 접수번호 + 확인 코드로 다른 기기의 신고를 불러온다. 실패하면 오류 문구 */
   onRecoverReport?: (reportId: string, code: string) => Promise<string | null>;
+  /** "내가 바꾼 학교" 카드에 쓰는 학교 이름 */
+  schoolName?: string;
 }
 
 const RISK_OPTIONS: RiskLevel[] = ["긴급", "높음", "중간", "낮음"];
@@ -66,6 +69,7 @@ export function ReportListView({
   initialTab = "ALL",
   updates,
   onRecoverReport,
+  schoolName,
 }: ReportListViewProps) {
   const [tab, setTab] = useState<ReportTab>(initialTab);
 
@@ -437,6 +441,10 @@ export function ReportListView({
             </span>
           )}
         </div>
+      )}
+
+      {tab === "MINE" && (
+        <MyImpactCard schoolName={schoolName ?? allReports[0]?.schoolName ?? ""} myReports={myReports} allReports={allReports} />
       )}
 
       {tab === "MINE" && onRecoverReport && (

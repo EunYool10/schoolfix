@@ -19,6 +19,7 @@ import {
   MapPin,
   Check,
   Upload,
+  EyeOff,
 } from "lucide-react";
 import {
   SchoolReport,
@@ -30,6 +31,11 @@ import {
 } from "../types";
 import { findTemplateBlanks, FREE_WRITING_TEMPLATE, type FormExampleItem, type TemplateBlank } from "../data/formExamples";
 import { QuickExamplePanel, type ExampleTask } from "./QuickExamplePanel";
+import { PhotoStartCard, type PhotoDraftResult } from "./PhotoStartCard";
+import { PhotoRedactor } from "./PhotoRedactor";
+import { NoiseMeter } from "./NoiseMeter";
+import { redactPhoto } from "../utils/redact";
+import type { NoiseMeasurement } from "../utils/noise";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
 import { formatBytes, PHOTO_LIMITS, preparePhoto, type PreparedPhoto } from "../utils/imageCompress";
@@ -69,6 +75,8 @@ export interface SubmitReportPayload {
   photos?: Array<{ dataUrl: string; name: string }>;
   /** AI 사전 확인을 마친 세션 id. 있으면 서버가 확인을 다시 하지 않는다. */
   clarifySessionId?: string | null;
+  /** 소음 문제일 때 휴대폰으로 잰 소음 (숫자만) */
+  noise?: NoiseMeasurement | null;
 }
 
 export interface SubmitReportResult {
@@ -197,7 +205,11 @@ export function StudentReportView({
 
   // 빠른 작성 예시 (화면 전용, 신고 DB와 분리). 고르기 전 내용을 남겨 두어 되돌릴 수 있게 한다.
   const exampleLocationTypes = [...new Set([...locationTypes.map((item) => item.type), ...locations.map((item) => item.type)])];
-  const [appliedExample, setAppliedExample] = useState<{ key: string; label: string; location: string; detailHint: string; description: string } | null>(null);
+  const [appliedExample, setAppliedExample] = useState<{ key: string; label: string; location: string; detailHint: string; description: string; photoKey?: string } | null>(null);
+  // 소음 문제일 때 잰 소음, 가리기 도구로 여는 사진, AI 가 얼굴을 가린 사진
+  const [noise, setNoise] = useState<NoiseMeasurement | null>(null);
+  const [redactKey, setRedactKey] = useState<string | null>(null);
+  const [faceNotice, setFaceNotice] = useState<{ key: string; count: number } | null>(null);
   const [exampleUndo, setExampleUndo] = useState<ExampleSnapshot | null>(null);
   const [examplePanelKey, setExamplePanelKey] = useState(0);
   const detailInputRef = useRef<HTMLInputElement>(null);
@@ -391,6 +403,7 @@ export function StudentReportView({
 
   const removePhoto = (key: string) => {
     setPhotos((prev) => prev.filter((photo) => photo.key !== key));
+    if (faceNotice?.key === key) setFaceNotice(null);
     clearFieldError("attachment");
   };
 
@@ -427,6 +440,8 @@ export function StudentReportView({
     setCompletedRecoveryCode(null);
     setAppliedExample(null);
     setExampleUndo(null);
+    setNoise(null);
+    setFaceNotice(null);
     // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
     setExamplePanelKey((n) => n + 1);
     clearSessionDraft(reportDraftKey);
@@ -480,9 +495,62 @@ export function StudentReportView({
       setDepartment(exampleUndo.department); setGrade(exampleUndo.grade); setClassName(exampleUndo.className);
       setCategory(exampleUndo.category); setDescription(exampleUndo.description);
     }
+    // 사진으로 시작했으면 그때 붙인 사진도 뺀다.
+    if (appliedExample?.photoKey) removePhoto(appliedExample.photoKey);
     setAppliedExample(null);
     setExampleUndo(null);
     afterExampleChange();
+  };
+
+  /** 사진 한 장으로 시작 — AI 초안을 채우고 사진을 붙인다. 얼굴이 보이면 먼저 가린다. */
+  const handlePhotoDraft = async (draft: PhotoDraftResult, photo: PreparedPhoto) => {
+    let attached = photo;
+    let hidden = 0;
+    if (draft.faces.length > 0) {
+      try {
+        attached = await redactPhoto(photo, draft.faces, 0.3);
+        hidden = draft.faces.length;
+      } catch {
+        // 가리지 못했으면 원본을 붙이고 아래 안내로 직접 가리게 한다.
+      }
+    }
+    const room = PHOTO_LIMITS.maxPhotos - photos.length - preparingCount;
+    if (room > 0) setPhotos((prev) => [...prev, attached].slice(0, PHOTO_LIMITS.maxPhotos));
+    setExampleUndo(undoSnapshot());
+    const draftLocation = draft.location && availableLocationTypes.some((item) => item.type === draft.location) ? draft.location : null;
+    if (draft.title) setTitle(draft.title.slice(0, 60));
+    if (draftLocation && draftLocation !== location) {
+      setLocation(draftLocation);
+      setLocationId("");
+      setLocationDetail("");
+      if (draftLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
+    }
+    if (draft.category) setCategory(draft.category);
+    if (draft.description) setDescription(draft.description);
+    setAppliedExample({
+      key: "photo",
+      label: "사진",
+      location: draftLocation ?? location,
+      detailHint: "예: 사진을 찍은 곳 (2층 여자 화장실 왼쪽 세면대)",
+      description: draft.description ?? description,
+      photoKey: room > 0 ? attached.key : undefined,
+    });
+    setFaceNotice(draft.hasPeople && room > 0 ? { key: attached.key, count: hidden } : null);
+    afterExampleChange();
+  };
+
+  const attachPhotoOnly = (photo: PreparedPhoto) => {
+    if (photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos) return;
+    setPhotos((prev) => [...prev, photo].slice(0, PHOTO_LIMITS.maxPhotos));
+    clearFieldError("attachment");
+  };
+
+  /** 가리기 도구에서 바꾼 사진으로 갈아 끼운다. */
+  const replacePhoto = (key: string, next: PreparedPhoto) => {
+    setPhotos((prev) => prev.map((photo) => (photo.key === key ? next : photo)));
+    if (appliedExample?.photoKey === key) setAppliedExample({ ...appliedExample, photoKey: next.key });
+    if (faceNotice?.key === key) setFaceNotice(null);
+    setRedactKey(null);
   };
 
   const scrollToField = (el: HTMLElement | null) => {
@@ -573,6 +641,8 @@ export function StudentReportView({
       description: description.trim(),
       photos: photos.map((photo) => ({ dataUrl: photo.dataUrl, name: photo.name })),
       clarifySessionId: sessionId,
+      // 소음은 "소음 문제" 를 골랐을 때만 보낸다. 다른 종류로 바꿨으면 화면에도 보이지 않으므로 보내지 않는다.
+      noise: category.trim() === "소음 문제" ? noise : null,
     });
 
     if (res.success && res.report) {
@@ -592,6 +662,8 @@ export function StudentReportView({
       setGlobalError(null);
       setAppliedExample(null);
       setExampleUndo(null);
+      setNoise(null);
+      setFaceNotice(null);
       return;
     }
 
@@ -870,6 +942,22 @@ export function StudentReportView({
           <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">새로운 제보</p><h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">신고 내용을 작성해 주세요</h2></div>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800"><CloudCheck className="h-3.5 w-3.5" />{draftSavedAt ? "이 탭에 임시 저장됨" : "자동 임시저장"}</span>
         </div>
+        {redactKey && photos.some((photo) => photo.key === redactKey) && (
+          <PhotoRedactor
+            photo={photos.find((photo) => photo.key === redactKey)!}
+            onApply={(next) => replacePhoto(redactKey, next)}
+            onClose={() => setRedactKey(null)}
+          />
+        )}
+
+        {/* 사진 한 장으로 시작 (AI) */}
+        <PhotoStartCard
+          schoolId={school.id}
+          disabled={photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos}
+          onDraft={handlePhotoDraft}
+          onAttachOnly={attachPhotoOnly}
+        />
+
         {/* 빠른 작성 예시 */}
         <QuickExamplePanel
           key={`${school.id}:${examplePanelKey}:${exampleLocationTypes.length}`}
@@ -1117,6 +1205,8 @@ export function StudentReportView({
             )}
           </div>
 
+          {category === "소음 문제" && <NoiseMeter value={noise} onChange={setNoise} />}
+
           <SimilarReportsPanel draft={similarDraft} reports={existingReports} schoolId={school.id} onOpenReport={onOpenReport} onReportsChanged={onReportsChanged} />
 
           {/* 3. Problem Description */}
@@ -1228,6 +1318,14 @@ export function StudentReportView({
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setRedactKey(photo.key)}
+                        aria-label={`사진 ${index + 1} 가리기`}
+                        className={`absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${faceNotice?.key === photo.key ? "bg-amber-600" : "bg-slate-900/70 hover:bg-slate-900"}`}
+                      >
+                        <EyeOff className="h-3 w-3" />가리기
+                      </button>
                     </li>
                   ))}
                   {Array.from({ length: preparingCount }, (_, i) => (
@@ -1236,6 +1334,11 @@ export function StudentReportView({
                     </li>
                   ))}
                 </ul>
+              )}
+              {faceNotice && photos.some((photo) => photo.key === faceNotice.key) && (
+                <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  {faceNotice.count > 0 ? `사진에 사람이 보여서 얼굴 ${faceNotice.count}곳을 모자이크했어요.` : "사진에 사람이 보여요."} 사진을 확인하고, 더 가릴 곳이 있으면 사진의 <strong>가리기</strong>를 눌러 주세요.
+                </p>
               )}
               {photos.length + preparingCount < PHOTO_LIMITS.maxPhotos && (
                 <button

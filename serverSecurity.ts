@@ -194,6 +194,20 @@ export const LIMITS = {
     blockMs: 5 * 60 * 1000,
     message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
   } as RateLimitRule,
+  /** 사진으로 신고 초안 만들기: 외부 AI 비용이 들어 신고보다 조금 엄격하게. 학교 공용 IP 를 고려해 너무 낮추지 않는다. */
+  photoDraft: {
+    windowMs: 10 * 60 * 1000,
+    max: 40,
+    blockMs: 5 * 60 * 1000,
+    message: "사진 분석 요청이 너무 많습니다. 잠시 후 다시 시도하거나 직접 작성해주세요.",
+  } as RateLimitRule,
+  /** "진짜 고쳐졌나요?" 확인 */
+  verify: {
+    windowMs: 10 * 60 * 1000,
+    max: 60,
+    blockMs: 5 * 60 * 1000,
+    message: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+  } as RateLimitRule,
   /** 알림 구독 등록·해제 */
   push: {
     windowMs: 10 * 60 * 1000,
@@ -450,7 +464,8 @@ export function securityHeaders() {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+    // 마이크는 "소음 재기"(소리 크기만 잼, 녹음 안 함)에만 쓰고 이 사이트 안에서만 허용한다. 다른 사이트를 끼워 넣어도 쓸 수 없다.
+    res.setHeader("Permissions-Policy", "geolocation=(), microphone=(self), camera=()");
 
     // CSP: Google Fonts(Pretendard CDN) 와 인라인 스타일을 쓰는 현재 구조에 맞춘다.
     // script-src 에 'unsafe-inline' 을 넣지 않아 XSS 시 스크립트 실행을 막는다.

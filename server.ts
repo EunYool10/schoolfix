@@ -103,7 +103,10 @@ import {
   type StaffRole,
   type StaffSession,
 } from "./staffAuth";
-import { buildReportPush, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./pushNotify";
+import { buildReportPush, buildVerifyPush, meTooRecipientsFor, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./pushNotify";
+import { castVote, shouldReopen, verificationCounts, type VerificationVote } from "./reportVerify";
+import { draftFromPhoto } from "./photoDraft";
+import { parseNoiseMeasurement, type NoiseMeasurement } from "./src/utils/noise";
 import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
 import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
 import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./backupStore";
@@ -230,6 +233,10 @@ interface StoredReport {
   deleteReason?: string | null;
   /** 신고한 학생이 나중에 덧붙인 설명 (신고한 학생과 운영진·교사만 본다) */
   followups?: ReportFollowup[];
+  /** 신고할 때 휴대폰으로 잰 소음 (숫자만. 소리는 저장하지 않는다) */
+  noise?: NoiseMeasurement | null;
+  /** 처리 완료 뒤 공감했던 학생들의 "진짜 고쳐졌나요?" 응답 (reportVerify.ts) */
+  verifications?: VerificationVote[];
   reviewedAt?: string | null;
   assignedAt?: string | null;
   scheduledAt?: string | null;
@@ -245,7 +252,7 @@ interface ReportHistoryEntry {
   actor: "staff" | "teacher" | "reporter" | "system";
   /** 개인 계정 이름 또는 공용 계정 표시. 예전 이력과 신고자 이력에는 없다. */
   actorName?: string | null;
-  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup";
+  action: "status" | "assignee" | "reply" | "moderation" | "feedback" | "spam" | "delete" | "restore" | "followup" | "verify";
   from?: string | null;
   to?: string | null;
 }
@@ -789,7 +796,22 @@ function notifyReporter(report: StoredReport, change: Parameters<typeof buildRep
   if (!pushEnabled()) return;
   const message = buildReportPush(report, change);
   if (!message) return;
-  const recipients = recipientsFor(loadPushRecords(), reportOwnerHashes(report));
+  sendPushAndPrune(recipientsFor(loadPushRecords(), reportOwnerHashes(report)), message);
+}
+
+/**
+ * 처리 완료되면 "나도 겪었어요" 를 눌렀던 기기에 "진짜 고쳐졌나요?" 를 묻는다(reportVerify.ts).
+ * 신고한 기기는 따로 만족도 알림을 받으므로 뺀다.
+ */
+function notifyMeTooDevices(report: StoredReport) {
+  if (!pushEnabled() || report.moderationStatus === "held" || !report.meTooHashes?.length) return;
+  const records = loadPushRecords();
+  const owners = recipientsFor(records, reportOwnerHashes(report));
+  sendPushAndPrune(meTooRecipientsFor(records, report.meTooHashes, owners), buildVerifyPush(report));
+}
+
+/** 알림을 보내고, 만료된 구독은 저장소에서 지운다. 응답을 기다리지 않는다. */
+function sendPushAndPrune(recipients: PushRecord[], message: Parameters<typeof sendPush>[1]) {
   if (recipients.length === 0) return;
   void sendPush(recipients, message).then(async (expired) => {
     if (expired.length === 0) return;
@@ -1016,6 +1038,9 @@ function toPublicReport(r: StoredReport) {
     inProgressAt: r.inProgressAt ?? null,
     completedAt: r.completedAt ?? null,
     meTooCount: r.meTooHashes?.length ?? 0,
+    noise: r.noise ?? null,
+    // 처리 완료된 신고에 공감한 학생들이 남긴 확인 수 (누가 눌렀는지는 내보내지 않는다)
+    verification: r.status === "completed" ? verificationCounts(r) : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
@@ -2196,18 +2221,22 @@ app.post("/api/push/subscribe", rateLimit("push", LIMITS.push), async (req, res)
   const subscription = parseSubscription(req.body?.subscription);
   if (!subscription) return safeError(res, 400, "이 브라우저의 알림 구독 정보를 확인할 수 없습니다.");
   const hashes = ownerTokenHashes(req.body?.tokens);
-  const known = new Set(loadAllReports().filter((report) => !report.deletedAt).flatMap(reportOwnerHashes));
+  const active = loadAllReports().filter((report) => !report.deletedAt);
+  const known = new Set(active.flatMap(reportOwnerHashes));
   const linked = [...hashes].filter((hash) => known.has(hash));
-  if (linked.length === 0) return res.json({ ok: true, linked: 0 });
+  // 공감한 신고가 있는 기기면 "나도 겪었어요" 해시도 묶는다. 처리 완료되면 "진짜 고쳐졌나요?" 를 묻는다.
+  const meTooHash = deviceHash(req.body?.deviceToken, "metoo");
+  const meTooLinked = meTooHash && active.some((report) => report.meTooHashes?.includes(meTooHash)) ? meTooHash : null;
+  if (linked.length === 0 && !meTooLinked) return res.json({ ok: true, linked: 0 });
   try {
     await withPushLock(async () => {
-      const { list, changed } = upsertPushRecord(loadPushRecords(), subscription, linked);
+      const { list, changed } = upsertPushRecord(loadPushRecords(), subscription, linked, undefined, meTooLinked);
       if (changed) await savePushRecords(list);
     });
   } catch (err) {
     return safeError(res, 500, STORE_SCHEMA_HINT, err);
   }
-  return res.json({ ok: true, linked: linked.length });
+  return res.json({ ok: true, linked: linked.length, meToo: Boolean(meTooLinked) });
 });
 
 app.post("/api/push/unsubscribe", rateLimit("push", LIMITS.push), async (req, res) => {
@@ -2757,6 +2786,7 @@ app.patch("/api/staff/reports/:id", async (req, res) => {
   }
   summaryCache = null;
   notifyReporter(outcome.report, { status: { from: outcome.statusFrom, to: outcome.report.status }, reply: outcome.replied });
+  if (outcome.statusFrom !== "completed" && outcome.report.status === "completed") notifyMeTooDevices(outcome.report);
   return res.json({ ok: true, data: toStaffReport(outcome.report, outcome.all, loadBlockedReporters()) });
 });
 
@@ -2865,6 +2895,8 @@ app.post("/api/reports/:id/me-too", rateLimit("meToo", LIMITS.meToo), async (req
       const all = loadAllReports();
       const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt && r.moderationStatus !== "held");
       if (!report) return null;
+      // 처리 완료 뒤에 새로 공감하면 그 기기가 "진짜 고쳐졌나요?" 에 표를 낼 수 있게 된다. 장난으로 다시 열지 못하게 막는다.
+      if (add && report.status === "completed") return "completed" as const;
       const set = new Set(report.meTooHashes ?? []);
       const before = set.size;
       if (add && set.size < MAX_ME_TOO) set.add(hash);
@@ -2877,10 +2909,65 @@ app.post("/api/reports/:id/me-too", rateLimit("meToo", LIMITS.meToo), async (req
       return set.size;
     });
     if (count === null) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+    if (count === "completed") return safeError(res, 409, "이미 처리 완료된 신고예요. 아직 그대로라면 새로 신고해 주세요.");
     return res.json({ ok: true, meTooCount: count, joined: add });
   } catch (err) {
     return safeError(res, 500, "공감을 저장하지 못했습니다.", err);
   }
+});
+
+/**
+ * "진짜 고쳐졌나요?" — 처리 완료된 신고에, 공감했던 학생이 고쳐졌는지 알려 준다(reportVerify.ts).
+ * "아직 그대로예요" 가 충분히 모이면 신고를 다시 "확인 중" 으로 돌리고 신고한 학생에게도 알린다.
+ */
+app.post("/api/reports/:id/verify", rateLimit("verify", LIMITS.verify), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const hash = deviceHash(req.body?.deviceToken, "metoo");
+  if (!hash || typeof req.body?.fixed !== "boolean") return safeError(res, 400, "요청이 올바르지 않습니다.");
+  const fixed: boolean = req.body.fixed;
+
+  type VerifyOutcome = { error: 404 | 403 | 409 | 429 } | { report: StoredReport; counts: { fixed: number; notFixed: number }; reopened: boolean };
+  let outcome: VerifyOutcome;
+  try {
+    outcome = await withReportsLock(async (): Promise<VerifyOutcome> => {
+      const all = loadAllReports();
+      const report = all.find((r) => r.id === req.params.id && r.schoolId === school.id && !r.deletedAt && r.moderationStatus !== "held");
+      if (!report) return { error: 404 };
+      if (report.status !== "completed") return { error: 409 };
+      if (!report.meTooHashes?.includes(hash)) return { error: 403 };
+      const now = new Date();
+      const votes = castVote(report, hash, fixed, now);
+      if (!votes) return { error: 429 };
+      report.verifications = votes;
+      const counts = verificationCounts(report);
+      const reopened = shouldReopen(counts);
+      if (reopened) {
+        const at = now.toISOString();
+        addHistory(report, { actor: "system", action: "verify", to: `공감 학생 확인: 아직 그대로 ${counts.notFixed}명 · 고쳐짐 ${counts.fixed}명` }, at);
+        addHistory(report, { actor: "system", action: "status", from: "completed", to: "reviewing" }, at);
+        report.status = "reviewing";
+        report.completedAt = null;
+        report.updatedAt = at;
+      }
+      // 확인 표는 처리 상태 변경이 아니므로 다시 열린 경우가 아니면 updatedAt 을 바꾸지 않는다.
+      await saveReports(all);
+      return { report, counts, reopened };
+    });
+  } catch (err) {
+    return safeError(res, 500, "응답을 저장하지 못했습니다.", err);
+  }
+  if ("error" in outcome) {
+    if (outcome.error === 404) return safeError(res, 404, "해당 신고를 찾을 수 없습니다.");
+    if (outcome.error === 403) return safeError(res, 403, "‘나도 겪었어요’를 눌렀던 학생만 확인할 수 있어요.");
+    if (outcome.error === 429) return safeError(res, 429, "확인이 너무 많이 모였어요.");
+    return safeError(res, 409, "처리 완료된 신고만 확인할 수 있어요.");
+  }
+  if (outcome.reopened) {
+    summaryCache = null;
+    notifyReporter(outcome.report, { status: { from: "completed", to: "reviewing" } });
+  }
+  return res.json({ ok: true, verification: outcome.counts, reopened: outcome.reopened, status: outcome.report.status, myVote: fixed });
 });
 
 /**
@@ -3099,6 +3186,9 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
   const parsedPhotos = parseIncomingPhotos(req.body);
   if (!parsedPhotos.ok) return safeError(res, 400, parsedPhotos.error);
   const incomingPhotos = parsedPhotos.photos;
+  // 휴대폰으로 잰 소음 (선택). 숫자만 받는다.
+  const noise = parseNoiseMeasurement(req.body.noise);
+  if (noise === "invalid") return safeError(res, 400, "소음 측정값이 올바르지 않습니다. 다시 재거나 빼고 접수해주세요.");
   const selectedLocationId = typeof req.body.locationId === "string" ? req.body.locationId : "";
   const selectedLocation = selectedLocationId ? school.locations.find((entry) => entry.id === selectedLocationId) : undefined;
   if (selectedLocationId && (!selectedLocation || selectedLocation.type !== req.body.location)) {
@@ -3231,6 +3321,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
       attachmentName: null,
       attachmentSize: null,
       photos: storedPhotos,
+      noise,
       status: "pending",
       moderationStatus: moderation.hold ? "held" : "approved",
       moderationReason: moderation.reason,
@@ -3295,6 +3386,31 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     });
   } catch (err) {
     return safeError(res, 500, "신고를 저장하지 못했습니다. 잠시 후 다시 시도해주세요.", err);
+  }
+});
+
+/** 화면이 켤 기능. 서버 설정에 따라 다르다. */
+app.get("/api/features", (_req, res) => {
+  return res.json({ ok: true, photoDraft: Boolean(process.env.OPENAI_API_KEY) });
+});
+
+/**
+ * 사진 한 장으로 신고 시작 (photoDraft.ts) — 사진을 보고 제목·장소·문제 종류·설명 초안을 만든다.
+ * 아무것도 저장하지 않는다. 사진은 학생이 접수할 때 신고와 함께 따로 올라간다.
+ */
+app.post("/api/reports/photo-draft", rateLimit("photoDraft", LIMITS.photoDraft), async (req, res) => {
+  const school = findSchool(req.body?.schoolId);
+  if (!school) return safeError(res, 400, "지원 중인 학교를 선택해주세요.");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return safeError(res, 503, "지금은 사진 분석을 쓸 수 없어요. 아래에서 직접 작성해 주세요.");
+  const decoded = decodePhotoDataUrl(req.body?.photo);
+  if (!decoded.ok) return safeError(res, 400, decoded.error);
+  const locationTypes = school.locationTypes?.map((entry) => entry.type) ?? [...new Set(school.locations.map((entry) => entry.type)), "기타"];
+  try {
+    const { model: _model, ...draft } = await draftFromPhoto(`data:${decoded.type};base64,${decoded.buffer.toString("base64")}`, { schoolName: school.schoolName, locationTypes, categories: [...ISSUE_CATEGORIES] }, apiKey);
+    return res.json({ ok: true, draft });
+  } catch (err) {
+    return safeError(res, 502, "사진을 분석하지 못했어요. 잠시 후 다시 시도하거나 직접 작성해 주세요.", err);
   }
 });
 

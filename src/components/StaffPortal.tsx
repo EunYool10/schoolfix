@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog } from "lucide-react";
+import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog, Volume2 } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport, type StaffSessionInfo } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
+import { formatNoise } from "../utils/noise";
 import { StaffStatsPanel } from "./StaffStatsPanel";
 import { NotificationSettingsPanel } from "./NotificationSettingsPanel";
 import { PhotoGallery } from "./PhotoGallery";
@@ -81,6 +82,7 @@ function describeHistory(entry: ReportHistoryEntry): string {
     case "delete": return `삭제 — 사유: ${entry.to ?? "-"}`;
     case "restore": return "삭제한 신고 되살림";
     case "followup": return entry.to ?? "추가 설명";
+    case "verify": return entry.to ?? "공감 학생 확인";
     default: return entry.action;
   }
 }
@@ -651,6 +653,8 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
               {report.moderationStatus !== "held" && <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${sla.overdue ? "bg-rose-600 text-white" : sla.daysLeft !== null && sla.daysLeft <= 1 ? "bg-amber-100 text-amber-900" : sla.completedLate ? "bg-slate-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}><Clock className="h-3 w-3" />{slaLabel(sla)}</span>}
               {(report.meTooCount ?? 0) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700"><HandHeart className="h-3 w-3" />나도 겪었어요 {report.meTooCount}</span>}
               {report.feedback && <span className={`rounded-full px-2 py-1 text-xs font-bold ${report.feedback.resolved ? "bg-emerald-50 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{report.feedback.resolved ? "신고자: 해결됨" : "신고자: 아직 미해결"}</span>}
+              {report.verification && report.verification.fixed + report.verification.notFixed > 0 && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700" title="공감했던 학생들의 확인">공감 학생 확인 👍 {report.verification.fixed} · 👎 {report.verification.notFixed}</span>}
+              {report.noise && <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-800" title="휴대폰으로 잰 추정치"><Volume2 className="h-3 w-3" />{formatNoise(report.noise)}</span>}
               {suspicious && <span className="rounded-full bg-slate-900 px-2 py-1 text-xs font-bold text-white">{report.reporter.blocked ? "검토 대상 기기" : `같은 기기 신고 ${report.reporter.deviceReportCount}건`}</span>}
             </div>
             <h2 className="mt-2 font-bold text-slate-900">{report.title || "시설 문제 신고"}</h2>

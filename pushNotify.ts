@@ -20,6 +20,8 @@ export interface PushRecord {
   keys: { p256dh: string; auth: string };
   /** 이 기기가 가진 "내 신고" 소유 토큰들의 해시 */
   ownerTokenHashes: string[];
+  /** 이 기기의 "나도 겪었어요" 해시. 공감한 신고가 처리 완료되면 "진짜 고쳐졌나요?" 를 묻는다. */
+  meTooHash?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,12 +90,15 @@ export function upsertPushRecord(
   list: PushRecord[],
   subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
   hashes: string[],
-  now = new Date().toISOString()
+  now = new Date().toISOString(),
+  meTooHash: string | null = null
 ): { list: PushRecord[]; changed: boolean } {
   const id = pushRecordId(subscription.endpoint);
   const existing = list.find((record) => record.id === id);
   const merged = [...new Set([...hashes, ...(existing?.ownerTokenHashes ?? [])])].slice(0, MAX_OWNER_HASHES);
+  const nextMeToo = meTooHash ?? existing?.meTooHash ?? null;
   if (existing
+    && (existing.meTooHash ?? null) === nextMeToo
     && existing.keys.p256dh === subscription.keys.p256dh
     && existing.keys.auth === subscription.keys.auth
     && merged.length === existing.ownerTokenHashes.length
@@ -105,6 +110,7 @@ export function upsertPushRecord(
     endpoint: subscription.endpoint,
     keys: subscription.keys,
     ownerTokenHashes: merged,
+    ...(nextMeToo ? { meTooHash: nextMeToo } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -116,6 +122,25 @@ export function recipientsFor(list: PushRecord[], reportOwnerHashes: string[]): 
   const owners = new Set(reportOwnerHashes.filter(Boolean));
   if (owners.size === 0) return [];
   return list.filter((record) => record.ownerTokenHashes.some((hash) => owners.has(hash)));
+}
+
+/** 이 신고에 공감한 기기들. 신고한 기기(이미 따로 알림을 받는다)는 뺀다. */
+export function meTooRecipientsFor(list: PushRecord[], meTooHashes: string[], exclude: PushRecord[] = []): PushRecord[] {
+  const hashes = new Set(meTooHashes.filter(Boolean));
+  if (hashes.size === 0) return [];
+  const skip = new Set(exclude.map((record) => record.id));
+  return list.filter((record) => record.meTooHash && hashes.has(record.meTooHash) && !skip.has(record.id));
+}
+
+/** 공감한 학생에게 — 처리 완료됐으니 정말 고쳐졌는지 알려 달라고 묻는다. 신고 내용은 싣지 않는다. */
+export function buildVerifyPush(report: { id: string; schoolId?: string | null }): PushMessage {
+  const school = report.schoolId ? `&school=${encodeURIComponent(report.schoolId)}` : "";
+  return {
+    title: "같이 겪은 문제가 처리됐대요",
+    body: `${report.id} · 정말 고쳐졌는지 알려 주세요.`,
+    url: `/?view=report&id=${encodeURIComponent(report.id)}${school}`,
+    tag: `verify-${report.id}`,
+  };
 }
 
 const STATUS_LABEL: Record<string, string> = {

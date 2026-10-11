@@ -17,6 +17,7 @@
     "test:report": "tsx src/utils/reportDocument.test.ts",
     "test:ops": "tsx operations.test.ts",
     "test:examples": "tsx src/data/formExamples.test.ts",
+    "test:features": "tsx features.test.ts",
     "test:e2e": "node e2e/api.e2e.mjs",
     "test:e2e:supabase": "node e2e/api.e2e.mjs supabase"
   },
