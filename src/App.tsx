@@ -25,6 +25,7 @@ const ReportListView = lazyScreen(loadReportListView);
 const ReportDetailModal = lazyScreen(loadReportDetailModal);
 const StaffPortal = lazyScreen(() => import("./components/StaffPortal").then((m) => m.StaffPortal));
 const ServicePolicyDialog = lazyScreen(() => import("./components/ServicePolicyDialog").then((m) => m.ServicePolicyDialog));
+const OtherAppsDialog = lazyScreen(() => import("./components/OtherAppsDialog").then((m) => m.OtherAppsDialog));
 
 function ScreenLoading() {
   return <div className="py-20 text-center text-sm text-slate-500"><Loader2 className="inline h-5 w-5 animate-spin" /> 불러오는 중</div>;
@@ -53,6 +54,8 @@ export default function App() {
   const [schools, setSchools] = useState<School[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
   const [policySection, setPolicySection] = useState<PolicySection | null>(null);
+  const [appsOpen, setAppsOpen] = useState(false);
+  const closeApps = useCallback(() => setAppsOpen(false), []);
   const [schoolLocations, setSchoolLocations] = useState<SchoolLocation[]>([]);
   const [schoolLocationTypes, setSchoolLocationTypes] = useState<SchoolLocationType[]>([]);
   const [schoolLocationsLoading, setSchoolLocationsLoading] = useState(false);
@@ -574,10 +577,11 @@ export default function App() {
           <p className="mt-1 text-slate-400">
             익명 신고를 이용할 수 있습니다. 학교 추가 신청의 개인정보 처리 안내를 확인해 주세요.
           </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button></div>
+          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button><button type="button" onClick={() => setAppsOpen(true)} className="underline underline-offset-2 hover:text-blue-700">은율이의 다른 앱</button></div>
         </div>
       </footer>
       {policySection && <Suspense fallback={null}><ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} /></Suspense>}
+      {appsOpen && <Suspense fallback={null}><OtherAppsDialog onClose={closeApps} /></Suspense>}
     </div>
   );
 }
