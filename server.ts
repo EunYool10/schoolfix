@@ -1471,7 +1471,7 @@ app.get("/api/schools", (_req, res) => {
 app.get("/api/schools/:schoolId/locations", (req, res) => {
   const school = findSchool(req.params.schoolId);
   if (!school) return safeError(res, 404, "지원 중인 학교를 찾을 수 없습니다.");
-  return res.json({ ok: true, schoolId: school.id, data: school.locations.filter((location) => location.verificationStatus === "official"), locationTypes: school.locationTypes ?? [...new Set(school.locations.map((location) => location.type))].map((type) => ({ type, verificationStatus: "official" })), verificationStatus: school.verificationStatus, sourceUrl: school.sourceUrl });
+  return res.json({ ok: true, schoolId: school.id, data: school.locations.filter((location) => location.verificationStatus !== "user_entered"), locationTypes: school.locationTypes ?? [...new Set(school.locations.map((location) => location.type))].map((type) => ({ type, verificationStatus: "official" })), verificationStatus: school.verificationStatus, sourceUrl: school.sourceUrl });
 });
 
 /** 학교 추가 요청은 학생 화면에 공개하지 않고 DATA_DIR에 별도 보관한다. */

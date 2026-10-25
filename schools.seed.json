@@ -662,7 +662,7 @@
       },
       {
         "type": "급식실",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "체육관",
@@ -674,7 +674,7 @@
       },
       {
         "type": "도서관",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "특별실",
@@ -682,7 +682,7 @@
       },
       {
         "type": "보건·상담",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "학습공간",
@@ -704,6 +704,42 @@
         "name": "일반교실",
         "verificationStatus": "official",
         "count": 24
+      },
+      {
+        "id": "staff-room",
+        "type": "특별실",
+        "name": "교무실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "administration-office",
+        "type": "특별실",
+        "name": "행정실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "counseling-room",
+        "type": "보건·상담",
+        "name": "상담실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "library",
+        "type": "도서관",
+        "name": "다솜관(도서관)",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "health-room",
+        "type": "보건·상담",
+        "name": "보건실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "cafeteria",
+        "type": "급식실",
+        "name": "급식실(미래관)",
+        "verificationStatus": "needs_review"
       },
       {
         "id": "visual-design-1",
@@ -858,6 +894,60 @@
         "name": "사물인터넷서비스기획실습실",
         "verificationStatus": "official",
         "count": 1
+      },
+      {
+        "id": "sangsang-itda",
+        "type": "특별실",
+        "name": "상상IT다 실습실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "smart-maker",
+        "type": "특별실",
+        "name": "스마트 메이커실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "baseball-club",
+        "type": "특별실",
+        "name": "야구부실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "home-base",
+        "type": "공용공간",
+        "name": "학과 홈베이스",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "sangsang-nol-it",
+        "type": "학습공간",
+        "name": "상상놀IT터",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "son-nol-it",
+        "type": "학습공간",
+        "name": "손놀IT터",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "na-it-ingale",
+        "type": "학습공간",
+        "name": "나IT팅게일",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "dream-nol-it",
+        "type": "학습공간",
+        "name": "드림놀IT터",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "id": "rainbow-nol-it",
+        "type": "학습공간",
+        "name": "레인보우놀IT터",
+        "verificationStatus": "needs_review"
       }
     ],
     "highSchoolType": "특성화고"
@@ -4180,32 +4270,32 @@
     "supportStatus": "active",
     "verificationStatus": "official",
     "verifiedAt": "2026-10-26",
-    "sourceUrl": "https://www.goeujb.kr/songyang-m/cm/cntnts/cntntsView.do?mi=5389&cntntsId=1138",
+    "sourceUrl": "https://www.goeujb.kr/songyang-m/cm/cntnts/cntntsView.do?mi=5396&cntntsId=1140",
     "departments": [],
     "locationTypes": [
       {
         "type": "교실",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "복도",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "화장실",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "계단",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "급식실",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "체육관",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "운동장",
@@ -4213,29 +4303,227 @@
       },
       {
         "type": "도서관",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "특별실",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "보건·상담",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "학습공간",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "공용공간",
-        "verificationStatus": "needs_review"
+        "verificationStatus": "official"
       },
       {
         "type": "기타",
         "verificationStatus": "user_entered"
       }
     ],
-    "locations": []
+    "locations": [
+      {
+        "id": "regular-classrooms",
+        "type": "교실",
+        "name": "일반교실",
+        "count": 33,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "staff-center",
+        "type": "특별실",
+        "name": "교무센터",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "grade-offices",
+        "type": "특별실",
+        "name": "학년부 교무실",
+        "count": 3,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "administration-office",
+        "type": "특별실",
+        "name": "교육행정실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "principal-office",
+        "type": "특별실",
+        "name": "교장실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "grade-records",
+        "type": "특별실",
+        "name": "성적처리실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "av-room",
+        "type": "특별실",
+        "name": "시청각실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "tech-home-1",
+        "type": "특별실",
+        "name": "기술가정1실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "tech-home-2",
+        "type": "특별실",
+        "name": "기술가정2실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "computer-1",
+        "type": "특별실",
+        "name": "컴퓨터1실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "science-1",
+        "type": "특별실",
+        "name": "과학1실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "science-2",
+        "type": "특별실",
+        "name": "과학2실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "music-1",
+        "type": "특별실",
+        "name": "음악1실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "music-2",
+        "type": "특별실",
+        "name": "음악2실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "art-1",
+        "type": "특별실",
+        "name": "미술1실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "broadcast-room",
+        "type": "특별실",
+        "name": "방송실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "integrated-support",
+        "type": "특별실",
+        "name": "통합지원실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "student-council",
+        "type": "특별실",
+        "name": "학생회실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "cafeteria",
+        "type": "급식실",
+        "name": "급식실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "gym",
+        "type": "체육관",
+        "name": "체육관",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "locker-rooms",
+        "type": "체육관",
+        "name": "탈의실",
+        "count": 2,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "library",
+        "type": "도서관",
+        "name": "도서실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "health-room",
+        "type": "보건·상담",
+        "name": "보건실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "gonggam-counseling",
+        "type": "보건·상담",
+        "name": "학생공감상담실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "counseling-rooms",
+        "type": "보건·상담",
+        "name": "상담실",
+        "count": 4,
+        "verificationStatus": "official"
+      },
+      {
+        "id": "welfare-support",
+        "type": "보건·상담",
+        "name": "복지지원실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "home-base",
+        "type": "학습공간",
+        "name": "층별 홈베이스",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "sky-garden",
+        "type": "공용공간",
+        "name": "하늘정원",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "blue-dream-shelter",
+        "type": "공용공간",
+        "name": "푸른꿈쉼터",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "elevator",
+        "type": "공용공간",
+        "name": "엘리베이터",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "parent-room",
+        "type": "공용공간",
+        "name": "학부모상주실",
+        "verificationStatus": "official"
+      },
+      {
+        "id": "uniform-bank",
+        "type": "공용공간",
+        "name": "교복은행",
+        "verificationStatus": "official"
+      }
+    ]
   }
 ]
