@@ -20,6 +20,7 @@ import {
   Check,
   Upload,
   EyeOff,
+  Plus,
 } from "lucide-react";
 import {
   SchoolReport,
@@ -223,6 +224,8 @@ export function StudentReportView({
   const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set([...locations.map((item) => item.type), ...SCHOOL_LOCATIONS])].map((type) => ({ type, verificationStatus: type === "기타" ? "user_entered" as const : "needs_review" as const })), [locationTypes, locations]);
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
   const officialLocationCount = locations.filter((item) => item.verificationStatus === "official").length;
+  const [placeExtrasOpen, setPlaceExtrasOpen] = useState(false);
+  const showPlaceExtras = placeExtrasOpen || Boolean(buildingName || floor || roomName);
 
   useEffect(() => {
     setAppliedExample(null);
@@ -309,8 +312,6 @@ export function StudentReportView({
   const descriptionBlanks = useMemo(() => findTemplateBlanks(description), [description]);
   const descriptionReady = description.trim().length >= 5 && descriptionBlanks.length === 0;
   const hasPlace = Boolean(locationId) || [locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].some((value) => value.trim());
-  const completedSteps = [Boolean(location), Boolean(category), descriptionReady].filter(Boolean).length;
-  const completionPercent = Math.round((completedSteps / 3) * 100);
 
   // Detect whether form contains unsaved user input
   const isFormDirty = Boolean(
@@ -881,68 +882,40 @@ export function StudentReportView({
   }
 
   return (
-    <div className="sf-report-page w-full space-y-5">
+    <div className="sf-report-page mx-auto w-full max-w-3xl space-y-5">
       {/* Title & Introduction */}
       <div className="sf-report-heading">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-extrabold text-indigo-800"><MapPin className="h-3.5 w-3.5" /> {school.schoolName}</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800"><MapPin className="h-3.5 w-3.5" /> SchoolFix 신고 센터</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-600"><Lock className="h-3 w-3" /> 익명으로 접수</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-800"><Lock className="h-3 w-3" /> 익명으로 접수</span>
         </div>
-        <p role={locationsError ? "alert" : "status"} className={`mb-3 text-xs ${locationsError ? "text-rose-700" : "text-slate-500"}`}>{locationsLoading ? "학교별 위치 목록을 불러오는 중…" : locationsError ? `${locationsError} 직접 입력 위치를 이용할 수 있습니다.` : <>공식 확인된 장소 항목 {officialLocationCount}개{locations.length > officialLocationCount ? ` · 확인 필요 ${locations.length - officialLocationCount}개` : ""} · 학교별 정보 기준 {school.verifiedAt} · <a href={school.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">출처</a></>}</p>
         <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
           학교에서 발견한 문제를<br className="sm:hidden" /> 함께 고쳐요
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          위치와 상황을 알려주시면 담당자가 확인하고 조치합니다. 필수 항목은 <span className="font-bold text-rose-600">*</span> 표시가 있어요.
+          장소와 상황을 알려주시면 담당자가 확인하고 조치합니다. 이름·학번·연락처는 받지 않아요.
         </p>
       </div>
 
-      <div className="sf-progress-panel rounded-2xl border border-blue-100 bg-white/90 p-4 shadow-sm sm:flex sm:items-center sm:gap-5">
-        <div className="min-w-[10rem]">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-xs font-extrabold text-slate-800">작성 진행도</span>
-            <span className="text-xs font-bold tabular-nums text-blue-700">{completionPercent}%</span>
-          </div>
-          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="신고 작성 진행도" aria-valuemin={0} aria-valuemax={100} aria-valuenow={completionPercent}>
-            <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 transition-all duration-300" style={{ width: `${completionPercent}%` }} />
-          </div>
-        </div>
-        <div className="mt-3 grid flex-1 grid-cols-3 gap-2 sm:mt-0">
-          {[{ label: "장소", done: Boolean(location) }, { label: "분류", done: Boolean(category) }, { label: "상황 설명", done: descriptionReady }].map((step, index) => (
-            <div key={step.label} className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold ${step.done ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"}`}>
-              <span className={`flex h-5 w-5 items-center justify-center rounded-full ${step.done ? "bg-emerald-600 text-white" : "bg-white text-slate-500 ring-1 ring-slate-200"}`}>{step.done ? <Check className="h-3 w-3" /> : index + 1}</span>
-              {step.label}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Unsaved changes notice banner when form has data */}
-      {isFormDirty && (
-        <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-xl flex items-center justify-between gap-3 text-xs text-amber-900 animate-in fade-in shadow-2xs">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-            <span className="font-medium">
-              {draftRestored ? "이전에 작성하던 내용을 이 탭에서 복구했어요. 접수 전까지 계속 수정할 수 있습니다." : draftSavedAt ? "작성 내용은 이 탭에 임시 저장됩니다. 탭을 닫으면 임시 저장 내용이 사라져요." : "신고 작성 중인 내용이 있습니다."}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowResetConfirmModal(true)}
-            className="text-amber-800 hover:text-amber-950 font-bold underline whitespace-nowrap cursor-pointer px-2 py-1 rounded hover:bg-amber-100/60 transition"
-          >
-            작성 초기화
-          </button>
-        </div>
-      )}
-
       {/* Main Form Box */}
-      <div className="sf-form-card rounded-[1.6rem] border border-white bg-white p-4 shadow-[0_18px_55px_rgba(20,38,73,0.08)] sm:p-7 lg:p-8">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
-          <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">새로운 제보</p><h2 className="mt-1 text-lg font-extrabold tracking-tight text-slate-900">신고 내용을 작성해 주세요</h2></div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800"><CloudCheck className="h-3.5 w-3.5" />{draftSavedAt ? "이 탭에 임시 저장됨" : "자동 임시저장"}</span>
-        </div>
+      <div className="sf-form-card rounded-[1.6rem] border border-white bg-white p-4 shadow-[0_18px_55px_rgba(20,38,73,0.08)] sm:p-7">
+        {/* 임시 저장 상태 — 작성 중일 때만 한 줄로 보여 준다 */}
+        {isFormDirty && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
+            <span className="flex min-w-0 items-center gap-2">
+              <CloudCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+              {draftRestored ? "작성하던 내용을 이 탭에서 복구했어요." : "작성 내용은 이 탭에 임시 저장돼요."}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowResetConfirmModal(true)}
+              className="shrink-0 rounded px-1.5 py-1 font-bold text-slate-700 underline hover:bg-slate-100 hover:text-slate-950"
+            >
+              처음부터 다시
+            </button>
+          </div>
+        )}
+
         {redactKey && photos.some((photo) => photo.key === redactKey) && (
           <PhotoRedactor
             photo={photos.find((photo) => photo.key === redactKey)!}
@@ -951,15 +924,7 @@ export function StudentReportView({
           />
         )}
 
-        {/* 사진 한 장으로 시작 (AI) */}
-        <PhotoStartCard
-          schoolId={school.id}
-          disabled={photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos}
-          onDraft={handlePhotoDraft}
-          onAttachOnly={attachPhotoOnly}
-        />
-
-        {/* 빠른 작성 예시 */}
+        {/* 빠르게 시작하기 — 예시 고르기, 사진 한 장으로 시작 (AI) */}
         <QuickExamplePanel
           key={`${school.id}:${examplePanelKey}:${exampleLocationTypes.length}`}
           school={school}
@@ -971,22 +936,14 @@ export function StudentReportView({
           onApply={handleApplyExample}
           onFreeWrite={handleFreeWrite}
           onUndo={handleUndoExample}
-        />
-
-        {/* 접수 안내 — 로그인이 없으므로 신고자 개인정보를 수집하지 않는다(§32) */}
-        <div className="mb-6 p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 flex items-center gap-2.5 text-xs">
-          <div className="h-7 w-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-            <Lock className="h-3.5 w-3.5" />
-          </div>
-          <div>
-            <p className="font-semibold text-slate-800">
-              로그인 없이 접수되며, 이름·학번·연락처를 수집하지 않습니다.
-            </p>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              접수한 신고는 이 브라우저의 [내 신고] 탭에서 처리 상태를 확인할 수 있습니다.
-            </p>
-          </div>
-        </div>
+        >
+          <PhotoStartCard
+            schoolId={school.id}
+            disabled={photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos}
+            onDraft={handlePhotoDraft}
+            onAttachOnly={attachPhotoOnly}
+          />
+        </QuickExamplePanel>
 
         {/* Validation Summary Alert */}
         {globalError && (
@@ -1037,42 +994,10 @@ export function StudentReportView({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate className="space-y-6">
-          {/* 0. Report Title (Optional / Recommended) */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label
-                htmlFor="field-title"
-                className="block text-sm font-semibold text-slate-900"
-              >
-                신고 제목 <span className="text-xs font-normal text-slate-500">(선택)</span>
-              </label>
-              <span className="text-[11px] text-slate-400">
-                {title.length}/60자
-              </span>
-            </div>
-            <input
-              id="field-title"
-              type="text"
-              maxLength={60}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="예: 3층 과학실 창문 잠금장치 파손, 체육관 입구 조명 깜빡임"
-              className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
-            />
-          </div>
-
+        <form onSubmit={handleSubmit} noValidate className="divide-y divide-slate-100">
           {/* 1. Problem Location */}
-          <div>
-            <label
-              htmlFor="field-location"
-              className="block text-sm font-semibold text-slate-900 mb-1"
-            >
-              어디에서 문제가 발생했나요? <span className="text-rose-600">*</span>
-            </label>
-            <p className="text-xs text-slate-500 mb-2">
-              문제가 발생한 교내 장소를 선택해주세요.
-            </p>
+          <div className="pb-7">
+            <StepHeading step={1} done={Boolean(location) && hasPlace} title="어디인가요?" htmlFor="field-location" />
             <select
               ref={locationRef}
               id="field-location"
@@ -1101,7 +1026,7 @@ export function StudentReportView({
                   : "border-slate-300 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               }`}
             >
-              <option value="">{locationsLoading ? "학교 위치 정보를 불러오는 중…" : "문제 위치를 선택해주세요"}</option>
+              <option value="">{locationsLoading ? "학교 위치 정보를 불러오는 중…" : "장소 종류를 골라 주세요"}</option>
               {availableLocationTypes.map((entry) => (
                 <option key={entry.type} value={entry.type}>
                   {entry.type}{entry.verificationStatus === "user_entered" ? " · 직접 입력" : ""}
@@ -1117,12 +1042,13 @@ export function StudentReportView({
                 <span>{fieldErrors.location}</span>
               </p>
             )}
+            <p role={locationsError ? "alert" : "status"} className={`mt-1.5 text-[11px] ${locationsError ? "text-rose-700" : "text-slate-500"}`}>{locationsLoading ? "학교별 위치 목록을 불러오는 중…" : locationsError ? `${locationsError} 직접 입력 위치를 이용할 수 있습니다.` : <>공식 확인된 장소 항목 {officialLocationCount}개{locations.length > officialLocationCount ? ` · 확인 필요 ${locations.length - officialLocationCount}개` : ""} · 학교별 정보 기준 {school.verifiedAt} · <a href={school.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">출처</a></>}</p>
 
-            {location && matchingLocations.length > 0 && <div className="mt-3">
+            {location && matchingLocations.length > 0 && <div className="mt-4">
               <label htmlFor="field-verified-location" className="mb-1 block text-xs font-semibold text-slate-700">세부 장소 목록 <span className="font-normal text-slate-500">(선택)</span></label>
               <select id="field-verified-location" value={locationId} onChange={(e) => { setLocationId(e.target.value); if (e.target.value) setLocationDetail(""); clearFieldError("location"); }} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm"><option value="">목록에서 선택하거나 아래에 직접 입력</option>{matchingLocations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.count ? ` (${item.count}실)` : ""}{item.verificationStatus === "official" ? " · 공식 확인" : " · 확인 필요"}</option>)}</select>
             </div>}
-            <div className="mt-3">
+            {location && <div className="mt-4">
               <div className="flex items-center justify-between mb-1">
                 <label
                   htmlFor="field-location-detail"
@@ -1143,35 +1069,27 @@ export function StudentReportView({
                 placeholder={appliedExample?.detailHint && appliedExample.location === location ? appliedExample.detailHint : "예: 본관 동쪽 2층, 급식실 출입구 옆"}
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
-              <p className="mt-1.5 text-[11px] text-slate-500">
-                목록에 없는 위치도 직접 입력할 수 있습니다. 직접 입력은 공식 시설로 등록되지 않습니다.
-              </p>
-            </div>
+            </div>}
             {location === "교실" && <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
               <label className="text-xs font-semibold text-slate-700">학과(선택)<select value={department} onChange={(e) => setDepartment(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm"><option value="">선택 안 함</option>{school.departments.map((item) => <option key={item.name} value={item.name}>{item.name}</option>)}</select></label>
               <label className="text-xs font-semibold text-slate-700">학년(선택)<select value={grade} onChange={(e) => setGrade(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm"><option value="">선택 안 함</option>{[1, 2, 3].map((year) => <option key={year} value={String(year)}>{year}학년</option>)}</select></label>
               <label className="text-xs font-semibold text-slate-700">반(직접 입력)<input value={className} onChange={(e) => setClassName(e.target.value)} maxLength={40} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm" placeholder="예: 2반" /></label>
               {department && grade && <p className="col-span-2 text-[11px] leading-relaxed text-slate-500 sm:col-span-3">공식 학교 현황에는 {department} {grade}학년 {school.departments.find((item) => item.name === department)?.classesByGrade[Number(grade) - 1] ?? ""}학급으로 기재되어 있습니다. 실제 반 이름은 공개 자료에서 확인되지 않아 직접 입력하도록 했습니다.</p>}
             </div>}
-            {location && <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <label className="text-xs font-semibold text-slate-700">건물(직접 입력)<input value={buildingName} onChange={(e) => setBuildingName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="건물 이름" /></label>
-              <label className="text-xs font-semibold text-slate-700">층(직접 입력)<input value={floor} onChange={(e) => setFloor(e.target.value)} maxLength={40} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="예: 2층" /></label>
-              <label className="text-xs font-semibold text-slate-700">호실·구역(직접 입력)<input value={roomName} onChange={(e) => setRoomName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="실제 번호를 아는 경우 입력" /></label>
-            </div>}
+            {/* 건물·층·호실은 아는 사람만 적도록 접어 둔다 */}
+            {location && (showPlaceExtras ? <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <label className="text-xs font-semibold text-slate-700">건물<input value={buildingName} onChange={(e) => setBuildingName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="건물 이름" /></label>
+              <label className="text-xs font-semibold text-slate-700">층<input value={floor} onChange={(e) => setFloor(e.target.value)} maxLength={40} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="예: 2층" /></label>
+              <label className="col-span-2 text-xs font-semibold text-slate-700 sm:col-span-1">호실·구역<input value={roomName} onChange={(e) => setRoomName(e.target.value)} maxLength={100} className="mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-2.5 text-sm" placeholder="번호를 아는 경우" /></label>
+            </div> : <button type="button" onClick={() => setPlaceExtrasOpen(true)} className="mt-2 inline-flex items-center gap-1 rounded-md px-1 py-1 text-xs font-semibold text-blue-700 hover:underline">
+              <Plus className="h-3.5 w-3.5" />건물·층·호실도 적기
+            </button>)}
           </div>
 
           {/* 2. Problem Category */}
-          <div>
-            <label
-              htmlFor="field-category"
-              className="block text-sm font-semibold text-slate-900 mb-1"
-            >
-              어떤 문제인가요? <span className="text-rose-600">*</span>
-            </label>
-            <p className="text-xs text-slate-500 mb-2">
-              가장 알맞은 문제 종류를 선택해주세요.
-            </p>
-            <div id="field-category" aria-label="문제 종류" aria-invalid={Boolean(fieldErrors.category)} aria-describedby={fieldErrors.category ? "category-error" : undefined} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="py-7">
+            <StepHeading step={2} done={Boolean(category)} title="어떤 문제인가요?" />
+            <div id="field-category" role="group" aria-label="문제 종류" aria-invalid={Boolean(fieldErrors.category)} aria-describedby={fieldErrors.category ? "category-error" : undefined} className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {ISSUE_CATEGORIES.map((cat, index) => {
                 const Icon = CATEGORY_ICONS[cat as keyof typeof CATEGORY_ICONS];
                 const selected = category === cat;
@@ -1186,11 +1104,11 @@ export function StudentReportView({
                       clearFieldError("category");
                       resetClarify();
                     }}
-                    className={`group flex min-h-14 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition sm:text-sm ${selected ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"} ${fieldErrors.category ? "border-rose-300" : ""}`}
+                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${selected ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"} ${fieldErrors.category ? "border-rose-300" : ""}`}
                   >
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${selected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-blue-100 group-hover:text-blue-700"}`}><Icon className="h-4 w-4" /></span>
-                    <span>{cat}</span>
-                    {selected && <Check className="ml-auto h-4 w-4 text-blue-700" />}
+                    <Icon className={`h-4 w-4 shrink-0 ${selected ? "text-blue-700" : "text-slate-400"}`} />
+                    <span className="min-w-0 flex-1 truncate">{cat}</span>
+                    {selected && <Check className="h-4 w-4 shrink-0 text-blue-700" />}
                   </button>
                 );
               })}
@@ -1204,28 +1122,13 @@ export function StudentReportView({
                 <span>{fieldErrors.category}</span>
               </p>
             )}
+            {category === "소음 문제" && <div className="mt-4"><NoiseMeter value={noise} onChange={setNoise} /></div>}
+            <SimilarReportsPanel draft={similarDraft} reports={existingReports} schoolId={school.id} onOpenReport={onOpenReport} onReportsChanged={onReportsChanged} />
           </div>
 
-          {category === "소음 문제" && <NoiseMeter value={noise} onChange={setNoise} />}
-
-          <SimilarReportsPanel draft={similarDraft} reports={existingReports} schoolId={school.id} onOpenReport={onOpenReport} onReportsChanged={onReportsChanged} />
-
           {/* 3. Problem Description */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label
-                htmlFor="field-description"
-                className="block text-sm font-semibold text-slate-900"
-              >
-                구체적인 상황을 알려주세요 <span className="text-rose-600">*</span>
-              </label>
-              <span className="text-xs text-slate-400 font-mono">
-                {description.length}자
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mb-2">
-              담당자가 정확히 파악할 수 있도록 언제, 어디서, 어떤 문제가 발생했는지 작성해주세요.
-            </p>
+          <div className="py-7">
+            <StepHeading step={3} done={descriptionReady} title="무슨 일인지 알려주세요" htmlFor="field-description" hint="언제부터, 어떤 상태인지 적어 주면 담당자가 빨리 파악해요." />
             <textarea
               ref={descriptionRef}
               id="field-description"
@@ -1245,8 +1148,9 @@ export function StudentReportView({
                   : "border-slate-300 bg-white focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               }`}
             />
+            <p className="mt-1 text-right text-[11px] text-slate-400">{description.length}자</p>
             {descriptionBlanks.length > 0 && (
-              <div id="description-blanks" className={`mt-2 rounded-lg border px-3 py-2.5 text-xs ${fieldErrors.description ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-200 bg-amber-50/80 text-amber-900"}`}>
+              <div id="description-blanks" className={`mt-1 rounded-lg border px-3 py-2.5 text-xs ${fieldErrors.description ? "border-rose-300 bg-rose-50 text-rose-900" : "border-amber-200 bg-amber-50/80 text-amber-900"}`}>
                 <p className="font-semibold">[ ] 빈칸 {descriptionBlanks.length}개를 실제 상황으로 바꿔 주세요.</p>
                 <p className="mt-0.5 opacity-80">빈칸을 누르면 그 부분이 선택돼서 바로 고쳐 쓸 수 있어요.</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1265,21 +1169,29 @@ export function StudentReportView({
                 <span>{fieldErrors.description}</span>
               </p>
             )}
+            {/* 제목은 비워 두면 서버가 "장소 + 문제 종류"로 만든다 */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="field-title" className="block text-xs font-semibold text-slate-700">
+                  제목 <span className="font-normal text-slate-500">(선택 · 비워 두면 자동으로 붙여요)</span>
+                </label>
+                <span className="text-[11px] text-slate-400">{title.length}/60자</span>
+              </div>
+              <input
+                id="field-title"
+                type="text"
+                maxLength={60}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="예: 3층 과학실 창문 잠금장치 파손"
+                className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
+              />
+            </div>
           </div>
 
           {/* 4. 사진 — 여러 장, 고르는 즉시 브라우저에서 줄인다 */}
-          <div>
-            <div className="mb-1 flex items-baseline justify-between gap-2">
-              <label className="block text-sm font-semibold text-slate-900">
-                현장 사진이 있나요?
-              </label>
-              <span className="text-xs font-mono text-slate-400">{photos.length + preparingCount}/{PHOTO_LIMITS.maxPhotos}장</span>
-            </div>
-            <p className="text-xs text-slate-500 mb-2">
-              여러 각도에서 찍은 사진은 상태 파악과 빠른 조치에 도움이 됩니다. (선택사항, 최대 {PHOTO_LIMITS.maxPhotos}장 · 한 장에 {PHOTO_LIMITS.maxOriginalBytes / 1024 / 1024}MB까지)
-              <br />
-              <span className="text-slate-400">사진은 올리기 전에 자동으로 줄이며, 이때 촬영 위치 같은 사진 속 정보도 지워집니다. 얼굴·이름표는 나오지 않게 찍어 주세요.</span>
-            </p>
+          <div className="py-7">
+            <StepHeading step={4} done={photos.length > 0} optional title="현장 사진" hint="얼굴·이름표는 나오지 않게 찍어 주세요. 올릴 때 크기를 줄이고 촬영 위치 정보는 지워요." />
 
             <input
               ref={fileInputRef}
@@ -1301,7 +1213,7 @@ export function StudentReportView({
               onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true); }}
               onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDraggingFile(false); }}
               onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); void handleFiles(event.dataTransfer.files); }}
-              className={`rounded-2xl border-2 border-dashed p-3 transition ${isDraggingFile ? "border-blue-500 bg-blue-50 ring-4 ring-blue-100" : "border-slate-200 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/40"}`}
+              className={`rounded-2xl border-2 border-dashed p-2.5 transition ${isDraggingFile ? "border-blue-500 bg-blue-50 ring-4 ring-blue-100" : "border-slate-200 bg-slate-50/70 hover:border-blue-300 hover:bg-blue-50/40"}`}
             >
               {photos.length + preparingCount > 0 && (
                 <ul className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -1345,11 +1257,11 @@ export function StudentReportView({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex w-full flex-col items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-700 transition hover:text-blue-800 ${photos.length ? "min-h-14 py-3" : "min-h-24 py-5"}`}
+                  className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl px-4 py-3 text-sm font-bold text-slate-700 transition hover:text-blue-800"
                 >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-blue-700 shadow-sm"><Upload className="h-5 w-5" /></span>
-                  <span>{isDraggingFile ? "여기에 놓아 첨부하세요" : photos.length ? "사진 더 추가하기" : "사진을 끌어 놓거나 눌러서 선택 (여러 장 가능)"}</span>
-                  <span className="text-[11px] font-medium text-slate-500">JPG, PNG, WEBP, GIF 등 · 최대 {PHOTO_LIMITS.maxPhotos}장</span>
+                  <Upload className="h-4 w-4 text-blue-700" />
+                  <span>{isDraggingFile ? "여기에 놓아 첨부하세요" : photos.length ? "사진 더 추가하기" : "사진 고르기 (끌어 놓아도 돼요)"}</span>
+                  <span className="text-[11px] font-medium text-slate-400">{photos.length + preparingCount}/{PHOTO_LIMITS.maxPhotos}장</span>
                 </button>
               )}
             </div>
@@ -1361,105 +1273,96 @@ export function StudentReportView({
             사용자에게 선택지를 주면 실제와 다른 인상을 줄 수 있다(§32).
           */}
 
-          {/*
-            AI 추가 확인 (§19).
+          <div className="space-y-4 pt-7">
+            {/*
+              AI 추가 확인 (§19).
 
-            신고 내용이 애매하면 접수하지 않고 여기서 질문 하나를 보여 준다.
-            별도 채팅 화면을 만들지 않고 기존 신고 폼 안에서 이어서 답하도록 한다.
-          */}
-          {clarify && (
-            <div
-              role="status"
-              className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3"
-            >
-              <div className="flex items-start gap-2.5">
-                <div className="h-7 w-7 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                  <Info className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold text-blue-900">
-                    신고를 접수하기 전에 한 가지만 더 알려주세요
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900 break-keep leading-relaxed">
-                    {clarify.question}
-                  </p>
-                </div>
-              </div>
-
-              {/* 이전에 주고받은 확인 내역 — 답변이 사라지지 않았음을 보여 준다 (§15) */}
-              {clarify.turns.length > 0 && (
-                <ul className="space-y-1.5 border-l-2 border-blue-200 pl-3">
-                  {clarify.turns.map((turn, i) => (
-                    <li key={i} className="text-[11px] text-slate-600 leading-relaxed">
-                      <span className="text-slate-500">{turn.question}</span>
-                      <br />
-                      <span className="font-semibold text-slate-800">→ {turn.answer}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <textarea
-                rows={2}
-                maxLength={500}
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                disabled={isChecking || isSubmitting}
-                placeholder="여기에 답변을 적어주세요"
-                className="w-full rounded-lg border border-blue-300 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
-              />
-
-              <div className="flex flex-col sm:flex-row items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAnswerSubmit}
-                  disabled={isChecking || isSubmitting || !answer.trim()}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 h-11 min-h-[44px] px-5 rounded-lg bg-blue-700 text-sm font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
-                >
-                  {isChecking ? (
-                    <>
-                      <RotateCw className="h-3.5 w-3.5 animate-spin" />
-                      <span>신고 내용 확인 중…</span>
-                    </>
-                  ) : (
-                    <span>계속하기</span>
-                  )}
-                </button>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  답변을 더하면 신고가 접수됩니다. 위의 신고 내용을 직접 고쳐서 다시 제출해도 됩니다.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 확인이 끝난 뒤 접수가 진행 중일 때 (§19) */}
-          {clarifyConfirmed && !clarify && (isChecking || isSubmitting) && (
-            <div
-              role="status"
-              className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-900"
-            >
-              <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
-              <span>신고 내용을 확인했습니다. 접수를 진행합니다.</span>
-            </div>
-          )}
-
-          {/* 6. Action Buttons */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5">
-            {isFormDirty && (
-              <button
-                type="button"
-                onClick={() => setShowResetConfirmModal(true)}
-                className="w-full sm:w-auto px-5 h-12 min-h-[48px] rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition cursor-pointer shadow-xs active:scale-[0.99]"
+              신고 내용이 애매하면 접수하지 않고 여기서 질문 하나를 보여 준다.
+              별도 채팅 화면을 만들지 않고 기존 신고 폼 안에서 이어서 답하도록 한다.
+            */}
+            {clarify && (
+              <div
+                role="status"
+                className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3"
               >
-                초기화
-              </button>
+                <div className="flex items-start gap-2.5">
+                  <div className="h-7 w-7 shrink-0 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                    <Info className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-blue-900">
+                      신고를 접수하기 전에 한 가지만 더 알려주세요
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900 break-keep leading-relaxed">
+                      {clarify.question}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 이전에 주고받은 확인 내역 — 답변이 사라지지 않았음을 보여 준다 (§15) */}
+                {clarify.turns.length > 0 && (
+                  <ul className="space-y-1.5 border-l-2 border-blue-200 pl-3">
+                    {clarify.turns.map((turn, i) => (
+                      <li key={i} className="text-[11px] text-slate-600 leading-relaxed">
+                        <span className="text-slate-500">{turn.question}</span>
+                        <br />
+                        <span className="font-semibold text-slate-800">→ {turn.answer}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <textarea
+                  rows={2}
+                  maxLength={500}
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  disabled={isChecking || isSubmitting}
+                  placeholder="여기에 답변을 적어주세요"
+                  className="w-full rounded-lg border border-blue-300 bg-white p-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:opacity-60"
+                />
+
+                <div className="flex flex-col sm:flex-row items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAnswerSubmit}
+                    disabled={isChecking || isSubmitting || !answer.trim()}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 h-11 min-h-[44px] px-5 rounded-lg bg-blue-700 text-sm font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
+                  >
+                    {isChecking ? (
+                      <>
+                        <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>신고 내용 확인 중…</span>
+                      </>
+                    ) : (
+                      <span>계속하기</span>
+                    )}
+                  </button>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    답변을 더하면 신고가 접수됩니다. 위의 신고 내용을 직접 고쳐서 다시 제출해도 됩니다.
+                  </p>
+                </div>
+              </div>
             )}
+
+            {/* 확인이 끝난 뒤 접수가 진행 중일 때 (§19) */}
+            {clarifyConfirmed && !clarify && (isChecking || isSubmitting) && (
+              <div
+                role="status"
+                className="flex items-center gap-2.5 rounded-lg border border-emerald-200 bg-emerald-50 p-3.5 text-xs font-semibold text-emerald-900"
+              >
+                <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span>신고 내용을 확인했습니다. 접수를 진행합니다.</span>
+              </div>
+            )}
+
+            {/* 6. Action Buttons */}
             <button
               id="btn-submit-report"
               type="submit"
               /* 확인 중·접수 중에는 중복 제출을 막는다 (§20) */
               disabled={isSubmitting || isChecking || Boolean(clarify)}
-              className="flex-1 w-full flex items-center justify-center h-12 min-h-[48px] rounded-lg bg-blue-700 text-sm sm:text-base font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
+              className="w-full flex items-center justify-center h-12 min-h-[48px] rounded-xl bg-blue-700 text-sm sm:text-base font-bold text-white hover:bg-blue-800 transition active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-xs"
             >
               {isChecking ? (
                 <span>신고 내용 확인 중…</span>
@@ -1471,6 +1374,10 @@ export function StudentReportView({
                 <span>신고하기</span>
               )}
             </button>
+            <p className="flex items-start justify-center gap-1.5 text-center text-[11px] leading-relaxed text-amber-800">
+              <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+              <span>바로 조치가 필요한 위험은 신고와 함께 교무실이나 행정실에도 직접 알려주세요.</span>
+            </p>
           </div>
         </form>
       </div>
@@ -1511,6 +1418,22 @@ export function StudentReportView({
       {/* Helpful Guidance Footer */}
       <div className="text-center text-xs text-slate-400 leading-relaxed py-1">
         신고된 내용은 안전한 학교 환경 조성을 위해 사용되며, 허위 사실 기재는 자제해 주시기 바랍니다.
+      </div>
+    </div>
+  );
+}
+
+/** 신고 폼의 단계 제목. 채우면 번호가 체크로 바뀐다. */
+function StepHeading({ step, done, title, htmlFor, optional = false, hint }: { step: number; done: boolean; title: string; htmlFor?: string; optional?: boolean; hint?: string }) {
+  const text = <>{title} {optional ? <span className="text-xs font-semibold text-slate-400">(선택)</span> : <span className="text-rose-600">*</span>}</>;
+  return (
+    <div className="mb-3 flex items-start gap-2.5">
+      <span aria-hidden="true" className={`mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition ${done ? "bg-emerald-600 text-white" : "bg-blue-50 text-blue-700 ring-1 ring-blue-100"}`}>
+        {done ? <Check className="h-3.5 w-3.5" /> : step}
+      </span>
+      <div className="min-w-0">
+        {htmlFor ? <label htmlFor={htmlFor} className="block text-[15px] font-extrabold text-slate-900">{text}</label> : <h2 className="text-[15px] font-extrabold text-slate-900">{text}</h2>}
+        {hint && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{hint}</p>}
       </div>
     </div>
   );
