@@ -222,6 +222,7 @@ export function StudentReportView({
   const reportDraftKey = `${REPORT_DRAFT_KEY}_${school.id}`;
   const availableLocationTypes = useMemo(() => locationTypes.length ? locationTypes : [...new Set([...locations.map((item) => item.type), ...SCHOOL_LOCATIONS])].map((type) => ({ type, verificationStatus: type === "기타" ? "user_entered" as const : "needs_review" as const })), [locationTypes, locations]);
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
+  const officialLocationCount = locations.filter((item) => item.verificationStatus === "official").length;
 
   useEffect(() => {
     setAppliedExample(null);
@@ -888,7 +889,7 @@ export function StudentReportView({
           <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-blue-800"><MapPin className="h-3.5 w-3.5" /> SchoolFix 신고 센터</span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-600"><Lock className="h-3 w-3" /> 익명으로 접수</span>
         </div>
-        <p role={locationsError ? "alert" : "status"} className={`mb-3 text-xs ${locationsError ? "text-rose-700" : "text-slate-500"}`}>{locationsLoading ? "학교별 공식 위치 목록을 불러오는 중…" : locationsError ? `${locationsError} 직접 입력 위치를 이용할 수 있습니다.` : <>공식 확인된 장소 항목 {locations.length}개 · 학교별 정보 기준 {school.verifiedAt} · <a href={school.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">출처</a></>}</p>
+        <p role={locationsError ? "alert" : "status"} className={`mb-3 text-xs ${locationsError ? "text-rose-700" : "text-slate-500"}`}>{locationsLoading ? "학교별 위치 목록을 불러오는 중…" : locationsError ? `${locationsError} 직접 입력 위치를 이용할 수 있습니다.` : <>공식 확인된 장소 항목 {officialLocationCount}개{locations.length > officialLocationCount ? ` · 확인 필요 ${locations.length - officialLocationCount}개` : ""} · 학교별 정보 기준 {school.verifiedAt} · <a href={school.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 underline">출처</a></>}</p>
         <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
           학교에서 발견한 문제를<br className="sm:hidden" /> 함께 고쳐요
         </h1>
@@ -1118,8 +1119,8 @@ export function StudentReportView({
             )}
 
             {location && matchingLocations.length > 0 && <div className="mt-3">
-              <label htmlFor="field-verified-location" className="mb-1 block text-xs font-semibold text-slate-700">공식 확인된 세부 장소 <span className="font-normal text-slate-500">(선택)</span></label>
-              <select id="field-verified-location" value={locationId} onChange={(e) => { setLocationId(e.target.value); if (e.target.value) setLocationDetail(""); clearFieldError("location"); }} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm"><option value="">목록에서 선택하거나 아래에 직접 입력</option>{matchingLocations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.count ? ` (${item.count}실)` : ""} · 공식 확인</option>)}</select>
+              <label htmlFor="field-verified-location" className="mb-1 block text-xs font-semibold text-slate-700">세부 장소 목록 <span className="font-normal text-slate-500">(선택)</span></label>
+              <select id="field-verified-location" value={locationId} onChange={(e) => { setLocationId(e.target.value); if (e.target.value) setLocationDetail(""); clearFieldError("location"); }} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm"><option value="">목록에서 선택하거나 아래에 직접 입력</option>{matchingLocations.map((item) => <option key={item.id} value={item.id}>{item.name}{item.count ? ` (${item.count}실)` : ""}{item.verificationStatus === "official" ? " · 공식 확인" : " · 확인 필요"}</option>)}</select>
             </div>}
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1">
@@ -1127,7 +1128,7 @@ export function StudentReportView({
                   htmlFor="field-location-detail"
                   className="block text-xs font-semibold text-slate-700"
                 >
-                  {location === "기타" ? "목록에 없는 위치를 설명해 주세요" : "세부 위치"} <span className="font-normal text-slate-500">{locationId ? "(공식 목록 선택됨)" : "(직접 입력)"}</span>
+                  {location === "기타" ? "목록에 없는 위치를 설명해 주세요" : "세부 위치"} <span className="font-normal text-slate-500">{locationId ? "(목록에서 선택됨)" : "(직접 입력)"}</span>
                 </label>
                 <span className="text-[11px] text-slate-400">{locationDetail.length}/150자</span>
               </div>
@@ -1143,7 +1144,7 @@ export function StudentReportView({
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
               <p className="mt-1.5 text-[11px] text-slate-500">
-                공식 목록에 없는 위치도 직접 입력할 수 있습니다. 직접 입력은 공식 시설로 등록되지 않습니다.
+                목록에 없는 위치도 직접 입력할 수 있습니다. 직접 입력은 공식 시설로 등록되지 않습니다.
               </p>
             </div>
             {location === "교실" && <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
