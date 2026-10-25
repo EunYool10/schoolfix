@@ -601,6 +601,268 @@
     "highSchoolType": "특성화고"
   },
   {
+    "id": "kmit-h",
+    "schoolName": "경민IT고등학교",
+    "officialWebsite": "https://kmit-h.goeujb.kr/kmit-h/main.do",
+    "address": "경기도 의정부시 서부로 545",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-26",
+    "sourceUrl": "https://kmit-h.goeujb.kr/kmit-h/cm/cntnts/cntntsView.do?mi=2666&cntntsId=731",
+    "departments": [
+      {
+        "name": "디자인과",
+        "classesByGrade": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "name": "의료콘텐츠과",
+        "classesByGrade": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "name": "의료헬스케어과",
+        "classesByGrade": [
+          2,
+          2,
+          2
+        ]
+      },
+      {
+        "name": "의료데이터과",
+        "classesByGrade": [
+          2,
+          2,
+          2
+        ]
+      }
+    ],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "official"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": [
+      {
+        "id": "regular-classrooms",
+        "type": "교실",
+        "name": "일반교실",
+        "verificationStatus": "official",
+        "count": 24
+      },
+      {
+        "id": "visual-design-1",
+        "type": "특별실",
+        "name": "시각디자인실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "visual-design-2",
+        "type": "특별실",
+        "name": "시각디자인실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "character-making",
+        "type": "특별실",
+        "name": "캐릭터제작실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "animation-content-1",
+        "type": "특별실",
+        "name": "애니메이션콘텐츠제작실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "animation-content-2",
+        "type": "특별실",
+        "name": "애니메이션콘텐츠제작실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "film-content-1",
+        "type": "특별실",
+        "name": "영화콘텐츠제작실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "film-content-2",
+        "type": "특별실",
+        "name": "영화콘텐츠제작실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "smart-culture-app",
+        "type": "특별실",
+        "name": "스마트문화앱콘텐츠제작실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "care-support",
+        "type": "특별실",
+        "name": "요양지원실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "personal-welfare",
+        "type": "특별실",
+        "name": "대인복지서비스실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "basic-nursing-clinical-1",
+        "type": "특별실",
+        "name": "기초간호임상실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "basic-nursing-clinical-2",
+        "type": "특별실",
+        "name": "기초간호임상실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "nursing-basics-1",
+        "type": "특별실",
+        "name": "간호의기초실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "nursing-basics-2",
+        "type": "특별실",
+        "name": "간호의기초실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "applied-programming-1",
+        "type": "특별실",
+        "name": "응용프로그래밍개발실습실01",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "applied-programming-2",
+        "type": "특별실",
+        "name": "응용프로그래밍개발실습실02",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "applied-programming",
+        "type": "특별실",
+        "name": "응용프로그래밍개발실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "network-programming",
+        "type": "특별실",
+        "name": "네트워크프로그래밍실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "3d-printing",
+        "type": "특별실",
+        "name": "3D프린터용품제작실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "system-programming",
+        "type": "특별실",
+        "name": "시스템프로그래밍실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "information-security",
+        "type": "특별실",
+        "name": "정보보호관리실습실",
+        "verificationStatus": "official",
+        "count": 1
+      },
+      {
+        "id": "iot-service-planning",
+        "type": "특별실",
+        "name": "사물인터넷서비스기획실습실",
+        "verificationStatus": "official",
+        "count": 1
+      }
+    ],
+    "highSchoolType": "특성화고"
+  },
+  {
     "id": "karim-e",
     "schoolName": "가림초등학교",
     "officialWebsite": "https://karim-e.goegm.kr/karim-e/main.do",
