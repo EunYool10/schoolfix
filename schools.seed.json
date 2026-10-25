@@ -4171,5 +4171,71 @@
       }
     ],
     "locations": []
+  },
+  {
+    "id": "songyang-m",
+    "schoolName": "송양중학교",
+    "officialWebsite": "https://www.goeujb.kr/songyang-m/main.do",
+    "address": "경기도 의정부시 용민로 308",
+    "supportStatus": "active",
+    "verificationStatus": "official",
+    "verifiedAt": "2026-10-26",
+    "sourceUrl": "https://www.goeujb.kr/songyang-m/cm/cntnts/cntntsView.do?mi=5389&cntntsId=1138",
+    "departments": [],
+    "locationTypes": [
+      {
+        "type": "교실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "복도",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "화장실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "계단",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "급식실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "체육관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "운동장",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "도서관",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "특별실",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "보건·상담",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "학습공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "공용공간",
+        "verificationStatus": "needs_review"
+      },
+      {
+        "type": "기타",
+        "verificationStatus": "user_entered"
+      }
+    ],
+    "locations": []
   }
 ]
