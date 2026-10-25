@@ -82,22 +82,22 @@ export function PhotoStartCard({ schoolId, disabled, onDraft, onAttachOnly }: Pr
   };
 
   return (
-    <div className="mb-4 overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-blue-50 p-3.5 sm:p-4" data-testid="photo-start">
+    <div className="mt-3 rounded-xl border border-violet-200 bg-white p-3" data-testid="photo-start">
       <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(event) => void run(event.target.files?.[0])} />
       <div className="flex flex-wrap items-center gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm"><Camera className="h-5 w-5" /></span>
-        <div className="min-w-0 flex-1">
-          <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900">사진 한 장으로 시작하기 <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700"><Sparkles className="h-3 w-3" />AI</span></h3>
-          <p className="mt-0.5 text-xs leading-relaxed text-slate-600">문제가 보이게 찍으면 AI가 장소·문제 종류·설명을 채워요. 사진은 신고에도 붙고, 얼굴이 보이면 가려요.</p>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white"><Camera className="h-4 w-4" /></span>
+        <div className="min-w-[11rem] flex-1">
+          <p className="flex items-center gap-1.5 text-[13px] font-bold text-slate-900">사진 한 장으로 시작하기 <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-700"><Sparkles className="h-3 w-3" />AI</span></p>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{state === "busy" ? stage : "찍으면 AI가 내용을 채워요. 얼굴은 가려요."}</p>
         </div>
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={disabled || state === "busy"}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50 sm:w-auto"
+          className="inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50 sm:w-auto"
         >
           {state === "busy" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
-          {state === "busy" ? stage : "사진 찍기·고르기"}
+          {state === "busy" ? "분석 중" : "사진 고르기"}
         </button>
       </div>
       {disabled && state !== "busy" && <p className="mt-2 text-[11px] text-slate-500">사진을 더 붙일 수 없어요. 아래 사진 칸에서 하나를 빼면 쓸 수 있어요.</p>}

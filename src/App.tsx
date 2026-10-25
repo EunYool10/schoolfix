@@ -11,7 +11,7 @@ import { SchoolSelectionView } from "./components/SchoolSelectionView";
 import type { PolicySection } from "./components/ServicePolicyDialog";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
-import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, ShieldCheck, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, Loader2 } from "lucide-react";
 
 /*
  * 첫 화면(학교 선택·홈)에 필요 없는 화면은 들어갈 때 불러온다.
@@ -474,46 +474,20 @@ export default function App() {
 
             <Suspense fallback={<ScreenLoading />}>
             {view === "NEW_REPORT" && (
-              <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-12 lg:gap-7">
-                <section className="min-w-0 lg:col-span-8">
-                <StudentReportView
-                    school={selectedSchool}
-                    locations={schoolLocations}
-                    locationTypes={schoolLocationTypes}
-                    locationsLoading={schoolLocationsLoading}
-                    locationsError={schoolLocationsError}
-                    onSubmitReport={handleSubmitReport}
-                    isSubmitting={isSubmitting}
-                    onSuccessNavToMyReports={() => { setReportsTab("MINE"); setView("REPORTS"); }}
-                    onDirtyChange={setIsFormDirty}
-                    existingReports={allReportsMarked}
-                    onOpenReport={openReport}
-                    onReportsChanged={refreshAll}
-                  />
-                </section>
-
-                <aside className="sf-report-sidepanel space-y-4 lg:sticky lg:top-24 lg:col-span-4">
-                  <div className="overflow-hidden rounded-[1.6rem] bg-gradient-to-br from-slate-950 via-blue-950 to-blue-900 p-5 text-white shadow-[0_20px_50px_rgba(18,40,88,0.18)] sm:p-6">
-                    <div className="flex items-center gap-2 text-blue-200"><ShieldCheck className="h-4 w-4" /><span className="text-[11px] font-extrabold uppercase tracking-[0.16em]">안심 제보</span></div>
-                    <h2 className="mt-3 text-lg font-extrabold leading-snug">제보자의 정보는<br />수집하지 않아요</h2>
-                    <p className="mt-2 text-xs leading-relaxed text-blue-100/80">로그인·이름·학번 없이 접수합니다. 내용은 학교 시설과 안전 문제를 처리하는 데 사용됩니다.</p>
-                    <div className="mt-5 grid grid-cols-3 gap-2 border-t border-white/15 pt-4 text-center">
-                      {["로그인 없음", "익명 접수", "상태 공개"].map((label) => <span key={label} className="rounded-lg bg-white/10 px-2 py-2 text-[10px] font-bold text-blue-50">{label}</span>)}
-                    </div>
-                  </div>
-                  <div className="rounded-[1.4rem] border border-slate-200/80 bg-white/85 p-5 shadow-sm">
-                    <h3 className="text-sm font-extrabold text-slate-900">빠르게 처리되는 제보</h3>
-                    <ol className="mt-4 space-y-4">
-                      {[
-                        ["01", "장소를 자세히", "건물·층·주변 시설까지 적어주세요."],
-                        ["02", "상황을 구체적으로", "언제부터, 어떤 문제가 있는지 알려주세요."],
-                        ["03", "사진은 선택", "현장 사진이 있으면 판단에 도움이 됩니다."],
-                      ].map(([number, title, description]) => <li key={number} className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-extrabold text-blue-700">{number}</span><div><p className="text-xs font-bold text-slate-800">{title}</p><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{description}</p></div></li>)}
-                    </ol>
-                    <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2.5 text-[11px] leading-relaxed text-amber-900">🚨 즉시 조치가 필요한 위험은 신고와 함께 교무실 또는 행정실에도 바로 알려주세요.</p>
-                  </div>
-                </aside>
-              </div>
+              <StudentReportView
+                school={selectedSchool}
+                locations={schoolLocations}
+                locationTypes={schoolLocationTypes}
+                locationsLoading={schoolLocationsLoading}
+                locationsError={schoolLocationsError}
+                onSubmitReport={handleSubmitReport}
+                isSubmitting={isSubmitting}
+                onSuccessNavToMyReports={() => { setReportsTab("MINE"); setView("REPORTS"); }}
+                onDirtyChange={setIsFormDirty}
+                existingReports={allReportsMarked}
+                onOpenReport={openReport}
+                onReportsChanged={refreshAll}
+              />
             )}
 
             {view === "REPORTS" && (
