@@ -29,6 +29,12 @@ const APPS: { name: string; about: string; url: string; icon: string; color: str
     url: "https://eunyool10.github.io/LogicMaze/",
     icon: "/apps/logicmaze.svg",
     color: "#b8924a",
+  },  {
+    name: "AI Hub",
+    about: "분야별로 정리한 AI 도구를 검색하고 비교하는 AI 도구 모음",
+    url: "https://eunyool10.github.io/AI-Hub-By-EunYool/",
+    icon: "/apps/aihub.png",
+    color: "#6a5cff",
   },
 ];
 
