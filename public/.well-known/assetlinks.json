@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.eunyool10.schoolfix",
+      "sha256_cert_fingerprints": [
+        "DB:E3:38:61:70:75:26:B5:F4:1E:B7:F9:52:06:75:F2:AD:F2:C5:69:6C:D3:43:1F:8C:D9:E0:10:13:EB:7E:37"
+      ]
+    }
+  }
+]

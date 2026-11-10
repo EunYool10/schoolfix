@@ -3727,6 +3727,8 @@ async function startServer() {
   const publicPath = path.join(process.cwd(), "public");
   if (fs.existsSync(publicPath)) {
     app.use(express.static(publicPath));
+    // 안드로이드 앱(APK)이 이 사이트의 앱임을 확인하는 파일. express.static 은 점(.)으로 시작하는 폴더를 내보내지 않아 따로 연다.
+    app.use("/.well-known", express.static(path.join(publicPath, ".well-known")));
   }
 
   if (!isProduction) {
