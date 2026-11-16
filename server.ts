@@ -26,13 +26,13 @@ import {
   analyzeReportRisk,
   type RiskAnalysis,
   type RiskAnalysisInput,
-} from "./riskAnalysis";
+} from "./server/api/riskAnalysis";
 import {
   generateAiSummary,
   type AiReportInput,
   type AiSummaryResult,
   type ReportStatistics,
-} from "./aiSummary";
+} from "./server/api/aiSummary";
 import {
   rateLimit,
   checkRateLimit,
@@ -54,12 +54,12 @@ import {
   securityHeaders,
   corsPolicy,
   safeError,
-} from "./serverSecurity";
+} from "./server/api/serverSecurity";
 import {
   aggregateLocationStats,
   normalizeLocationText,
   type LocationStatInput,
-} from "./locationStats";
+} from "./server/api/locationStats";
 import {
   analyzeClarity,
   composeDescription,
@@ -68,17 +68,17 @@ import {
   dropClarifySession,
   MAX_CLARIFY_QUESTIONS,
   type ClarifySession,
-} from "./reportClarify";
+} from "./server/api/reportClarify";
 import { maskProfanity, maskTerms } from "./src/security/profanityFilter";
 import { ISSUE_CATEGORIES } from "./src/types";
 import { filterReports, parseFilterQuery } from "./src/utils/reportFilter";
-import { RISK_LEVELS } from "./riskAnalysis";
-import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./notify";
+import { RISK_LEVELS } from "./server/api/riskAnalysis";
+import { lastNotifyResult, sendApplicationNotification, sendMonthlyNotification, sendNewReportNotification, sendTestNotification, sendText, sendUrgentNotification, webhookChannel, type MonthlySchoolSummary } from "./server/api/notify";
 import { buildMonthlyReport, monthKey, shiftMonth } from "./src/utils/monthlyStats";
 import { computeSla } from "./src/utils/sla";
 import { feedbackPending } from "./src/utils/feedback";
-import { decodePhotoDataUrl, localPhotoBackend, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache, photoTypeFromId, supabasePhotoBackend, type IncomingPhoto, type PhotoBackend, type StoredPhoto } from "./photoStore";
-import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./abuseGuard";
+import { decodePhotoDataUrl, localPhotoBackend, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache, photoTypeFromId, supabasePhotoBackend, type IncomingPhoto, type PhotoBackend, type StoredPhoto } from "./server/api/photoStore";
+import { activeBlock, blockUntil, evaluateReporter, type BlockedReporter } from "./server/api/abuseGuard";
 import bcrypt from "bcryptjs";
 import {
   assignableRoles,
@@ -102,15 +102,15 @@ import {
   type StaffAccount,
   type StaffRole,
   type StaffSession,
-} from "./staffAuth";
-import { buildReportPush, buildVerifyPush, meTooRecipientsFor, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./pushNotify";
-import { castVote, shouldReopen, verificationCounts, type VerificationVote } from "./reportVerify";
-import { draftFromPhoto } from "./photoDraft";
+} from "./server/api/staffAuth";
+import { buildReportPush, buildVerifyPush, meTooRecipientsFor, parseSubscription, pushEnabled, recipientsFor, sendPush, upsertPushRecord, vapidPublicKey, type PushRecord } from "./server/api/pushNotify";
+import { castVote, shouldReopen, verificationCounts, type VerificationVote } from "./server/api/reportVerify";
+import { draftFromPhoto } from "./server/api/photoDraft";
 import { parseNoiseMeasurement, type NoiseMeasurement } from "./src/utils/noise";
-import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
-import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
-import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./backupStore";
-import { appendAudit, auditCategory, MAX_AUDIT_ENTRIES, newAuditEntry, type AuditAction, type AuditCategory, type AuditEntry } from "./auditLog";
+import { createDocLocks, nextStoreVersion, StoreConflictError } from "./server/api/storeSync";
+import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./server/api/keepAwake";
+import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./server/api/backupStore";
+import { appendAudit, auditCategory, MAX_AUDIT_ENTRIES, newAuditEntry, type AuditAction, type AuditCategory, type AuditEntry } from "./server/api/auditLog";
 
 const app = express();
 // 호스팅 플랫폼(Render/Railway 등)은 PORT를 주입한다. 로컬에서는 3000.

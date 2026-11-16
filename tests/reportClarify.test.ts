@@ -24,7 +24,7 @@ import {
   validateClarifyResponse,
   ClarifyValidationError,
   MAX_CLARIFY_QUESTIONS,
-} from "./reportClarify";
+} from "../server/api/reportClarify";
 
 let passed = 0;
 let failed = 0;

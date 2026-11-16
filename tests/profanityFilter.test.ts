@@ -6,7 +6,7 @@
  *  2) 정상적인 학교 신고와 일반적인 감정 표현은 통과하는가 (오탐 방지)
  */
 
-import { checkProfanity, maskProfanity, normalizeText } from "./profanityFilter";
+import { checkProfanity, maskProfanity, normalizeText } from "../src/security/profanityFilter";
 
 let passed = 0;
 let failed = 0;

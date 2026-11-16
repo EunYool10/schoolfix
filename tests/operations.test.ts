@@ -16,24 +16,24 @@
  * 15) 운영 기록
  */
 
-import { computeSla, slaLabel } from "./src/utils/sla";
-import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "./src/utils/monthlyStats";
-import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "./notify";
-import { buildApplicationEmbed, buildMonthlyEmbed, buildNewReportEmbed, EMBED_COLORS, escapeMarkdown, type DiscordEmbed } from "./notify";
-import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "./notify";
-import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "./abuseGuard";
-import { feedbackPending } from "./src/utils/feedback";
-import { decodePhotoDataUrl, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache } from "./photoStore";
-import { findSimilarReports } from "./src/utils/similarReports";
-import { changesSince, snapshotOf } from "./src/utils/reportUpdates";
-import { hashRecoveryCode, issueRecoveryCode, normalizeRecoveryCode, ownerTokenHashes, RECOVERY_CODE_ALPHABET, safeHashEqual } from "./serverSecurity";
-import { buildReportPush, isAllowedPushEndpoint, parseSubscription, recipientsFor, upsertPushRecord } from "./pushNotify";
-import { hashSessionToken, MASTER_USERNAME, passwordError, publicAccount, SessionStore, usernameError, type StaffAccount, type StaffSession } from "./staffAuth";
-import { assignableRoles, canAssignOwner, canManageAccount, hasOwner, isAdminRole } from "./staffAuth";
-import { createDocLocks, nextStoreVersion, StoreConflictError } from "./storeSync";
-import { BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore } from "./backupStore";
-import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./keepAwake";
-import { appendAudit, auditCategory, newAuditEntry } from "./auditLog";
+import { computeSla, slaLabel } from "../src/utils/sla";
+import { buildMonthlyReport, monthKey, monthlyTrend, shiftMonth } from "../src/utils/monthlyStats";
+import { attachmentToFile, buildNewReportPayload, buildNewReportText, type NewReportNotice } from "../server/api/notify";
+import { buildApplicationEmbed, buildMonthlyEmbed, buildNewReportEmbed, EMBED_COLORS, escapeMarkdown, type DiscordEmbed } from "../server/api/notify";
+import { buildApplicationText, buildMonthlyText, buildNotificationText, buildTextPayload, buildWebhookPayload, shouldNotify, webhookChannel, type UrgentNotice } from "../server/api/notify";
+import { ABUSE_RULES, activeBlock, evaluateReporter, type BlockedReporter } from "../server/api/abuseGuard";
+import { feedbackPending } from "../src/utils/feedback";
+import { decodePhotoDataUrl, newPhotoId, PHOTO_ID_PATTERN, PHOTO_RULES, PhotoCache } from "../server/api/photoStore";
+import { findSimilarReports } from "../src/utils/similarReports";
+import { changesSince, snapshotOf } from "../src/utils/reportUpdates";
+import { hashRecoveryCode, issueRecoveryCode, normalizeRecoveryCode, ownerTokenHashes, RECOVERY_CODE_ALPHABET, safeHashEqual } from "../server/api/serverSecurity";
+import { buildReportPush, isAllowedPushEndpoint, parseSubscription, recipientsFor, upsertPushRecord } from "../server/api/pushNotify";
+import { hashSessionToken, MASTER_USERNAME, passwordError, publicAccount, SessionStore, usernameError, type StaffAccount, type StaffSession } from "../server/api/staffAuth";
+import { assignableRoles, canAssignOwner, canManageAccount, hasOwner, isAdminRole } from "../server/api/staffAuth";
+import { createDocLocks, nextStoreVersion, StoreConflictError } from "../server/api/storeSync";
+import { BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore } from "../server/api/backupStore";
+import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "../server/api/keepAwake";
+import { appendAudit, auditCategory, newAuditEntry } from "../server/api/auditLog";
 import fs from "fs";
 import os from "os";
 import path from "path";

@@ -24,7 +24,7 @@ import {
   type RiskFactors,
   type RiskLevel,
   type RiskAnalysisInput,
-} from "./riskAnalysis";
+} from "../server/api/riskAnalysis";
 
 let passed = 0;
 let failed = 0;

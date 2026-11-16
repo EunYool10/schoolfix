@@ -8,13 +8,13 @@
  *  - 내가 바꾼 학교 (src/utils/impact.ts): 학년도와 숫자
  */
 
-import { buildPhotoDraftPrompt, validatePhotoDraft, PhotoDraftValidationError, type PhotoDraftContext } from "./photoDraft";
-import { castVote, currentVotes, MAX_VOTES, REOPEN_MIN_VOTES, shouldReopen, verificationCounts, type VerificationVote } from "./reportVerify";
-import { averageDb, formatNoise, NOISE_LIMITS, noiseLevelLabel, parseNoiseMeasurement, rmsToDb } from "./src/utils/noise";
-import { buildVerifyPush, meTooRecipientsFor, upsertPushRecord, type PushRecord } from "./pushNotify";
-import { schoolYearOf, summarizeImpact } from "./src/utils/impact";
-import { findTemplateBlanks } from "./src/data/formExamples";
-import type { SchoolReport } from "./src/types";
+import { buildPhotoDraftPrompt, validatePhotoDraft, PhotoDraftValidationError, type PhotoDraftContext } from "../server/api/photoDraft";
+import { castVote, currentVotes, MAX_VOTES, REOPEN_MIN_VOTES, shouldReopen, verificationCounts, type VerificationVote } from "../server/api/reportVerify";
+import { averageDb, formatNoise, NOISE_LIMITS, noiseLevelLabel, parseNoiseMeasurement, rmsToDb } from "../src/utils/noise";
+import { buildVerifyPush, meTooRecipientsFor, upsertPushRecord, type PushRecord } from "../server/api/pushNotify";
+import { schoolYearOf, summarizeImpact } from "../src/utils/impact";
+import { findTemplateBlanks } from "../src/data/formExamples";
+import type { SchoolReport } from "../src/types";
 
 let passed = 0;
 let failed = 0;

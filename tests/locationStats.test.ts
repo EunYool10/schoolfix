@@ -13,8 +13,8 @@ import {
   parseLocationParts,
   reportLocationLabel,
   type LocationStatInput,
-} from "./locationStats";
-import { filterReports, INITIAL_FILTERS } from "./src/utils/reportFilter";
+} from "../server/api/locationStats";
+import { filterReports, INITIAL_FILTERS } from "../src/utils/reportFilter";
 
 let passed = 0;
 let failed = 0;

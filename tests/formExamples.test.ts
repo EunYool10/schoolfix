@@ -6,8 +6,8 @@
  */
 
 import fs from "fs";
-import { eligibleExamples, findTemplateBlanks, FORM_EXAMPLE_LIST, FREE_WRITING_TEMPLATE, pickExamples } from "./formExamples";
-import { ISSUE_CATEGORIES, type School } from "../types";
+import { eligibleExamples, findTemplateBlanks, FORM_EXAMPLE_LIST, FREE_WRITING_TEMPLATE, pickExamples } from "../src/data/formExamples";
+import { ISSUE_CATEGORIES, type School } from "../src/types";
 
 let passed = 0;
 let failed = 0;
@@ -25,7 +25,7 @@ function check(name: string, cond: boolean, detail = "") {
 }
 
 type SeedSchool = School & { locationTypes?: Array<{ type: string }>; locations?: Array<{ type: string }> };
-const seed = JSON.parse(fs.readFileSync(new URL("../../schools.seed.json", import.meta.url), "utf8")) as SeedSchool[];
+const seed = JSON.parse(fs.readFileSync(new URL("../schools.seed.json", import.meta.url), "utf8")) as SeedSchool[];
 const locationTypesOf = (school: SeedSchool) => [...new Set([...(school.locationTypes ?? []).map((entry) => entry.type), ...(school.locations ?? []).map((entry) => entry.type)])];
 const seedLocationTypes = new Set(seed.flatMap(locationTypesOf));
 
