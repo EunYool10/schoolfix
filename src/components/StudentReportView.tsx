@@ -30,12 +30,9 @@ import {
   ISSUE_CATEGORIES,
   SCHOOL_LOCATIONS,
 } from "../types";
-import { findTemplateBlanks, FREE_WRITING_TEMPLATE, type FormExampleItem, type TemplateBlank } from "../data/formExamples";
-import { QuickExamplePanel, type ExampleTask } from "./QuickExamplePanel";
-import { PhotoStartCard, type PhotoDraftResult } from "./PhotoStartCard";
+import { findTemplateBlanks, type TemplateBlank } from "../data/formExamples";
 import { PhotoRedactor } from "./PhotoRedactor";
 import { NoiseMeter } from "./NoiseMeter";
-import { redactPhoto } from "../utils/redact";
 import type { NoiseMeasurement } from "../utils/noise";
 import { UnsavedChangesModal } from "./UnsavedChangesModal";
 import { maskProfanity } from "../security/profanityFilter";
@@ -114,12 +111,6 @@ interface ClarifyState {
   sessionId: string;
   question: string;
   turns: { question: string; answer: string }[];
-}
-
-/** 예시를 고르기 전 입력값 (되돌리기용) */
-interface ExampleSnapshot {
-  title: string; location: string; locationId: string; locationDetail: string;
-  department: string; grade: string; className: string; category: string; description: string;
 }
 
 interface FieldErrors {
@@ -204,16 +195,9 @@ export function StudentReportView({
     return { willMask: t.masked || d.masked, preview: d.masked ? d.text : null };
   }, [title, description]);
 
-  // 빠른 작성 예시 (화면 전용, 신고 DB와 분리). 고르기 전 내용을 남겨 두어 되돌릴 수 있게 한다.
-  const exampleLocationTypes = [...new Set([...locationTypes.map((item) => item.type), ...locations.map((item) => item.type)])];
-  const [appliedExample, setAppliedExample] = useState<{ key: string; label: string; location: string; detailHint: string; description: string; photoKey?: string } | null>(null);
-  // 소음 문제일 때 잰 소음, 가리기 도구로 여는 사진, AI 가 얼굴을 가린 사진
+  // 소음 문제일 때 잰 소음, 가리기 도구로 여는 사진
   const [noise, setNoise] = useState<NoiseMeasurement | null>(null);
   const [redactKey, setRedactKey] = useState<string | null>(null);
-  const [faceNotice, setFaceNotice] = useState<{ key: string; count: number } | null>(null);
-  const [exampleUndo, setExampleUndo] = useState<ExampleSnapshot | null>(null);
-  const [examplePanelKey, setExamplePanelKey] = useState(0);
-  const detailInputRef = useRef<HTMLInputElement>(null);
 
   // Field element refs for auto-focusing on invalid input
   const locationRef = useRef<HTMLSelectElement>(null);
@@ -226,11 +210,6 @@ export function StudentReportView({
   const officialLocationCount = locations.filter((item) => item.verificationStatus === "official").length;
   const [placeExtrasOpen, setPlaceExtrasOpen] = useState(false);
   const showPlaceExtras = placeExtrasOpen || Boolean(buildingName || floor || roomName);
-
-  useEffect(() => {
-    setAppliedExample(null);
-    setExampleUndo(null);
-  }, [school.id]);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
   useEffect(() => {
@@ -405,7 +384,6 @@ export function StudentReportView({
 
   const removePhoto = (key: string) => {
     setPhotos((prev) => prev.filter((photo) => photo.key !== key));
-    if (faceNotice?.key === key) setFaceNotice(null);
     clearFieldError("attachment");
   };
 
@@ -440,118 +418,15 @@ export function StudentReportView({
     setSubmitError(null);
     setCompletedReport(null);
     setCompletedRecoveryCode(null);
-    setAppliedExample(null);
-    setExampleUndo(null);
     setNoise(null);
-    setFaceNotice(null);
-    // 폼 초기화 시 추천 예시도 새로운 조합으로 갱신
-    setExamplePanelKey((n) => n + 1);
     clearSessionDraft(reportDraftKey);
     setDraftSavedAt(null);
     setDraftRestored(false);
   };
 
-  // Called when user clicks an example recommendation button
-  // Note: Form fields are auto-filled ONLY; NO database submission occurs.
-  // 예시를 연달아 바꿔 고를 때는 처음 예시를 고르기 전 내용으로 돌아가게 한다.
-  const undoSnapshot = (): ExampleSnapshot =>
-    appliedExample && exampleUndo && description === appliedExample.description
-      ? exampleUndo
-      : { title, location, locationId, locationDetail, department, grade, className, category, description };
-
-  const afterExampleChange = () => {
-    resetClarify();
-    clearFieldError("title");
-    clearFieldError("location");
-    clearFieldError("category");
-    clearFieldError("description");
-  };
-
-  const handleApplyExample = (example: FormExampleItem) => {
-    setExampleUndo(undoSnapshot());
-    const exampleLocation = availableLocationTypes.some((item) => item.type === example.location) ? example.location : "기타";
-    setTitle(example.label);
-    if (exampleLocation !== location) {
-      // 장소 유형이 바뀌면 이전 유형에서 고른 세부 장소는 맞지 않는다 (장소 목록에서 바꿀 때와 같게).
-      setLocation(exampleLocation);
-      setLocationId("");
-      setLocationDetail("");
-      if (exampleLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
-    }
-    setCategory(example.category);
-    setDescription(example.description);
-    setAppliedExample({ key: example.key, label: example.label, location: exampleLocation, detailHint: example.detailHint, description: example.description });
-    afterExampleChange();
-  };
-
-  const handleFreeWrite = () => {
-    setExampleUndo(undoSnapshot());
-    setDescription(FREE_WRITING_TEMPLATE);
-    setAppliedExample({ key: "free", label: "직접 쓰기", location: "", detailHint: "", description: FREE_WRITING_TEMPLATE });
-    afterExampleChange();
-  };
-
-  const handleUndoExample = () => {
-    if (exampleUndo) {
-      setTitle(exampleUndo.title); setLocation(exampleUndo.location); setLocationId(exampleUndo.locationId); setLocationDetail(exampleUndo.locationDetail);
-      setDepartment(exampleUndo.department); setGrade(exampleUndo.grade); setClassName(exampleUndo.className);
-      setCategory(exampleUndo.category); setDescription(exampleUndo.description);
-    }
-    // 사진으로 시작했으면 그때 붙인 사진도 뺀다.
-    if (appliedExample?.photoKey) removePhoto(appliedExample.photoKey);
-    setAppliedExample(null);
-    setExampleUndo(null);
-    afterExampleChange();
-  };
-
-  /** 사진 한 장으로 시작 — AI 초안을 채우고 사진을 붙인다. 얼굴이 보이면 먼저 가린다. */
-  const handlePhotoDraft = async (draft: PhotoDraftResult, photo: PreparedPhoto) => {
-    let attached = photo;
-    let hidden = 0;
-    if (draft.faces.length > 0) {
-      try {
-        attached = await redactPhoto(photo, draft.faces, 0.3);
-        hidden = draft.faces.length;
-      } catch {
-        // 가리지 못했으면 원본을 붙이고 아래 안내로 직접 가리게 한다.
-      }
-    }
-    const room = PHOTO_LIMITS.maxPhotos - photos.length - preparingCount;
-    if (room > 0) setPhotos((prev) => [...prev, attached].slice(0, PHOTO_LIMITS.maxPhotos));
-    setExampleUndo(undoSnapshot());
-    const draftLocation = draft.location && availableLocationTypes.some((item) => item.type === draft.location) ? draft.location : null;
-    if (draft.title) setTitle(draft.title.slice(0, 60));
-    if (draftLocation && draftLocation !== location) {
-      setLocation(draftLocation);
-      setLocationId("");
-      setLocationDetail("");
-      if (draftLocation !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
-    }
-    if (draft.category) setCategory(draft.category);
-    if (draft.description) setDescription(draft.description);
-    setAppliedExample({
-      key: "photo",
-      label: "사진",
-      location: draftLocation ?? location,
-      detailHint: "예: 사진을 찍은 곳 (2층 여자 화장실 왼쪽 세면대)",
-      description: draft.description ?? description,
-      photoKey: room > 0 ? attached.key : undefined,
-    });
-    setFaceNotice(draft.hasPeople && room > 0 ? { key: attached.key, count: hidden } : null);
-    afterExampleChange();
-  };
-
-  const attachPhotoOnly = (photo: PreparedPhoto) => {
-    if (photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos) return;
-    setPhotos((prev) => [...prev, photo].slice(0, PHOTO_LIMITS.maxPhotos));
-    clearFieldError("attachment");
-  };
-
   /** 가리기 도구에서 바꾼 사진으로 갈아 끼운다. */
   const replacePhoto = (key: string, next: PreparedPhoto) => {
     setPhotos((prev) => prev.map((photo) => (photo.key === key ? next : photo)));
-    if (appliedExample?.photoKey === key) setAppliedExample({ ...appliedExample, photoKey: next.key });
-    if (faceNotice?.key === key) setFaceNotice(null);
     setRedactKey(null);
   };
 
@@ -568,14 +443,6 @@ export function StudentReportView({
     scrollToField(el);
     el.setSelectionRange(blank.start, blank.end);
   };
-
-  const exampleTasks: ExampleTask[] = [
-    !location && { key: "location", label: "장소 고르기", onClick: () => scrollToField(locationRef.current) },
-    location && !hasPlace && { key: "place", label: "세부 위치 적기", onClick: () => scrollToField(detailInputRef.current) },
-    !category && { key: "category", label: "문제 종류 고르기", onClick: () => scrollToField(categoryRef.current) },
-    descriptionBlanks.length > 0 && { key: "blanks", label: `빈칸 ${descriptionBlanks.length}개 채우기`, onClick: () => selectBlank(descriptionBlanks[0]) },
-    descriptionBlanks.length === 0 && description.trim().length < 5 && { key: "description", label: "상황 설명 적기", onClick: () => scrollToField(descriptionRef.current) },
-  ].filter((task): task is ExampleTask => Boolean(task));
 
   const validateForm = (): boolean => {
     const errors: FieldErrors = {};
@@ -662,10 +529,7 @@ export function StudentReportView({
       resetClarify();
       setFieldErrors({});
       setGlobalError(null);
-      setAppliedExample(null);
-      setExampleUndo(null);
       setNoise(null);
-      setFaceNotice(null);
       return;
     }
 
@@ -924,27 +788,6 @@ export function StudentReportView({
           />
         )}
 
-        {/* 빠르게 시작하기 — 예시 고르기, 사진 한 장으로 시작 (AI) */}
-        <QuickExamplePanel
-          key={`${school.id}:${examplePanelKey}:${exampleLocationTypes.length}`}
-          school={school}
-          availableLocations={exampleLocationTypes}
-          currentLocation={location}
-          icons={CATEGORY_ICONS}
-          applied={appliedExample && { key: appliedExample.key, label: appliedExample.label, canRestore: Boolean(exampleUndo && [exampleUndo.title, exampleUndo.locationDetail, exampleUndo.description].some((value) => value.trim())) }}
-          tasks={exampleTasks}
-          onApply={handleApplyExample}
-          onFreeWrite={handleFreeWrite}
-          onUndo={handleUndoExample}
-        >
-          <PhotoStartCard
-            schoolId={school.id}
-            disabled={photos.length + preparingCount >= PHOTO_LIMITS.maxPhotos}
-            onDraft={handlePhotoDraft}
-            onAttachOnly={attachPhotoOnly}
-          />
-        </QuickExamplePanel>
-
         {/* Validation Summary Alert */}
         {globalError && (
           <div
@@ -1059,14 +902,13 @@ export function StudentReportView({
                 <span className="text-[11px] text-slate-400">{locationDetail.length}/150자</span>
               </div>
               <input
-                ref={detailInputRef}
                 id="field-location-detail"
                 type="text"
                 maxLength={150}
                 value={locationDetail}
                 disabled={Boolean(locationId)}
                 onChange={(e) => { setLocationDetail(e.target.value); clearFieldError("location"); }}
-                placeholder={appliedExample?.detailHint && appliedExample.location === location ? appliedExample.detailHint : "예: 본관 동쪽 2층, 급식실 출입구 옆"}
+                placeholder="예: 본관 동쪽 2층, 급식실 출입구 옆"
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
             </div>}
@@ -1128,7 +970,7 @@ export function StudentReportView({
 
           {/* 3. Problem Description */}
           <div className="py-7">
-            <StepHeading step={3} done={descriptionReady} title="무슨 일인지 알려주세요" htmlFor="field-description" hint="언제부터, 어떤 상태인지 적어 주면 담당자가 빨리 파악해요." />
+            <StepHeading step={3} done={descriptionReady} title="무슨 일인지 알려주세요" htmlFor="field-description" hint="무엇이, 언제부터, 얼마나 불편한지 적어 주면 담당자가 빨리 파악해요." />
             <textarea
               ref={descriptionRef}
               id="field-description"
@@ -1139,7 +981,7 @@ export function StudentReportView({
                 clearFieldError("description");
                 resetClarify();
               }}
-              placeholder="예: 2학년 3반 앞 복도 천장 형광등이 깜빡거리며 소음이 발생합니다. 교체 부탁드립니다."
+              placeholder={"무엇이: 2학년 3반 앞 복도 천장 형광등이 깜빡거려요\n언제부터: 지난주 월요일부터\n얼마나 불편한지: 수업 중에도 계속 깜빡여서 눈이 아파요"}
               aria-invalid={Boolean(fieldErrors.description)}
               aria-describedby={[fieldErrors.description && descriptionBlanks.length === 0 ? "description-error" : "", descriptionBlanks.length ? "description-blanks" : ""].filter(Boolean).join(" ") || undefined}
               className={`w-full min-h-[140px] rounded-lg border p-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed ${
@@ -1235,7 +1077,7 @@ export function StudentReportView({
                         type="button"
                         onClick={() => setRedactKey(photo.key)}
                         aria-label={`사진 ${index + 1} 가리기`}
-                        className={`absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white ${faceNotice?.key === photo.key ? "bg-amber-600" : "bg-slate-900/70 hover:bg-slate-900"}`}
+                        className="absolute left-1 top-1 inline-flex items-center gap-0.5 rounded-full bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-900"
                       >
                         <EyeOff className="h-3 w-3" />가리기
                       </button>
@@ -1247,11 +1089,6 @@ export function StudentReportView({
                     </li>
                   ))}
                 </ul>
-              )}
-              {faceNotice && photos.some((photo) => photo.key === faceNotice.key) && (
-                <p role="status" className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                  {faceNotice.count > 0 ? `사진에 사람이 보여서 얼굴 ${faceNotice.count}곳을 모자이크했어요.` : "사진에 사람이 보여요."} 사진을 확인하고, 더 가릴 곳이 있으면 사진의 <strong>가리기</strong>를 눌러 주세요.
-                </p>
               )}
               {photos.length + preparingCount < PHOTO_LIMITS.maxPhotos && (
                 <button
