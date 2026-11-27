@@ -1,27 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import {
-  X,
-  CheckCircle,
-  AlertCircle,
-  Lock,
-  Info,
-  RotateCw,
-  AlertTriangle,
-  Wrench,
-  ShieldAlert,
-  Sparkles,
-  Leaf,
-  Volume2,
-  Heart,
-  CircleHelp,
-  CloudCheck,
-  MapPin,
-  Check,
-  Upload,
-  EyeOff,
-  Plus,
-} from "lucide-react";
+import { X, CheckCircle, AlertCircle, Lock, Info, RotateCw, AlertTriangle, Wrench, ShieldAlert, Sparkles, Leaf, Volume2, Heart, CircleHelp, CloudCheck, Check, Upload, EyeOff, Plus } from "lucide-react";
 import {
   SchoolReport,
   School,
@@ -53,6 +32,17 @@ const CATEGORY_ICONS = {
   "불편 사항": Heart,
   기타: CircleHelp,
 } as const;
+
+/** 문제 종류마다 색 하나 — 아이콘은 늘 그 색, 고르면 그 색으로 칠한다 */
+const CATEGORY_COLORS: Record<string, { icon: string; picked: string }> = {
+  "시설 고장": { icon: "text-blue-500", picked: "border-blue-400 bg-blue-50 text-blue-800" },
+  "안전 위험": { icon: "text-rose-500", picked: "border-rose-300 bg-rose-50 text-rose-800" },
+  "위생 문제": { icon: "text-teal-500", picked: "border-teal-300 bg-teal-50 text-teal-800" },
+  "환경 문제": { icon: "text-emerald-500", picked: "border-emerald-300 bg-emerald-50 text-emerald-800" },
+  "소음 문제": { icon: "text-violet-500", picked: "border-violet-300 bg-violet-50 text-violet-800" },
+  "불편 사항": { icon: "text-amber-500", picked: "border-amber-300 bg-amber-50 text-amber-800" },
+  기타: { icon: "text-slate-400", picked: "border-slate-400 bg-slate-100 text-slate-800" },
+};
 
 export interface SubmitReportPayload {
   schoolId: string;
@@ -647,26 +637,13 @@ export function StudentReportView({
   if (completedReport) {
     return (
       <div className="relative isolate w-full py-4 sm:py-8">
-        {/*
-          카드 뒤의 은은한 빛. 모서리가 있는 배경 상자 대신 가장자리가 투명해지는 원형 그라데이션을 써서
-          페이지 배경과 경계 없이 자연스럽게 섞인다. 좌우로는 넘치지 않게 해 가로 스크롤이 생기지 않는다.
-        */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 -inset-y-8 -z-10"
-          style={{
-            background:
-              // 각 빛은 영역 안에서 완전히 투명해지도록 반지름을 잡는다. 영역 끝에서 잘리면 직선 경계가 보인다.
-              "radial-gradient(34% 40% at 38% 44%, rgba(16,185,129,0.17), transparent 100%), radial-gradient(32% 38% at 64% 58%, rgba(59,130,246,0.15), transparent 100%)",
-          }}
-        />
-        <div className="mx-auto max-w-2xl rounded-[1.6rem] border border-white/80 bg-white/85 p-7 text-center shadow-[0_24px_70px_rgba(20,38,73,0.10)] backdrop-blur-sm sm:p-12">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-emerald-700 ring-8 ring-emerald-50">
+        <div className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-7 text-center sm:p-12">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
             <CheckCircle className="h-8 w-8" strokeWidth={2.5} />
           </div>
 
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-emerald-700">접수 완료</p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950 sm:text-3xl">
+          <p className="font-hand text-2xl leading-none text-emerald-700">접수 완료!</p>
+          <h2 className="mt-3 break-keep font-display text-2xl text-slate-900 sm:text-[28px]">
             {completedReport.moderationStatus === "held" ? "운영진 확인을 기다리고 있어요" : "제보가 학교에 전달됐어요"}
           </h2>
           <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-600">
@@ -746,23 +723,20 @@ export function StudentReportView({
   }
 
   return (
-    <div className="sf-report-page mx-auto w-full max-w-3xl space-y-5">
+    <div className="mx-auto w-full max-w-3xl space-y-6">
       {/* Title & Introduction */}
-      <div className="sf-report-heading">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-extrabold text-indigo-800"><MapPin className="h-3.5 w-3.5" /> {school.schoolName}</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-800"><Lock className="h-3 w-3" /> 익명으로 접수</span>
-        </div>
-        <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
+      <div>
+        <p className="font-hand text-[22px] leading-none text-blue-600">{school.schoolName}</p>
+        <h1 className="mt-3 break-keep text-[28px] leading-snug text-slate-900 sm:text-[34px]">
           학교에서 발견한 문제를<br className="sm:hidden" /> 함께 고쳐요
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600">
-          장소와 상황을 알려주시면 담당자가 확인하고 조치합니다. 이름·학번·연락처는 받지 않아요.
+        <p className="mt-2 max-w-2xl break-keep text-[15px] leading-relaxed text-slate-600">
+          장소와 상황을 알려 주면 담당 선생님이 확인하고 고쳐요. <span className="inline-flex items-center gap-1 font-semibold text-emerald-700"><Lock className="h-3.5 w-3.5" />익명 접수</span> — 이름·학번·연락처는 받지 않아요.
         </p>
       </div>
 
       {/* Main Form Box */}
-      <div className="sf-form-card rounded-[1.6rem] border border-white bg-white p-4 shadow-[0_18px_55px_rgba(20,38,73,0.08)] sm:p-7">
+      <div className="sf-form-card rounded-3xl border border-slate-200 bg-white p-5 sm:p-8">
         {/* 임시 저장 상태 — 작성 중일 때만 한 줄로 보여 준다 */}
         {isFormDirty && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5 text-xs text-slate-600">
@@ -935,6 +909,7 @@ export function StudentReportView({
               {ISSUE_CATEGORIES.map((cat, index) => {
                 const Icon = CATEGORY_ICONS[cat as keyof typeof CATEGORY_ICONS];
                 const selected = category === cat;
+                const tone = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS["기타"];
                 return (
                   <button
                     key={cat}
@@ -946,11 +921,11 @@ export function StudentReportView({
                       clearFieldError("category");
                       resetClarify();
                     }}
-                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${selected ? "border-blue-500 bg-blue-50 text-blue-800 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50/50"} ${fieldErrors.category ? "border-rose-300" : ""}`}
+                    className={`flex min-h-12 items-center gap-2.5 rounded-2xl border px-3.5 py-2 text-left text-[15px] font-semibold transition ${selected ? tone.picked : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"} ${fieldErrors.category && !selected ? "border-rose-300" : ""}`}
                   >
-                    <Icon className={`h-4 w-4 shrink-0 ${selected ? "text-blue-700" : "text-slate-400"}`} />
+                    <Icon className={`h-[18px] w-[18px] shrink-0 ${tone.icon}`} />
                     <span className="min-w-0 flex-1 truncate">{cat}</span>
-                    {selected && <Check className="h-4 w-4 shrink-0 text-blue-700" />}
+                    {selected && <Check className="h-4 w-4 shrink-0" strokeWidth={3} />}
                   </button>
                 );
               })}
@@ -1264,13 +1239,13 @@ export function StudentReportView({
 function StepHeading({ step, done, title, htmlFor, optional = false, hint }: { step: number; done: boolean; title: string; htmlFor?: string; optional?: boolean; hint?: string }) {
   const text = <>{title} {optional ? <span className="text-xs font-semibold text-slate-400">(선택)</span> : <span className="text-rose-600">*</span>}</>;
   return (
-    <div className="mb-3 flex items-start gap-2.5">
-      <span aria-hidden="true" className={`mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition ${done ? "bg-emerald-600 text-white" : "bg-blue-50 text-blue-700 ring-1 ring-blue-100"}`}>
-        {done ? <Check className="h-3.5 w-3.5" /> : step}
+    <div className="mb-3.5 flex items-start gap-3">
+      <span aria-hidden="true" className={`flex h-7 w-6 shrink-0 items-center justify-center font-display text-xl leading-none transition ${done ? "text-emerald-600" : "text-blue-500"}`}>
+        {done ? <Check className="h-5 w-5" strokeWidth={3} /> : step}
       </span>
       <div className="min-w-0">
-        {htmlFor ? <label htmlFor={htmlFor} className="block text-[15px] font-extrabold text-slate-900">{text}</label> : <h2 className="text-[15px] font-extrabold text-slate-900">{text}</h2>}
-        {hint && <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{hint}</p>}
+        {htmlFor ? <label htmlFor={htmlFor} className="block text-[17px] font-bold text-slate-900">{text}</label> : <h2 className="text-[17px] font-bold text-slate-900">{text}</h2>}
+        {hint && <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">{hint}</p>}
       </div>
     </div>
   );

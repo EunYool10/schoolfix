@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Download, HandHeart, Loader2, Sprout, ThumbsUp, Wrench } from "lucide-react";
+import { Download, HandHeart, Loader2, ThumbsUp, Wrench } from "lucide-react";
 import type { SchoolReport } from "../types";
 import { loadMeTooIds, loadVerifyVotes } from "../utils/clientTokens";
 import { schoolYearOf, summarizeImpact, type ImpactSummary } from "../utils/impact";
@@ -124,12 +124,12 @@ export function MyImpactCard({ schoolName, myReports, allReports }: Props) {
   );
 
   return (
-    <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-blue-50 p-4 print:hidden" aria-label="내가 바꾼 학교" data-testid="impact-card">
+    <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 print:hidden" aria-label="내가 바꾼 학교" data-testid="impact-card">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-extrabold text-slate-900"><Sprout className="h-4 w-4 text-emerald-600" />내가 바꾼 학교</h2>
+        <h2 className="font-display text-lg text-slate-900">내가 바꾼 학교</h2>
         <div className="flex gap-1" role="group" aria-label="기간">
           {(["year", "all"] as const).map((value) => (
-            <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)} className={`rounded-full px-3 py-1 text-xs font-bold ${scope === value ? "bg-emerald-700 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"}`}>
+            <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)} className={`rounded-lg px-2.5 py-1 text-xs font-bold ${scope === value ? "bg-emerald-50 text-emerald-800" : "text-slate-500 hover:text-slate-800"}`}>
               {value === "year" ? `${thisYear}학년도` : "전체"}
             </button>
           ))}
@@ -137,7 +137,7 @@ export function MyImpactCard({ schoolName, myReports, allReports }: Props) {
       </div>
 
       {empty ? (
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">아직 기록이 없어요. 불편한 곳을 신고하거나 같은 문제에 ‘나도 겪었어요’를 누르면 여기에 쌓여요.</p>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600"><span className="font-hand text-lg text-emerald-700">아직 기록이 없어요.</span> 불편한 곳을 신고하거나 같은 문제에 ‘나도 겪었어요’를 누르면 여기에 쌓여요.</p>
       ) : (
         <>
           <div className="mt-3 grid grid-cols-3 gap-2">
@@ -159,7 +159,7 @@ export function MyImpactCard({ schoolName, myReports, allReports }: Props) {
           )}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] text-slate-500">이 기기에 남은 기록으로 계산해요. 이름은 들어가지 않아요.</p>
-            <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-60">
+            <button type="button" onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:border-slate-400 disabled:opacity-60">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} 카드 이미지로 저장
             </button>
           </div>

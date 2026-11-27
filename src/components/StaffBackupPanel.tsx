@@ -95,15 +95,14 @@ export function StaffBackupPanel({ isOwner, onRestored }: Props) {
   return (
     <div className="space-y-4">
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5">
-        <h2 className="flex items-center gap-2 font-bold text-slate-900"><DatabaseBackup className="h-5 w-5 text-blue-700" /> 백업</h2>
         <p className="text-sm leading-relaxed text-slate-600">
           매일 한 번 자동으로 모든 학교의 신고(처리 이력 포함)·학교 신청함·등록 학교·검토 대상 기기·알림 설정·계정 목록을 백업해 <strong>최근 30일치</strong>를 보관합니다.
           비밀번호·로그인 세션·학생 알림 구독은 넣지 않습니다. 파일에는 학교 신청자의 회신 이메일이 들어 있으니 내려받은 파일은 안전한 곳에 보관하세요.
         </p>
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void createNow()} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60">{busy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseBackup className="h-4 w-4" />}지금 백업 만들기</button>
-          <a href="/api/staff/backup" download className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700"><Download className="h-4 w-4" />지금 상태 내려받기</a>
-          <a href="/api/staff/backup?photos=1" download className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700"><Download className="h-4 w-4" />사진까지 포함해 내려받기</a>
+          <button type="button" onClick={() => void createNow()} disabled={busy !== null} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{busy === "create" ? <Loader2 className="h-4 w-4 animate-spin" /> : <DatabaseBackup className="h-4 w-4" />}지금 백업 만들기</button>
+          <a href="/api/staff/backup" download className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:border-slate-400"><Download className="h-4 w-4" />지금 상태 내려받기</a>
+          <a href="/api/staff/backup?photos=1" download className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:border-slate-400"><Download className="h-4 w-4" />사진까지 포함해 내려받기</a>
         </div>
         {isOwner && (
           <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3 text-sm text-rose-900">

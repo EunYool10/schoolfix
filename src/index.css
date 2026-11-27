@@ -1,21 +1,117 @@
 @import "tailwindcss";
 
+/*
+ * 글꼴 — 눈누(noonnu.cc)에서 웹 임베딩이 허용된 글꼴을 섞어 쓴다.
+ *  - 카페24 써라운드: 제목·브랜드·큰 숫자 (카페24, 상업·웹 임베딩 허용)
+ *  - SUIT Variable: 본문·화면 글자 (SIL OFL)
+ *  - 온글잎 박다현체: 손글씨 포인트, 학생 화면에서만 짧게 (온글잎, 웹 임베딩 허용·수정 금지 → 원본 그대로 씀)
+ * 파일은 눈누가 안내하는 jsDelivr 주소를 그대로 쓴다 (CSP font-src 에 cdn.jsdelivr.net 허용).
+ */
+@font-face {
+  font-family: "Cafe24Surround";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2105_2@1.0/Cafe24Ssurround.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SuitVariable";
+  src: url("https://cdn.jsdelivr.net/gh/Project-Noonnu/2611030106@font-variable-845/variable-845/SUIT-Variable.woff2") format("woff2-variations"),
+       url("https://cdn.jsdelivr.net/gh/Project-Noonnu/2611030106@font-variable-845/variable-845/SUIT-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "OngleipParkDahyeon";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2411-3@1.0/Ownglyph_ParkDaHyun.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
+ * 색 — 연한 하늘색 바탕 위에
+ *  잉크 남색(blue) = 주요 동작·선택, 빨간 펜(rose) = 긴급·오류,
+ *  초록 체크(emerald) = 처리 완료, 형광펜 노랑(amber) = 주의·강조.
+ * 기존 컴포넌트가 쓰는 slate/blue/rose/emerald 이름을 그대로 두고 값만 바꾼다.
+ */
+@theme {
+  --font-sans: "SuitVariable", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-display: "Cafe24Surround", "SuitVariable", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-hand: "OngleipParkDahyeon", "SuitVariable", "Apple SD Gothic Neo", sans-serif;
+
+  --color-paper: #eef3fa;
+
+  --color-slate-50: #f6f8fb;
+  --color-slate-100: #eef1f6;
+  --color-slate-200: #e1e6ee;
+  --color-slate-300: #ccd3de;
+  --color-slate-400: #97a1b1;
+  --color-slate-500: #6a7487;
+  --color-slate-600: #4f586a;
+  --color-slate-700: #3b4354;
+  --color-slate-800: #283040;
+  --color-slate-900: #1b2230;
+  --color-slate-950: #111722;
+
+  --color-blue-50: #eff3fc;
+  --color-blue-100: #dfe7f8;
+  --color-blue-200: #c3d1f1;
+  --color-blue-300: #9ab0e4;
+  --color-blue-400: #6f8cd4;
+  --color-blue-500: #4c6bc3;
+  --color-blue-600: #3755aa;
+  --color-blue-700: #2d468c;
+  --color-blue-800: #273b72;
+  --color-blue-900: #22325d;
+  --color-blue-950: #151f3b;
+
+  --color-indigo-50: #f1f1fb;
+  --color-indigo-100: #e3e2f6;
+  --color-indigo-200: #c9c7ee;
+  --color-indigo-500: #6d67c4;
+  --color-indigo-600: #5952ac;
+  --color-indigo-700: #49438f;
+  --color-indigo-800: #3c3774;
+  --color-indigo-900: #332f5f;
+
+  --color-rose-50: #fdf2ef;
+  --color-rose-100: #fbe1da;
+  --color-rose-200: #f5c2b5;
+  --color-rose-300: #ec9a86;
+  --color-rose-400: #e07259;
+  --color-rose-500: #d1553d;
+  --color-rose-600: #b9432d;
+  --color-rose-700: #9a3524;
+  --color-rose-800: #7d2d21;
+  --color-rose-900: #68281f;
+
+  --color-emerald-50: #eff7f1;
+  --color-emerald-100: #d9eedf;
+  --color-emerald-200: #b5dcc0;
+  --color-emerald-300: #87c59b;
+  --color-emerald-400: #5aab77;
+  --color-emerald-500: #3e905d;
+  --color-emerald-600: #2f774b;
+  --color-emerald-700: #285f3d;
+  --color-emerald-800: #224c33;
+  --color-emerald-900: #1d3f2b;
+}
+
 :root {
-  font-family: Inter, Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
-  color: #17243b;
-  background: #f5f7fb;
+  color: var(--color-slate-900);
+  background: var(--color-paper);
+  font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-optical-sizing: auto;
-  --sf-ink: #17243b;
-  --sf-muted: #64748b;
-  --sf-line: #e2e8f0;
-  --sf-primary: #2457d6;
-  --sf-primary-dark: #1947bd;
-  --sf-focus: rgba(37, 99, 235, 0.18);
-  --sf-shadow: 0 12px 32px rgba(20, 38, 73, 0.065), 0 2px 5px rgba(20, 38, 73, 0.035);
+  --sf-line: #e1e6ee;
+  --sf-marker: #ffe38a;
+  --sf-focus: rgba(55, 85, 170, 0.2);
 }
 
 * { box-sizing: border-box; }
@@ -30,15 +126,15 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
-  color: var(--sf-ink);
-  background:
-    radial-gradient(ellipse at 50% -18rem, rgba(207, 224, 255, 0.74), transparent 42rem),
-    #f4f7fc;
+  color: var(--color-slate-900);
+  background: var(--color-paper);
   font-size: 15px;
-  line-height: 1.55;
-  letter-spacing: -0.012em;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
   -webkit-tap-highlight-color: transparent;
 }
+
+h1 { font-family: var(--font-display); font-weight: normal; letter-spacing: -0.01em; }
 
 body.modal-open {
   overflow: hidden !important;
@@ -56,59 +152,49 @@ button {
   transition-timing-function: ease-out;
 }
 
-button:disabled { cursor: not-allowed; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
 
-button:focus-visible, a:focus-visible, [role="button"]:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.28);
+button:focus-visible, a:focus-visible, summary:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid var(--sf-focus);
   outline-offset: 2px;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
 select,
 textarea {
-  color: #1e293b;
+  color: var(--color-slate-900);
   background-color: #fff;
-  border: 1px solid #d6deea;
-  border-radius: 0.8rem;
+  border: 1px solid var(--color-slate-300);
+  border-radius: 12px;
   transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):focus,
 select:focus,
 textarea:focus {
-  border-color: #5a83e8;
+  border-color: var(--color-blue-500);
   outline: none;
   box-shadow: 0 0 0 3px var(--sf-focus);
 }
 
-input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
-input[type="checkbox"], input[type="radio"] { accent-color: var(--sf-primary); }
+input::placeholder, textarea::placeholder { color: var(--color-slate-400); opacity: 1; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--color-blue-600); }
 textarea { resize: vertical; }
 
-::selection { color: #163c9e; background: #dce8ff; }
+::selection { color: var(--color-blue-900); background: var(--sf-marker); }
 
-/* Reused white panels share one border and elevation across the app. */
-:where(section, article, div).border.border-slate-200.bg-white {
-  border-color: #e3e9f2;
-  box-shadow: var(--sf-shadow);
+/* 흰 판은 얇은 선 하나로만 구분한다. 큰 그림자는 쓰지 않는다. */
+:where(section, article, div, aside).border.border-slate-200.bg-white {
+  border-color: var(--sf-line);
 }
-
-.bg-slate-50 { background-color: #f5f7fb; }
-.border-slate-200 { border-color: #e3e9f2; }
-
-/* Make keyboard focus and disabled states clear without changing component layout. */
-button:disabled { opacity: 0.58; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
-::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+::-webkit-scrollbar-thumb { background: var(--color-slate-300); border: 3px solid transparent; border-radius: 999px; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--color-slate-400); }
 
 @media (max-width: 640px) {
-  body { font-size: 14px; }
-  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
-  select,
-  textarea { border-radius: 0.72rem; }
+  body { font-size: 14.5px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -120,91 +206,53 @@ button:disabled { opacity: 0.58; }
   }
 }
 
-/* PDF / print uses a dedicated report window (src/utils/reportDocument.ts). */
+/* PDF / 인쇄는 별도 문서 창을 쓴다 (src/utils/reportDocument.ts, workOrder.ts). */
 
-.sf-app {
-  background: linear-gradient(180deg, #f3f6fc 0%, #f7f9fc 42%, #f3f6fb 100%);
+/* 형광펜으로 그은 듯한 강조 — 글자 아래쪽만 칠한다 */
+.sf-mark {
+  box-shadow: inset 0 -0.42em 0 var(--sf-marker);
+  border-radius: 2px;
 }
 
-.sf-app-content { width: 100%; }
-
-.sf-main-nav {
-  width: fit-content;
-  max-width: 100%;
-  padding: 6px !important;
-  border: 1px solid rgba(222, 230, 242, 0.9);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 5px 18px rgba(25, 47, 89, 0.045);
-  backdrop-filter: blur(14px);
-}
-
-.sf-main-nav > button {
-  min-height: 42px;
-  padding-inline: 15px;
-  border-radius: 13px;
-}
-
-.sf-main-nav > button:focus-visible,
-.sf-report-page button:focus-visible,
-.sf-staff-portal button:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.32);
-  outline-offset: 2px;
-}
-
-.sf-home-hero { isolation: isolate; }
-
-.sf-home-hero::after {
+/* 머리글 메뉴: 지금 화면 아래에 잉크색 밑줄 */
+.sf-nav-link { position: relative; }
+.sf-nav-link[aria-current="page"]::after {
   position: absolute;
-  z-index: -1;
-  inset: 0;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--color-blue-600);
   content: "";
-  pointer-events: none;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.2) 0.7px, transparent 0.7px);
-  background-size: 18px 18px;
-  opacity: 0.13;
-  mask-image: linear-gradient(115deg, #000 0%, transparent 72%);
 }
 
-.sf-report-heading { padding: 2px 2px 1px; }
-
-.sf-form-card {
-  box-shadow: 0 18px 55px rgba(20, 38, 73, 0.08), 0 2px 7px rgba(20, 38, 73, 0.03);
+/* 휴대폰 아래 탭: 지금 화면 위에 짧은 막대 */
+.sf-tab-link { position: relative; }
+.sf-tab-link[aria-current="page"]::before {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 28px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--color-blue-600);
+  content: "";
+  transform: translateX(-50%);
 }
 
+.sf-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+
+/* 신고서 입력칸 — 조금 더 넉넉하게 */
 .sf-form-card input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 .sf-form-card select,
 .sf-form-card textarea {
-  min-height: 46px;
-  border-color: #dbe3ef;
-  border-radius: 12px;
+  min-height: 48px;
   background: #fbfcfe;
 }
 
-.sf-form-card textarea { min-height: 145px; }
+.sf-form-card textarea { min-height: 150px; }
 
 .sf-form-card input:focus,
 .sf-form-card select:focus,
-.sf-form-card textarea:focus {
-  background: #fff;
-  border-color: var(--sf-primary);
-  box-shadow: 0 0 0 4px rgba(36, 87, 214, 0.11);
-}
-
-.sf-footer { background: rgba(255, 255, 255, 0.7); }
-
-.sf-staff-portal article,
-.sf-staff-portal > div:not(.sf-staff-login) {
-  border-color: #e2e8f0;
-}
-
-.sf-staff-login {
-  box-shadow: 0 24px 70px rgba(20, 38, 73, 0.12);
-}
-
-@media (max-width: 640px) {
-  .sf-main-nav { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-  .sf-main-nav > button { min-width: 0; justify-content: center; gap: 5px; padding-inline: 5px; font-size: 11px; }
-  .sf-main-nav > button svg { width: 15px; height: 15px; }
-}
-
+.sf-form-card textarea:focus { background: #fff; }
