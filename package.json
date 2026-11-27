@@ -15,6 +15,7 @@
     "test:clarify": "tsx tests/reportClarify.test.ts",
     "test:filter": "tsx tests/profanityFilter.test.ts",
     "test:report": "tsx tests/reportDocument.test.ts",
+    "test:workorder": "tsx tests/workOrder.test.ts",
     "test:ops": "tsx tests/operations.test.ts",
     "test:examples": "tsx tests/formExamples.test.ts",
     "test:features": "tsx tests/features.test.ts",
