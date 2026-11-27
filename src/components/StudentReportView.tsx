@@ -970,7 +970,7 @@ export function StudentReportView({
 
           {/* 3. Problem Description */}
           <div className="py-7">
-            <StepHeading step={3} done={descriptionReady} title="무슨 일인지 알려주세요" htmlFor="field-description" hint="언제부터, 어떤 상태인지 적어 주면 담당자가 빨리 파악해요." />
+            <StepHeading step={3} done={descriptionReady} title="무슨 일인지 알려주세요" htmlFor="field-description" hint="무엇이, 언제부터, 얼마나 불편한지 적어 주면 담당자가 빨리 파악해요." />
             <textarea
               ref={descriptionRef}
               id="field-description"
@@ -981,7 +981,7 @@ export function StudentReportView({
                 clearFieldError("description");
                 resetClarify();
               }}
-              placeholder="예: 2학년 3반 앞 복도 천장 형광등이 깜빡거리며 소음이 발생합니다. 교체 부탁드립니다."
+              placeholder={"무엇이: 2학년 3반 앞 복도 천장 형광등이 깜빡거려요\n언제부터: 지난주 월요일부터\n얼마나 불편한지: 수업 중에도 계속 깜빡여서 눈이 아파요"}
               aria-invalid={Boolean(fieldErrors.description)}
               aria-describedby={[fieldErrors.description && descriptionBlanks.length === 0 ? "description-error" : "", descriptionBlanks.length ? "description-blanks" : ""].filter(Boolean).join(" ") || undefined}
               className={`w-full min-h-[140px] rounded-lg border p-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed ${
