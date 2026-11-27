@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog, Volume2 } from "lucide-react";
+import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, Printer, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog, Volume2 } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport, type StaffSessionInfo } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
 import { formatNoise } from "../utils/noise";
@@ -11,6 +11,8 @@ import { MyPasswordForm, StaffAccountsPanel } from "./StaffAccountsPanel";
 import { StaffBackupPanel } from "./StaffBackupPanel";
 import { StaffDeletedReportsPanel } from "./StaffDeletedReportsPanel";
 import { StaffAuditPanel } from "./StaffAuditPanel";
+import { buildWorkOrderHtml } from "../utils/workOrder";
+import { openPrintWindow } from "../utils/printWindow";
 
 /** 운영진 화면이 신고 목록을 다시 받아오는 간격 */
 const AUTO_REFRESH_MS = 30 * 1000;
@@ -416,6 +418,13 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
     finally { setBusyId(null); }
   };
 
+  /** 신고 한 건을 시설 담당자·업체에 넘길 작업 요청서로 인쇄하거나 PDF 로 저장한다. */
+  const printWorkOrder = (report: StaffReport) => {
+    const html = buildWorkOrderHtml({ report, schoolName: report.schoolName || schoolName, origin: window.location.origin });
+    if (openPrintWindow(html)) setError("");
+    else setError("팝업이 차단되어 작업 요청서를 열 수 없습니다. 브라우저의 팝업 차단을 해제한 뒤 다시 시도해주세요.");
+  };
+
   const markSpam = async (report: StaffReport) => {
     if (!window.confirm(`${report.id} 신고를 장난 신고로 처리할까요?\n신고가 삭제되고, 같은 기기에서 오는 신고는 30일 동안 공개 전에 운영진 검토를 거칩니다. 관리자는 '삭제된 신고'에서 되살릴 수 있습니다.`)) return;
     setBusyId(report.id); setError(""); setNotice("");
@@ -681,6 +690,7 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
             <label className="text-xs font-semibold text-slate-600">신고한 학생에게 답변 <span className="font-normal text-slate-400">(신고한 학생에게만 보임)</span><textarea name="reporterReply" defaultValue={report.reporterReply || ""} maxLength={1000} rows={2} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="예: 알려줘서 고마워요. 이번 주 금요일에 교체할 예정이에요." /></label>
             <div className="flex flex-wrap items-center gap-2 md:col-span-2">
               <button disabled={busyId === report.id} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"><Save className="h-4 w-4" />{busyId === report.id ? "저장 중…" : "처리 내용 저장"}</button>
+              {report.moderationStatus !== "held" && <button type="button" onClick={() => printWorkOrder(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400"><Printer className="h-4 w-4" />작업 요청서</button>}
               {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => markSpam(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 disabled:opacity-60"><Ban className="h-4 w-4" />장난 신고로 처리</button>}
               {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => setDeletingId(deletingId === report.id ? null : report.id)} aria-expanded={deletingId === report.id} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-700 disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제</button>}
               {role === "staff" && !canDelete && <span className="text-[11px] text-slate-500">{deleteHint}</span>}
