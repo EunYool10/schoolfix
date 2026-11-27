@@ -10,6 +10,8 @@ import {
   SCHOOL_LOCATIONS,
 } from "../types";
 import { findTemplateBlanks, type TemplateBlank } from "../data/formExamples";
+import { pickWritingExample } from "../data/writingExamples";
+import { isDetailOptional } from "../data/locationRules";
 import { PhotoRedactor } from "./PhotoRedactor";
 import { NoiseMeter } from "./NoiseMeter";
 import type { NoiseMeasurement } from "../utils/noise";
@@ -199,6 +201,11 @@ export function StudentReportView({
   const matchingLocations = useMemo(() => locations.filter((item) => item.type === location), [locations, location]);
   const officialLocationCount = locations.filter((item) => item.verificationStatus === "official").length;
   const [placeExtrasOpen, setPlaceExtrasOpen] = useState(false);
+  // 작성 예시(회색 안내 문구) — 신고서에 들어올 때마다 새로 뽑고, 장소 종류를 고르면 그 장소 예시로 바꾼다.
+  const [exampleSeed, setExampleSeed] = useState(() => Math.random());
+  const writingExample = useMemo(() => pickWritingExample(location, exampleSeed), [location, exampleSeed]);
+  // 세부 위치 없이도 접수되는 장소 (창의경영고 복도·운동장)
+  const detailOptional = isDetailOptional(school.id, location);
   const showPlaceExtras = placeExtrasOpen || Boolean(buildingName || floor || roomName);
 
   // Keep a lightweight draft in this tab only. Attachments and AI clarification are never stored.
@@ -409,6 +416,7 @@ export function StudentReportView({
     setCompletedReport(null);
     setCompletedRecoveryCode(null);
     setNoise(null);
+    setExampleSeed(Math.random());
     clearSessionDraft(reportDraftKey);
     setDraftSavedAt(null);
     setDraftRestored(false);
@@ -439,7 +447,7 @@ export function StudentReportView({
 
     // 1. Location Validation
     const hasManualLocation = [locationDetail, buildingName, floor, location === "교실" ? className : "", roomName].some((value) => value.trim());
-    if (!location || !location.trim() || (!locationId && !hasManualLocation)) {
+    if (!location || !location.trim() || (!locationId && !hasManualLocation && !isDetailOptional(school.id, location))) {
       errors.location = "위치 유형을 선택하고 세부 위치를 선택하거나 직접 입력해주세요.";
     }
 
@@ -814,7 +822,7 @@ export function StudentReportView({
         <form onSubmit={handleSubmit} noValidate className="divide-y divide-slate-100">
           {/* 1. Problem Location */}
           <div className="pb-7">
-            <StepHeading step={1} done={Boolean(location) && hasPlace} title="어디인가요?" htmlFor="field-location" />
+            <StepHeading step={1} done={Boolean(location) && (hasPlace || detailOptional)} title="어디인가요?" htmlFor="field-location" />
             <select
               ref={locationRef}
               id="field-location"
@@ -828,7 +836,8 @@ export function StudentReportView({
                 e.currentTarget.blur();
                 setLocation(newLoc);
                 setShowLocationInfoModal(false);
-                if (locationNeedsReview) window.setTimeout(() => setShowLocationInfoModal(true), 0);
+                // 세부 위치 없이도 되는 장소(창의경영고 복도·운동장)는 묻지 않는다.
+                if (locationNeedsReview && !isDetailOptional(school.id, newLoc)) window.setTimeout(() => setShowLocationInfoModal(true), 0);
                 setLocationId("");
                 setLocationDetail("");
                 if (newLoc !== "교실") { setDepartment(""); setGrade(""); setClassName(""); }
@@ -871,7 +880,7 @@ export function StudentReportView({
                   htmlFor="field-location-detail"
                   className="block text-xs font-semibold text-slate-700"
                 >
-                  {location === "기타" ? "목록에 없는 위치를 설명해 주세요" : "세부 위치"} <span className="font-normal text-slate-500">{locationId ? "(목록에서 선택됨)" : "(직접 입력)"}</span>
+                  {location === "기타" ? "목록에 없는 위치를 설명해 주세요" : "세부 위치"} <span className="font-normal text-slate-500">{locationId ? "(목록에서 선택됨)" : detailOptional ? "(선택)" : "(직접 입력)"}</span>
                 </label>
                 <span className="text-[11px] text-slate-400">{locationDetail.length}/150자</span>
               </div>
@@ -882,7 +891,7 @@ export function StudentReportView({
                 value={locationDetail}
                 disabled={Boolean(locationId)}
                 onChange={(e) => { setLocationDetail(e.target.value); clearFieldError("location"); }}
-                placeholder="예: 본관 동쪽 2층, 급식실 출입구 옆"
+                placeholder={`예: ${writingExample.detail}`}
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
             </div>}
@@ -956,7 +965,7 @@ export function StudentReportView({
                 clearFieldError("description");
                 resetClarify();
               }}
-              placeholder={"무엇이: 2학년 3반 앞 복도 천장 형광등이 깜빡거려요\n언제부터: 지난주 월요일부터\n얼마나 불편한지: 수업 중에도 계속 깜빡여서 눈이 아파요"}
+              placeholder={writingExample.description}
               aria-invalid={Boolean(fieldErrors.description)}
               aria-describedby={[fieldErrors.description && descriptionBlanks.length === 0 ? "description-error" : "", descriptionBlanks.length ? "description-blanks" : ""].filter(Boolean).join(" ") || undefined}
               className={`w-full min-h-[140px] rounded-lg border p-3.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition resize-y leading-relaxed ${
@@ -1000,7 +1009,7 @@ export function StudentReportView({
                 maxLength={60}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="예: 3층 과학실 창문 잠금장치 파손"
+                placeholder={`예: ${writingExample.title}`}
                 className="w-full h-11 px-3.5 text-sm rounded-lg border border-slate-300 bg-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition"
               />
             </div>
@@ -1212,17 +1221,16 @@ export function StudentReportView({
         createPortal(<div
           role="presentation"
           onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLocationInfoModal(false); }}
-          className="fixed inset-0 z-[2147483000] flex min-h-screen min-h-[100dvh] items-center justify-center bg-slate-950/65 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-[2147483000] flex min-h-screen min-h-[100dvh] items-center justify-center bg-slate-900/50 p-4"
         >
-          <section role="dialog" aria-modal="true" aria-labelledby="location-info-title" className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
+          <section role="dialog" aria-modal="true" aria-labelledby="location-info-title" className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
             <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700"><Info className="h-5 w-5" /></span>
               <div>
-                <h2 id="location-info-title" className="text-base font-extrabold text-slate-900">세부 위치를 알려주세요</h2>
+                <h2 id="location-info-title" className="font-display text-xl text-slate-900">세부 위치를 알려 주세요</h2>
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">이 장소의 세부 시설 정보는 확인되지 않았어요. 알고 있는 건물·층·시설명을 아래에 적어 주세요. 모르는 정보는 추측해서 입력하지 않아도 됩니다.</p>
               </div>
             </div>
-            <button type="button" autoFocus onClick={() => setShowLocationInfoModal(false)} className="mt-5 min-h-11 w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800">확인</button>
+            <button type="button" autoFocus onClick={() => setShowLocationInfoModal(false)} className="mt-5 min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">확인</button>
           </section>
         </div>, document.body)
       )}

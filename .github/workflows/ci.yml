@@ -41,6 +41,7 @@ jobs:
           npm run test:filter
           npm run test:report
           npm run test:workorder
+          npm run test:writing
           npm run test:ops
           npm run test:examples
           npm run test:features

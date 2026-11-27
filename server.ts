@@ -107,6 +107,7 @@ import { buildReportPush, buildVerifyPush, meTooRecipientsFor, parseSubscription
 import { castVote, shouldReopen, verificationCounts, type VerificationVote } from "./server/api/reportVerify";
 import { draftFromPhoto } from "./server/api/photoDraft";
 import { parseNoiseMeasurement, type NoiseMeasurement } from "./src/utils/noise";
+import { isDetailOptional } from "./src/data/locationRules";
 import { createDocLocks, nextStoreVersion, StoreConflictError } from "./server/api/storeSync";
 import { keepAwakeUrl, parseKeepAwakeHours, withinKeepAwake } from "./server/api/keepAwake";
 import { BACKUP_KEEP, BACKUP_KINDS, BACKUP_NAME_PATTERN, backupName, expiredBackups, kstDate, localBackupStore, supabaseBackupStore, type BackupInfo, type BackupKind, type BackupStore } from "./server/api/backupStore";
@@ -3238,7 +3239,7 @@ app.post("/api/reports", rateLimit("submit", LIMITS.submitReport), async (req, r
     return safeError(res, 400, "선택한 세부 위치가 해당 학교의 위치 목록과 일치하지 않습니다.");
   }
   const hasManualLocation = [req.body.locationDetail, req.body.buildingName, req.body.floor, req.body.className, req.body.roomName].some((value) => typeof value === "string" && value.trim());
-  if (!selectedLocation && !hasManualLocation) {
+  if (!selectedLocation && !hasManualLocation && !isDetailOptional(school.id, String(req.body.location ?? ""))) {
     return safeError(res, 400, "세부 위치를 선택하거나 직접 입력해주세요.");
   }
   const department = typeof req.body.department === "string" ? req.body.department.trim() : "";
