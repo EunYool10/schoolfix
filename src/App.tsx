@@ -11,7 +11,7 @@ import { SchoolSelectionView } from "./components/SchoolSelectionView";
 import type { PolicySection } from "./components/ServicePolicyDialog";
 import { UnsavedChangesModal } from "./components/UnsavedChangesModal";
 import { School, SchoolLocation, SchoolLocationType, SchoolReport } from "./types";
-import { CheckCircle2, AlertCircle, PlusCircle, Home, ListFilter, UsersRound, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 /*
  * 첫 화면(학교 선택·홈)에 필요 없는 화면은 들어갈 때 불러온다.
@@ -328,8 +328,6 @@ export default function App() {
     setView(next);
   };
 
-  const goHome = () => requestView("HOME");
-
   const selectSchool = (school: School) => {
     setSelectedSchool(school);
     setSchoolLocationsLoading(true);
@@ -402,67 +400,31 @@ export default function App() {
     refreshAll();
   };
 
-  const navButton = (target: View, label: string, Icon: typeof Home, badge = 0) => {
-    const active = view === target;
-    return (
-      <button
-        type="button"
-        onClick={() => requestView(target)}
-        className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer min-h-[40px] shrink-0 ${
-          active
-            ? "bg-slate-900 text-white shadow-xs"
-            : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
-        }`}
-      >
-        <Icon className="h-4 w-4" />
-        <span>{label}</span>
-        {badge > 0 && (
-          <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white" aria-label={`내 신고 새 소식 ${badge}건`}>
-            {badge}
-          </span>
-        )}
-      </button>
-    );
-  };
-
   return (
-    <div className="sf-app min-h-screen flex flex-col font-sans antialiased text-slate-900">
+    <div className="min-h-screen flex flex-col bg-paper font-sans antialiased text-slate-900">
       {/* 토스트 */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none print:hidden">
+      <div className="fixed top-20 right-4 left-4 z-50 mx-auto flex max-w-sm flex-col gap-2 pointer-events-none sm:left-auto print:hidden">
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-2.5 p-3.5 rounded-xl shadow-lg border text-xs sm:text-sm ${
-              toast.type === "success"
-                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                : toast.type === "error"
-                ? "bg-rose-50 border-rose-200 text-rose-900"
-                : "bg-blue-50 border-blue-200 text-blue-900"
-            }`}
+            className="pointer-events-auto flex items-start gap-2.5 rounded-2xl bg-slate-900 px-4 py-3.5 text-sm text-white shadow-[0_8px_24px_rgba(36,33,29,0.18)]"
           >
             {toast.type === "success" ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-300 shrink-0 mt-0.5" />
             ) : (
-              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <AlertCircle className="h-4 w-4 text-rose-300 shrink-0 mt-0.5" />
             )}
             <span className="font-medium leading-snug">{toast.message}</span>
           </div>
         ))}
       </div>
 
-      {selectedSchool && view !== "SCHOOL_SELECT" && <Header onGoHome={goHome} reportCount={reports.length} schoolName={selectedSchool.schoolName} onChangeSchool={() => requestView("SCHOOL_SELECT")} />}
+      {selectedSchool && view !== "SCHOOL_SELECT" && <Header view={view} onNavigate={requestView} updatesCount={myUpdates.size} schoolName={selectedSchool.schoolName} onChangeSchool={() => requestView("SCHOOL_SELECT")} />}
 
       <main className="flex-1">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-          <div className="sf-app-content space-y-6">
+        <div className="mx-auto max-w-6xl px-4 pt-6 pb-28 sm:px-6 sm:pt-10 md:pb-16">
+          <div className="space-y-6">
             {view === "SCHOOL_SELECT" || !selectedSchool ? <SchoolSelectionView schools={schools} loading={schoolLoading} error={schoolError} initialSchoolId={selectedSchool?.id || (() => { try { return localStorage.getItem("schoolfix_selected_school_v1") || ""; } catch { return ""; } })()} onRetry={() => void loadSchoolCatalog()} onSelect={selectSchool} /> : <>
-            <nav aria-label="주요 메뉴" className="sf-main-nav flex flex-wrap items-center gap-2 p-0.5 print:hidden">
-              {navButton("HOME", "메인 홈", Home)}
-              {navButton("NEW_REPORT", "신고하기", PlusCircle)}
-              {navButton("REPORTS", "신고 목록", ListFilter, myUpdates.size)}
-              {navButton("STAFF", "운영진", UsersRound)}
-            </nav>
-
             {view === "HOME" && (
               <UserHomeLandingView
                 reports={allReportsMarked}
@@ -543,15 +505,13 @@ export default function App() {
         onCancel={() => setPendingView(null)}
       />
 
-      <footer className="sf-footer border-t border-slate-200 py-7 text-center text-xs text-slate-500 print:hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <p className="font-semibold text-slate-700">
-            SchoolFix AI — 학교 불편사항 신고 및 시설 안전 관리
-          </p>
-          <p className="mt-1 text-slate-400">
-            익명 신고를 이용할 수 있습니다. 학교 추가 신청의 개인정보 처리 안내를 확인해 주세요.
-          </p>
-          <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="underline underline-offset-2 hover:text-blue-700">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="underline underline-offset-2 hover:text-blue-700">서비스 이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="underline underline-offset-2 hover:text-blue-700">개인정보 안내</button><button type="button" onClick={() => setAppsOpen(true)} className="underline underline-offset-2 hover:text-blue-700">은율이의 다른 앱</button></div>
+      <footer className="border-t border-slate-200 pb-24 pt-8 text-sm text-slate-500 md:pb-10 print:hidden">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 sm:px-6 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="font-display text-base text-slate-800">SchoolFix</p>
+            <p className="mt-1 max-w-md break-keep leading-relaxed">학교 불편사항 신고와 시설 안전 관리. 이름·학번·연락처 없이 익명으로 신고할 수 있어요.</p>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2"><button type="button" onClick={() => setPolicySection("guide")} className="hover:text-slate-900">이용 방법</button><button type="button" onClick={() => setPolicySection("terms")} className="hover:text-slate-900">이용약관</button><button type="button" onClick={() => setPolicySection("privacy")} className="font-semibold text-slate-700 hover:text-slate-900">개인정보 안내</button><button type="button" onClick={() => setAppsOpen(true)} className="hover:text-slate-900">은율이의 다른 앱</button></div>
         </div>
       </footer>
       {policySection && <Suspense fallback={null}><ServicePolicyDialog section={policySection} onClose={() => setPolicySection(null)} /></Suspense>}

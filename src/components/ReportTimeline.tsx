@@ -1,5 +1,5 @@
 import React from "react";
-import { Check, Clock, Eye, Hammer, CheckCircle2, UserRound, CalendarClock } from "lucide-react";
+import { Clock, Eye, Hammer, CheckCircle2, UserRound, CalendarClock } from "lucide-react";
 import { ReportStatus } from "../types";
 
 interface ReportTimelineProps {
@@ -97,10 +97,10 @@ export function ReportTimeline({
     <div className="w-full py-2">
       <div className="relative flex items-center justify-between">
         {/* Continuous progress bar background */}
-        <div className="absolute left-0 top-4 -translate-y-1/2 h-1 w-full bg-slate-200 z-0" />
+        <div className="absolute left-0 top-[7px] -translate-y-1/2 h-[3px] w-full rounded-full bg-slate-200 z-0" />
         {/* Active progress bar */}
         <div
-          className="absolute left-0 top-4 -translate-y-1/2 h-1 bg-blue-600 transition-all duration-300 z-0"
+          className="absolute left-0 top-[7px] -translate-y-1/2 h-[3px] rounded-full bg-blue-500 transition-all duration-300 z-0"
           style={{ width: `${(currentLevel / (steps.length - 1)) * 100}%` }}
         />
 
@@ -115,18 +115,10 @@ export function ReportTimeline({
               className="relative z-10 flex flex-col items-center text-center px-1"
             >
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all ${
-                  isPassed
-                    ? "bg-blue-700 border-blue-700 text-white shadow-xs"
-                    : "bg-white border-slate-300 text-slate-400"
-                } ${isCurrent ? "ring-4 ring-blue-100 scale-105" : ""}`}
-              >
-                {isPassed && idx < currentLevel ? (
-                  <Check className="h-4 w-4 stroke-[2.5]" />
-                ) : (
-                  step.icon
-                )}
-              </div>
+                className={`h-3.5 w-3.5 rounded-full border-2 transition-all ${
+                  isPassed ? "border-blue-500 bg-blue-500" : "border-slate-300 bg-white"
+                } ${isCurrent ? "ring-4 ring-blue-100" : ""}`}
+              />
 
               <div className="mt-2 space-y-0.5 max-w-[80px] sm:max-w-[100px]">
                 <p

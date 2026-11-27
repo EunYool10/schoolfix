@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Check, Copy, Loader2, ScrollText } from "lucide-react";
+import { AlertTriangle, Check, Copy, Loader2 } from "lucide-react";
 import type { AuditEntryInfo } from "../types";
 
 /** 서버(auditLog.ts)와 같은 표시 이름. 모르는 항목은 원래 이름을 보여 준다. */
@@ -83,8 +83,7 @@ export function StaffAuditPanel() {
 
   return (
     <div className="space-y-3">
-      <p className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">
-        <ScrollText className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+      <p className="break-keep text-sm leading-relaxed text-slate-600">
         <span>운영진·교사가 한 중요한 일(로그인, 계정 변경, 총괄 지정, 신고 삭제·복구, 백업 등)을 최근 1,000건까지 남깁니다. 학생 정보는 기록하지 않습니다. 이 기능이 생기기 전의 일은 남아 있지 않습니다.</span>
       </p>
       {saveProblem && (

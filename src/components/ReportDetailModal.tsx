@@ -1,11 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  X,
-  MapPin,
-  Tag,
-  Clock,
-  Volume2,
-} from "lucide-react";
+import { X, Volume2 } from "lucide-react";
 import { SchoolReport, STATUS_MAP } from "../types";
 import { loadRecoveryCodes } from "../utils/clientTokens";
 import { formatNoise, noiseLevelLabel } from "../utils/noise";
@@ -63,30 +57,30 @@ export function ReportDetailModal({
   return (
     <>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs print:hidden"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4 print:hidden"
         role="dialog"
         aria-modal="true"
         aria-label="신고 상세"
         onClick={onClose}
       >
         <div
-          className="relative flex flex-col bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden w-full max-w-2xl"
+          className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
           style={{ maxHeight: "calc(100vh - 32px)" }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* 헤더 */}
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 pb-4 pt-5 sm:px-6">
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${status.badgeClass}`}
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${report.moderationStatus === "held" ? "text-amber-700" : status.textColor}`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
                   {report.moderationStatus === "held" ? "운영진 검토 대기" : status.label}
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">{report.id}</span>
               </div>
-              <h3 className="text-base font-bold text-slate-900 break-keep">
+              <h3 className="break-keep font-display text-xl leading-snug text-slate-900">
                 {report.title || `${report.location} ${report.category}`}
               </h3>
             </div>
@@ -97,7 +91,7 @@ export function ReportDetailModal({
                 type="button"
                 onClick={onClose}
                 aria-label="닫기"
-                className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200/60 transition cursor-pointer"
+                className="-mr-1.5 rounded-xl p-2 text-slate-500 hover:bg-slate-100 transition cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -105,28 +99,23 @@ export function ReportDetailModal({
           </div>
 
           {/* 본문 */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <InfoCell icon={MapPin} label="학교" value={report.schoolName || ""} />
-              <InfoCell icon={MapPin} label="위치 유형" value={report.locationType || report.location} />
-              <InfoCell icon={MapPin} label="세부 위치" value={detailedLocation || "직접 확인 필요"} />
-              <InfoCell icon={Tag} label="문제 종류" value={report.category} />
-              <InfoCell
-                icon={Clock}
-                label="접수일"
-                value={new Date(report.createdAt).toLocaleDateString("ko-KR")}
-              />
-            </div>
+          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+            <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+              <InfoCell label="학교" value={report.schoolName || ""} />
+              <InfoCell label="장소" value={[report.locationType || report.location, detailedLocation].filter(Boolean).join(" · ") || "직접 확인 필요"} />
+              <InfoCell label="문제 종류" value={report.category} />
+              <InfoCell label="접수일" value={new Date(report.createdAt).toLocaleDateString("ko-KR")} />
+            </dl>
 
             <div className="space-y-1.5">
-              <span className="text-xs font-bold text-slate-700 block">신고 내용</span>
-              <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
+              <span className="block text-xs font-semibold text-slate-500">신고 내용</span>
+              <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
                 {report.description}
               </div>
             </div>
 
             {report.noise && (
-              <p className="flex items-start gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2.5 text-xs leading-relaxed text-indigo-950">
+              <p className="flex items-start gap-2 text-sm leading-relaxed text-slate-700">
                 <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
                 <span><strong>휴대폰으로 잰 소음</strong> {formatNoise(report.noise)} · {noiseLevelLabel(report.noise.avgDb)} <span className="text-indigo-700">(휴대폰마다 차이가 있는 추정치)</span></span>
               </p>
@@ -156,9 +145,9 @@ export function ReportDetailModal({
             />
 
             {report.resolutionNote && (
-              <div className="space-y-1.5">
-                <span className="text-xs font-bold text-slate-700 block">처리 결과</span>
-                <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 text-sm text-emerald-900 leading-relaxed whitespace-pre-wrap">
+              <div className="border-l-4 border-emerald-400 pl-4">
+                <span className="block font-hand text-xl leading-none text-emerald-700">처리 결과</span>
+                <div className="mt-2 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
                   {report.resolutionNote}
                 </div>
               </div>
@@ -171,23 +160,12 @@ export function ReportDetailModal({
   );
 }
 
-function InfoCell({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof MapPin;
-  label: string;
-  value: string;
-}) {
+function InfoCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="p-3 rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center gap-1.5 text-slate-500 text-xs">
-        <Icon className="h-3.5 w-3.5" />
-        <span>{label}</span>
-      </div>
-      <p className="mt-1 font-bold text-slate-900 text-sm break-keep">{value}</p>
-    </div>
+    <>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="break-keep font-semibold text-slate-900">{value}</dd>
+    </>
   );
 }
 

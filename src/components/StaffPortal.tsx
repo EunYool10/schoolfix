@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LockKeyhole, LogOut, MessageSquarePlus, Printer, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog, Volume2 } from "lucide-react";
+import { ArchiveRestore, BarChart3, Ban, BellRing, Check, Clock, DatabaseBackup, Download, HandHeart, History, Inbox, KeyRound, Loader2, LogOut, MessageSquarePlus, Printer, RefreshCw, Save, School as SchoolIcon, ScrollText, Search, ShieldAlert, ShieldCheck, Trash2, UserCog, Volume2 } from "lucide-react";
 import { RISK_LEVEL_MAP, STATUS_MAP, type ReportHistoryEntry, type SchoolReport, type StaffReport, type StaffSessionInfo } from "../types";
 import { computeSla, slaLabel } from "../utils/sla";
 import { formatNoise } from "../utils/noise";
@@ -13,6 +13,14 @@ import { StaffDeletedReportsPanel } from "./StaffDeletedReportsPanel";
 import { StaffAuditPanel } from "./StaffAuditPanel";
 import { buildWorkOrderHtml } from "../utils/workOrder";
 import { openPrintWindow } from "../utils/printWindow";
+
+/** 운영진 화면 각 메뉴의 제목 */
+function SectionTitle({ title }: { title: string }) {
+  return <h1 className="text-[26px] leading-snug text-slate-900">{title}</h1>;
+}
+
+/** 신고 카드 왼쪽 막대 — 위험도가 높을수록 진한 색 */
+const RISK_BAR: Record<string, string> = { 긴급: "bg-rose-500", 높음: "bg-orange-400", 중간: "bg-amber-300", 낮음: "bg-slate-300" };
 
 /** 운영진 화면이 신고 목록을 다시 받아오는 간격 */
 const AUTO_REFRESH_MS = 30 * 1000;
@@ -513,72 +521,85 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
   if (checking) return <div className="py-20 text-center text-slate-500"><Loader2 className="inline h-5 w-5 animate-spin" /> 확인 중</div>;
 
   if (!authenticated) return (
-    <section className="sf-staff-login mx-auto max-w-md rounded-[1.75rem] border border-white bg-white/95 p-6 shadow-sm sm:p-9">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"><LockKeyhole /></div>
-      <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => { setLoginRole("staff"); setError(""); }} aria-pressed={loginRole === "staff"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "staff" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}>운영진</button><button type="button" onClick={() => { setLoginRole("teacher"); setError(""); }} aria-pressed={loginRole === "teacher"} className={`rounded-lg px-3 py-2 text-sm font-bold ${loginRole === "teacher" ? "bg-white text-blue-800 shadow-sm" : "text-slate-600"}`}>교사 전용</button></div>
-      <h1 className="text-xl font-bold text-slate-900">{loginRole === "teacher" ? "교사 로그인" : "운영진 로그인"}</h1>
+    <section className="mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-6 sm:p-9">
+      <p className="font-hand text-[22px] leading-none text-blue-600">선생님·운영진 전용</p>
+      <div className="mb-5 mt-5 flex gap-6 border-b border-slate-200">{([["staff", "운영진"], ["teacher", "교사"]] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setLoginRole(value); setError(""); }} aria-pressed={loginRole === value} className={`-mb-px border-b-[3px] pb-2.5 text-[15px] font-bold ${loginRole === value ? "border-blue-600 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-800"}`}>{label}</button>)}</div>
+      <h1 className="text-2xl text-slate-900">{loginRole === "teacher" ? "교사 로그인" : "운영진 로그인"}</h1>
       <p className="mt-2 text-sm leading-relaxed text-slate-600">{loginRole === "teacher" ? <><strong>{schoolName}</strong> 교사 개인 계정 또는 학교 공용 비밀번호로 로그인합니다. 소속 학교 신고만 관리할 수 있습니다.</> : "개인 계정 또는 공용 운영진 비밀번호로 로그인하면 신고 처리 상태와 담당자 정보를 관리할 수 있습니다."}</p>
       <form className="mt-6 space-y-4" onSubmit={login}>
         <div>
           <label className="block text-sm font-semibold text-slate-700" htmlFor="staff-username">아이디</label>
-          <input id="staff-username" autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} placeholder={loginRole === "teacher" ? "학교 공용 비밀번호면 비워 두세요" : "공용 운영진 비밀번호면 비워 두세요"} className="mt-2 w-full rounded-xl border border-slate-300 px-3.5 py-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+          <input id="staff-username" autoComplete="username" autoCapitalize="none" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} placeholder={loginRole === "teacher" ? "학교 공용 비밀번호면 비워 두세요" : "공용 운영진 비밀번호면 비워 두세요"} className="mt-2 w-full px-3.5 py-3" />
         </div>
         <label className="block text-sm font-semibold text-slate-700" htmlFor="staff-password">비밀번호</label>
-        <input id="staff-password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-xl border border-slate-300 px-3.5 py-3 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100" />
+        <input id="staff-password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full px-3.5 py-3" />
         {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
-        <button className="w-full rounded-xl bg-blue-700 px-4 py-3 font-bold text-white hover:bg-blue-800">로그인</button>
+        <button className="w-full rounded-2xl bg-blue-600 px-4 py-3.5 font-bold text-white hover:bg-blue-700">로그인</button>
       </form>
     </section>
   );
 
-  const sectionButton = (section: Section, label: string, Icon: typeof Inbox, badge?: number) => (
-    <button type="button" onClick={() => { setActiveSection(section); if (section === "applications") void refreshApplications(); if (section === "blocked") void refreshBlocked(); }} aria-pressed={activeSection === section} className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ${activeSection === section ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>
-      <Icon className="h-4 w-4" />{label}
-      {badge !== undefined && <span className={`rounded-full px-2 py-0.5 text-xs ${activeSection === section ? "bg-white/20 text-white" : "bg-blue-50 text-blue-800"}`}>{badge}</span>}
-    </button>
-  );
+  const sectionButton = (section: Section, label: string, Icon: typeof Inbox, badge?: number, highlight = false) => {
+    const active = activeSection === section;
+    return (
+      <button type="button" onClick={() => { setActiveSection(section); if (section === "applications") void refreshApplications(); if (section === "blocked") void refreshBlocked(); }} aria-current={active ? "page" : undefined} className={`flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-[15px] lg:w-full ${active ? "bg-white font-bold text-slate-900 shadow-[0_0_0_1px_var(--color-slate-200)]" : "font-medium text-slate-600 hover:bg-white/70 hover:text-slate-900"}`}>
+        <Icon className={`h-[18px] w-[18px] shrink-0 ${active ? "text-blue-600" : "text-slate-400"}`} />
+        <span className="flex-1 text-left">{label}</span>
+        {badge !== undefined && badge > 0 && <span className={`text-xs font-bold tabular-nums ${highlight ? "text-rose-600" : "text-slate-400"}`}>{badge}</span>}
+      </button>
+    );
+  };
 
   return (
-    <section className="sf-staff-portal space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:p-5">
-        <div className="flex items-center gap-3"><ShieldCheck className="h-6 w-6 text-blue-700" /><div><h1 className="font-bold text-slate-900">{role === "teacher" ? `${schoolName} 교사 신고 관리` : "운영진 신고 관리"}</h1><p className="text-sm text-slate-600">{sessionInfo?.name ? <><strong className="text-slate-800">{sessionInfo.name}</strong>{sessionInfo.roleLabel ? ` (${sessionInfo.roleLabel})` : ""}로 로그인 · </> : null}{role === "teacher" ? "소속 학교의 신고 상태, 담당자, 처리 메모를 관리합니다." : "신고 상태, 담당자, 처리 메모를 관리합니다."}</p></div></div>
-        <div className="flex flex-wrap gap-2">
-          {sessionInfo?.hasAccount && <button type="button" onClick={() => setShowPasswordForm((open) => !open)} aria-expanded={showPasswordForm} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><KeyRound className="h-4 w-4" /> 내 비밀번호</button>}
-          <button type="button" onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><LogOut className="h-4 w-4" /> 로그아웃</button>
+    <section className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
+      <aside className="lg:sticky lg:top-24 lg:self-start">
+        <div className="border-b border-slate-200 pb-4">
+          <p className="font-display text-lg text-slate-900">{role === "teacher" ? "교사 신고 관리" : "운영진 신고 관리"}</p>
+          <p className="mt-1 text-sm text-slate-600">{sessionInfo?.name ? <><strong className="font-semibold text-slate-800">{sessionInfo.name}</strong>{sessionInfo.roleLabel ? ` · ${sessionInfo.roleLabel}` : ""}</> : role === "teacher" ? `${schoolName} 교사` : "공용 운영진 계정"}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            {sessionInfo?.hasAccount && <button type="button" onClick={() => setShowPasswordForm((open) => !open)} aria-expanded={showPasswordForm} className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"><KeyRound className="h-3.5 w-3.5" />내 비밀번호</button>}
+            <button type="button" onClick={logout} className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"><LogOut className="h-3.5 w-3.5" />로그아웃</button>
+          </div>
         </div>
-      </div>
+        <nav aria-label="운영진 메뉴" className="-mx-1 mt-3 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:overflow-visible lg:px-0">
+          {sectionButton("reports", "신고 관리", ShieldCheck, fresh.size > 0 ? fresh.size : undefined, true)}
+          {sectionButton("stats", "월별 통계", BarChart3)}
+          {role === "staff" && sectionButton("applications", "학교 신청", Inbox, schoolApplications.filter((item) => item.status === "new").length, true)}
+          {role === "staff" && sectionButton("blocked", "검토 대상 기기", Ban, blockedDevices.length)}
+          {role === "staff" && sectionButton("notifications", "알림", BellRing)}
+          {isAdmin && sectionButton("accounts", "계정 관리", UserCog)}
+          {isAdmin && sectionButton("deleted", "삭제된 신고", ArchiveRestore)}
+          {isAdmin && sectionButton("audit", "운영 기록", ScrollText)}
+          {isAdmin && sectionButton("backup", "백업", DatabaseBackup)}
+        </nav>
+      </aside>
 
+      <div className="mt-6 min-w-0 space-y-5 lg:mt-0">
       {showPasswordForm && <MyPasswordForm onDone={() => setShowPasswordForm(false)} />}
 
-      <div className="flex flex-wrap gap-2">
-        {sectionButton("reports", "신고 관리", ShieldCheck, fresh.size > 0 ? fresh.size : undefined)}
-        {sectionButton("stats", "월별 통계", BarChart3)}
-        {role === "staff" && sectionButton("applications", "학교 신청 메일함", Inbox, schoolApplications.filter((item) => item.status === "new").length)}
-        {role === "staff" && sectionButton("blocked", "검토 대상 기기", Ban, blockedDevices.length)}
-        {role === "staff" && sectionButton("notifications", "알림", BellRing)}
-        {isAdmin && sectionButton("accounts", "계정 관리", UserCog)}
-        {isAdmin && sectionButton("deleted", "삭제된 신고", ArchiveRestore)}
-        {isAdmin && sectionButton("audit", "운영 기록", ScrollText)}
-        {isAdmin && sectionButton("backup", "백업", DatabaseBackup)}
-      </div>
+      {error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>}
+      {notice && <p role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</p>}
 
-      {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-      {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
-
+      {activeSection === "stats" && <SectionTitle title="월별 통계" />}
       {activeSection === "stats" && <StaffStatsPanel schoolId={schoolId} schoolName={schoolName} reports={displayedReports} canNotify={role === "staff"} />}
 
+      {role === "staff" && activeSection === "notifications" && <SectionTitle title="알림" />}
       {role === "staff" && activeSection === "notifications" && <NotificationSettingsPanel schoolId={schoolId} schoolName={schoolName} />}
 
       {isAdmin && activeSection === "accounts" && <StaffAccountsPanel onRolesChanged={() => { fetch("/api/staff/session").then((res) => res.json()).then((json) => { applySession(json); }).catch(() => undefined); }} />}
 
+      {isAdmin && activeSection === "deleted" && <SectionTitle title="삭제된 신고" />}
       {isAdmin && activeSection === "deleted" && <StaffDeletedReportsPanel schoolId={schoolId} schoolName={schoolName} canPurge={Boolean(sessionInfo?.hasAccount)} onRestored={() => void afterChange()} />}
 
+      {isAdmin && activeSection === "audit" && <SectionTitle title="운영 기록" />}
       {isAdmin && activeSection === "audit" && <StaffAuditPanel />}
 
+      {isAdmin && activeSection === "backup" && <SectionTitle title="백업" />}
       {isAdmin && activeSection === "backup" && <StaffBackupPanel isOwner={Boolean(sessionInfo?.isOwner)} onRestored={() => void afterChange()} />}
 
       {role === "staff" && activeSection === "blocked" && <div className="space-y-3">
-        <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">장난 신고로 처리한 신고의 접수 기기입니다. 이 기기에서 오는 신고는 막지 않고 <strong>공개 전에 운영진 검토</strong>를 거칩니다. 짧은 시간에 여러 건을 보낸 기기의 신고도 자동으로 검토 대기가 됩니다.</p>
+        <SectionTitle title="검토 대상 기기" />
+        <p className="text-sm leading-relaxed text-slate-600">장난 신고로 처리한 신고의 접수 기기입니다. 이 기기에서 오는 신고는 막지 않고 <strong>공개 전에 운영진 검토</strong>를 거칩니다. 짧은 시간에 여러 건을 보낸 기기의 신고도 자동으로 검토 대기가 됩니다.</p>
         {blockedDevices.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">검토 대상 기기가 없습니다.</p> : blockedDevices.map((device) => (
           <article key={device.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
             <div className="text-sm"><p className="font-mono text-xs text-slate-500">기기 {device.id}…</p><p className="mt-1 font-semibold text-slate-800">{device.reason}{device.reportId ? ` · ${device.reportId}` : ""}</p><p className="mt-0.5 text-xs text-slate-500">{new Date(device.until).toLocaleDateString("ko-KR")}까지</p></div>
@@ -588,12 +609,13 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       </div>}
 
       {role === "staff" && activeSection === "applications" && <div className="space-y-3">
+        <SectionTitle title="학교 신청" />
         {customSchools.length > 0 && <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <h2 className="flex items-center gap-2 text-sm font-bold text-slate-900"><SchoolIcon className="h-4 w-4" /> 화면에서 등록한 학교</h2>
           <ul className="mt-3 divide-y divide-slate-100">{customSchools.map((school) => <li key={school.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"><span><strong className="text-slate-900">{school.schoolName}</strong> <span className="font-mono text-xs text-slate-500">{school.id}</span> · <span className={school.supportStatus === "active" ? "text-emerald-700" : "text-slate-400"}>{school.supportStatus === "active" ? "지원 중" : "지원 중지"}</span></span>{school.supportStatus === "active" && <button type="button" onClick={() => void stopSchool(school)} className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-700">지원 중지</button>}</li>)}</ul>
         </div>}
-        {schoolApplications.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">접수된 학교 추가 신청이 없습니다.</p> : schoolApplications.map((application) => <article key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold text-slate-900">{application.schoolName}</h2><span className={`rounded-full px-2 py-1 text-xs font-bold ${application.status === "new" ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900"}`}>{application.status === "new" ? "새 신청" : "확인 완료"}</span>{application.registeredSchoolId && <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-900">등록됨 · {application.registeredSchoolId}</span>}</div><p className="mt-1 text-xs text-slate-500">{application.id} · {new Date(application.createdAt).toLocaleString("ko-KR")}</p></div><div className="flex flex-wrap gap-2">{!application.registeredSchoolId && <button type="button" onClick={() => setRegisteringId(registeringId === application.id ? null : application.id)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white">{registeringId === application.id ? "등록 취소" : "승인하고 학교 등록"}</button>}<button type="button" onClick={() => void updateApplicationStatus(application)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700">{application.status === "new" ? "확인 완료로 표시" : "새 신청으로 표시"}</button><button type="button" onClick={() => void deleteApplication(application)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">삭제</button></div></div>
+        {schoolApplications.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">접수된 학교 추가 신청이 없습니다.</p> : schoolApplications.map((application) => <article key={application.id} className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-display text-lg text-slate-900">{application.schoolName}</h2><span className={`text-sm font-semibold ${application.status === "new" ? "text-amber-700" : "text-emerald-700"}`}>{application.status === "new" ? "새 신청" : "확인 완료"}</span>{application.registeredSchoolId && <span className="text-sm font-semibold text-blue-700">등록됨 · {application.registeredSchoolId}</span>}</div><p className="mt-1 text-xs text-slate-500">{application.id} · {new Date(application.createdAt).toLocaleString("ko-KR")}</p></div><div className="flex flex-wrap gap-2">{!application.registeredSchoolId && <button type="button" onClick={() => setRegisteringId(registeringId === application.id ? null : application.id)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-bold text-white">{registeringId === application.id ? "등록 취소" : "승인하고 학교 등록"}</button>}<button type="button" onClick={() => void updateApplicationStatus(application)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700">{application.status === "new" ? "확인 완료로 표시" : "새 신청으로 표시"}</button><button type="button" onClick={() => void deleteApplication(application)} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">삭제</button></div></div>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs font-semibold text-slate-500">주소 또는 지역</dt><dd className="mt-1 text-slate-800">{application.address}</dd></div><div><dt className="text-xs font-semibold text-slate-500">공식 홈페이지</dt><dd className="mt-1"><a href={application.website} target="_blank" rel="noreferrer" className="break-all text-blue-700 underline">{application.website}</a></dd></div><div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">신청 사유</dt><dd className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{application.reason}</dd></div>{application.requests && <div className="sm:col-span-2"><dt className="text-xs font-semibold text-slate-500">추가 요청</dt><dd className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{application.requests}</dd></div>}{application.replyEmail && <div><dt className="text-xs font-semibold text-slate-500">회신 이메일</dt><dd className="mt-1"><a href={`mailto:${application.replyEmail}`} className="text-blue-700 underline">{application.replyEmail}</a></dd></div>}</dl>
           {registeringId === application.id && <form onSubmit={(event) => registerSchool(event, application)} className="mt-4 grid gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4 sm:grid-cols-2">
             <p className="text-xs leading-relaxed text-blue-900 sm:col-span-2">공식 홈페이지에서 학교 정보를 확인한 뒤 등록하세요. 등록하면 재배포 없이 학교 선택 화면에 바로 나타나고, 위치는 기본 유형(교실·화장실 등)이 "확인 필요" 상태로 제공됩니다.</p>
@@ -608,114 +630,142 @@ export function StaffPortal({ schoolId, schoolName, reports, onRefresh }: StaffP
       </div>}
 
       {activeSection === "reports" && <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        {[
-          { label: "전체 신고", value: summary.total, className: "text-slate-900" },
-          { label: "접수 대기", value: summary.pending, className: "text-slate-700" },
-          { label: "안전성 검토 대기", value: summary.held, className: "text-amber-700" },
-          { label: "확인·처리 중", value: summary.active, className: "text-blue-700" },
-          { label: "높음 이상", value: summary.urgent, className: "text-rose-700" },
-          { label: "기한 초과", value: summary.overdue, className: summary.overdue ? "text-rose-700" : "text-slate-700" },
-        ].map((item) => <div key={item.label} className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-semibold text-slate-500">{item.label}</p><p className={`mt-1 text-2xl font-bold ${item.className}`}>{item.value}</p></div>)}
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <h1 className="text-[26px] leading-snug text-slate-900">신고 관리</h1>
+        <p className="text-sm text-slate-500">{visibleReports.length}건 표시 · 처리 기한 긴급 1일 · 높음 3일 · 중간 7일 · 낮음 14일</p>
       </div>
-      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="grid grid-cols-3 gap-y-4 rounded-2xl border border-slate-200 bg-white py-4 sm:grid-cols-6">
+        {[
+          { label: "전체", value: summary.total, dot: "bg-slate-300", filter: "all" },
+          { label: "접수 대기", value: summary.pending, dot: "bg-slate-400", filter: "pending" },
+          { label: "검토 대기", value: summary.held, dot: "bg-amber-400", filter: "moderation-held" },
+          { label: "처리 중", value: summary.active, dot: "bg-blue-500", filter: null },
+          { label: "높음 이상", value: summary.urgent, dot: "bg-orange-400", filter: null },
+          { label: "기한 초과", value: summary.overdue, dot: "bg-rose-500", filter: "overdue" },
+        ].map((item, index) => {
+          const body = <><span className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><span className={`h-2 w-2 rounded-full ${item.dot}`} />{item.label}</span><span className={`mt-1 block font-display text-[26px] leading-none ${item.label === "기한 초과" && item.value > 0 ? "text-rose-600" : "text-slate-900"}`}>{item.value}</span></>;
+          const edge = index % 3 === 0 ? "" : "border-l border-slate-100";
+          const edgeSm = index === 0 ? "sm:border-l-0" : "sm:border-l sm:border-slate-100";
+          return item.filter ? (
+            <button key={item.label} type="button" onClick={() => { setStatusFilter(item.filter!); setRiskFilter("all"); }} aria-pressed={statusFilter === item.filter} className={`px-4 text-left sm:px-5 ${edge} ${edgeSm} ${statusFilter === item.filter && item.filter !== "all" ? "[&>span:last-child]:text-blue-700" : ""}`}>{body}</button>
+          ) : (
+            <div key={item.label} className={`px-4 sm:px-5 ${edge} ${edgeSm}`}>{body}</div>
+          );
+        })}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <label className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="검색: 접수번호, 내용, 위치, 담당자" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm" aria-label="신고 검색" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="접수번호, 내용, 위치, 담당자로 찾기" className="h-10 w-full pl-9 pr-3 text-sm" aria-label="신고 검색" />
         </label>
-        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" aria-label="상태 필터">
+        <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-10 px-3 text-sm" aria-label="상태 필터">
           <option value="all">모든 상태</option><option value="overdue">기한 초과</option><option value="moderation-held">안전성 검토 대기</option>{Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
         </select>
-        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" aria-label="위험도 필터">
+        <select value={riskFilter} onChange={(event) => setRiskFilter(event.target.value)} className="h-10 px-3 text-sm" aria-label="위험도 필터">
           <option value="all">모든 위험도</option>{Object.keys(RISK_LEVEL_MAP).map((level) => <option key={level} value={level}>{level}</option>)}
         </select>
-        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" aria-label="정렬">
+        <select value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)} className="h-10 px-3 text-sm" aria-label="정렬">
           <option value="risk">위험도·최근 순</option><option value="deadline">처리 기한 임박 순</option><option value="metoo">나도 겪었어요 많은 순</option>
         </select>
-        <button type="button" onClick={exportCsv} disabled={visibleReports.length === 0} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download className="h-4 w-4" /> CSV 내보내기</button>
+        <button type="button" onClick={exportCsv} disabled={visibleReports.length === 0} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 text-sm font-semibold text-slate-700 hover:border-slate-400 disabled:opacity-50"><Download className="h-4 w-4 text-slate-500" /> CSV</button>
       </div>
       {fresh.size > 0 && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
           <span><strong>{[freshNew ? `새 신고 ${freshNew}건` : null, freshFollowups ? `학생 추가 설명 ${freshFollowups}건` : null].filter(Boolean).join(" · ")}</strong>이 들어왔습니다. 목록에 표시했습니다.</span>
-          <button type="button" onClick={() => setFresh(new Map())} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-800 shadow-sm">확인</button>
+          <button type="button" onClick={() => setFresh(new Map())} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-800">확인</button>
         </div>
       )}
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
-        <span>{visibleReports.length}건 표시 · 처리 기한: 긴급 1일 · 높음 3일 · 중간 7일 · 낮음 14일 (분석 전 7일)</span>
-        <span className="inline-flex items-center gap-1 text-xs"><RefreshCw className="h-3 w-3" />30초마다 자동 갱신{lastSyncedAt ? ` · 마지막 ${lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+        <span className="inline-flex items-center gap-1"><RefreshCw className="h-3 w-3" />30초마다 자동 갱신{lastSyncedAt ? ` · 마지막 ${lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : ""}</span>
         <button type="button" onClick={() => void refreshStaffReports()} className="text-xs font-semibold text-blue-700 hover:underline">지금 새로고침</button>
       </p>
-      {displayedReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">접수된 신고가 없습니다.</p> : visibleReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500">조건에 맞는 신고가 없습니다.</p> : visibleReports.map((report) => {
+      {displayedReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">접수된 신고가 없습니다.</p> : visibleReports.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">조건에 맞는 신고가 없습니다.</p> : visibleReports.map((report) => {
         const sla = computeSla(report);
         const suspicious = report.reporter.blocked || report.reporter.deviceReportCount >= 5;
+        const held = report.moderationStatus === "held";
+        const status = STATUS_MAP[report.status];
+        const place = [report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ");
+        const slaClass = sla.overdue ? "font-bold text-rose-600" : sla.daysLeft !== null && sla.daysLeft <= 1 ? "font-semibold text-amber-700" : sla.completedLate ? "text-rose-600" : "text-slate-500";
         return (
-        <article key={`${report.id}-${report.updatedAt}`} className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${sla.overdue && report.moderationStatus !== "held" ? "border-rose-300" : "border-slate-200"}`}>
-          {report.moderationStatus === "held" && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><div className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-5 w-5" /> 공개 보류 · 운영진 검토 필요</div><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button>{!canDelete && <span className="self-center text-[11px] text-amber-800">{deleteHint}</span>}</div></div>}
-          <div className="mb-4">
-            <div className="flex flex-wrap items-center gap-2">
-              {fresh.get(report.id) === "new" && <span className="rounded-full bg-blue-600 px-2 py-1 text-xs font-bold text-white">새로 들어옴</span>}
-              {fresh.get(report.id) === "followup" && <span className="rounded-full bg-violet-600 px-2 py-1 text-xs font-bold text-white">새 추가 설명</span>}
-              <span className="font-mono text-xs text-slate-500">{report.id}</span>
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold">{[report.locationType || report.location, report.locationDetail, report.buildingName, report.floor, report.department, report.grade ? `${report.grade}학년` : null, report.className, report.roomName].filter(Boolean).join(" · ")} · {report.category}</span>
-              <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${report.riskLevel ? RISK_LEVEL_MAP[report.riskLevel].badgeClass : "border-slate-200 bg-slate-50 text-slate-500"}`}>{report.riskLevel || "분석 대기"}</span>
-              <span className={`rounded-full border px-2 py-1 text-xs ${STATUS_MAP[report.status].badgeClass}`}>{STATUS_MAP[report.status].label}</span>
-              {report.moderationStatus !== "held" && <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${sla.overdue ? "bg-rose-600 text-white" : sla.daysLeft !== null && sla.daysLeft <= 1 ? "bg-amber-100 text-amber-900" : sla.completedLate ? "bg-slate-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}><Clock className="h-3 w-3" />{slaLabel(sla)}</span>}
-              {(report.meTooCount ?? 0) > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-bold text-rose-700"><HandHeart className="h-3 w-3" />나도 겪었어요 {report.meTooCount}</span>}
-              {report.feedback && <span className={`rounded-full px-2 py-1 text-xs font-bold ${report.feedback.resolved ? "bg-emerald-50 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{report.feedback.resolved ? "신고자: 해결됨" : "신고자: 아직 미해결"}</span>}
-              {report.verification && report.verification.fixed + report.verification.notFixed > 0 && <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700" title="공감했던 학생들의 확인">공감 학생 확인 👍 {report.verification.fixed} · 👎 {report.verification.notFixed}</span>}
-              {report.noise && <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-800" title="휴대폰으로 잰 추정치"><Volume2 className="h-3 w-3" />{formatNoise(report.noise)}</span>}
-              {suspicious && <span className="rounded-full bg-slate-900 px-2 py-1 text-xs font-bold text-white">{report.reporter.blocked ? "검토 대상 기기" : `같은 기기 신고 ${report.reporter.deviceReportCount}건`}</span>}
+        <article key={`${report.id}-${report.updatedAt}`} className={`flex overflow-hidden rounded-2xl border bg-white ${sla.overdue && !held ? "border-rose-300" : "border-slate-200"}`}>
+          <span aria-hidden="true" className={`w-1.5 shrink-0 ${held ? "bg-amber-400" : report.riskLevel ? RISK_BAR[report.riskLevel] : "bg-slate-200"}`} />
+          <div className="min-w-0 flex-1">
+          <div className="p-4 sm:p-5">
+          {held && <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="flex items-center gap-2 font-bold text-amber-900"><ShieldAlert className="h-4 w-4" />공개 보류 · 운영진 검토가 필요해요</p><p className="mt-1 text-sm text-amber-800">{report.moderationReason || "자동 안전성 검사에서 검토 대상으로 분류했습니다."}</p>{(report.photos?.length ?? 0) > 0 && <div className="mt-3"><PhotoGallery photos={report.photos ?? []} title="검토 대기 첨부 사진" /></div>}<div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busyId === report.id} onClick={() => moderate(report, "approve")} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Check className="h-4 w-4" /> 승인하고 공개</button><button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => moderate(report, "reject")} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3.5 py-2 text-sm font-bold text-rose-700 disabled:opacity-50"><Trash2 className="h-4 w-4" /> 삭제</button>{!canDelete && <span className="self-center text-xs text-amber-800">{deleteHint}</span>}</div></div>}
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-x-2 text-xs">
+                  {fresh.get(report.id) === "new" && <span className="font-bold text-blue-700">새 신고</span>}
+                  {fresh.get(report.id) === "followup" && <span className="font-bold text-indigo-700">새 추가 설명</span>}
+                  <span className="font-mono text-slate-400">{report.id}</span>
+                </p>
+                <h2 className="mt-1 text-[17px] font-bold leading-snug text-slate-900">{report.title || "시설 문제 신고"}</h2>
+                <p className="mt-0.5 text-sm text-slate-600">{place} · {report.category}</p>
+              </div>
+              <span className={`inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold ${status.textColor}`}><span className={`h-2 w-2 rounded-full ${status.dotClass}`} />{status.label}</span>
             </div>
-            <h2 className="mt-2 font-bold text-slate-900">{report.title || "시설 문제 신고"}</h2>
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{report.description}</p>
-            {report.feedback?.comment && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">신고자 의견: {report.feedback.comment}</p>}
+            <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">{report.description}</p>
+            {!held && (report.photos?.length ?? 0) > 0 && <div className="mt-3 max-w-xl"><PhotoGallery photos={report.photos ?? []} /></div>}
+            <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span className={report.riskLevel ? `font-semibold ${RISK_LEVEL_MAP[report.riskLevel].textColor}` : ""}>위험도 {report.riskLevel || "분석 대기"}</span>
+              {!held && <span className={`inline-flex items-center gap-1 ${slaClass}`}><Clock className="h-3 w-3" />{slaLabel(sla)}</span>}
+              {(report.meTooCount ?? 0) > 0 && <span className="inline-flex items-center gap-1 font-semibold text-rose-600"><HandHeart className="h-3 w-3" />나도 겪었어요 {report.meTooCount}</span>}
+              {report.feedback && <span className={`font-semibold ${report.feedback.resolved ? "text-emerald-700" : "text-amber-700"}`}>{report.feedback.resolved ? "신고자: 해결됨" : "신고자: 아직 미해결"}</span>}
+              {report.verification && report.verification.fixed + report.verification.notFixed > 0 && <span title="공감했던 학생들의 확인">공감 학생 확인 — 고쳐졌어요 {report.verification.fixed} · 아직 그대로 {report.verification.notFixed}</span>}
+              {report.noise && <span className="inline-flex items-center gap-1 text-indigo-700" title="휴대폰으로 잰 추정치"><Volume2 className="h-3 w-3" />{formatNoise(report.noise)}</span>}
+              {suspicious && <span className="font-bold text-slate-900">{report.reporter.blocked ? "검토 대상 기기" : `같은 기기 신고 ${report.reporter.deviceReportCount}건`}</span>}
+            </p>
+            {report.feedback?.comment && <p className="mt-3 border-l-2 border-slate-300 pl-3 text-sm text-slate-700">신고자 의견: {report.feedback.comment}</p>}
             {(report.followups?.length ?? 0) > 0 && (
-              <div className="mt-3 space-y-2 rounded-xl border border-violet-200 bg-violet-50/60 p-3">
-                <p className="flex items-center gap-1.5 text-xs font-bold text-violet-900"><MessageSquarePlus className="h-3.5 w-3.5" /> 학생이 덧붙인 설명 {report.followups!.length}건 <span className="font-normal text-violet-700">· 신고한 학생과 운영진·교사만 봅니다</span></p>
+              <div className="mt-4 space-y-3 border-l-2 border-indigo-300 pl-4">
+                <p className="flex items-center gap-1.5 text-xs font-bold text-indigo-800"><MessageSquarePlus className="h-3.5 w-3.5" />학생이 덧붙인 설명 {report.followups!.length}건 <span className="font-normal text-slate-500">· 신고한 학생과 운영진·교사만 봐요</span></p>
                 {report.followups!.map((followup) => (
-                  <div key={followup.id} className="rounded-lg bg-white p-3 text-sm">
-                    <p className="text-[11px] text-slate-500">{new Date(followup.at).toLocaleString("ko-KR")}{followup.held ? ` · ⚠ 안전성 확인 필요 (${followup.heldReason || "자동 검사"})` : ""}</p>
-                    <p className="mt-1 whitespace-pre-wrap leading-relaxed text-slate-800">{followup.text}</p>
+                  <div key={followup.id} className="text-sm">
+                    <p className="text-xs text-slate-500">{new Date(followup.at).toLocaleString("ko-KR")}{followup.held ? ` · 안전성 확인 필요 (${followup.heldReason || "자동 검사"})` : ""}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-slate-800">{followup.text}</p>
                     {followup.photos.length > 0 && <div className="mt-2"><PhotoGallery photos={followup.photos} title="추가 설명 사진" /></div>}
                   </div>
                 ))}
               </div>
             )}
-            <p className="mt-2 text-xs text-slate-500">접수 {new Date(report.createdAt).toLocaleString("ko-KR")} · 기한 {new Date(sla.dueAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}{report.assignee ? ` · 담당 ${report.assignee}` : " · 담당자 미지정"}</p>
+            <p className="mt-3 text-xs text-slate-400">접수 {new Date(report.createdAt).toLocaleString("ko-KR")} · 기한 {new Date(sla.dueAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}{report.assignee ? ` · 담당 ${report.assignee}` : " · 담당자 미지정"}</p>
           </div>
-          <form onSubmit={(event) => saveReport(event, report)} className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-2">
-            <label className="text-xs font-semibold text-slate-600">처리 상태<select name="status" defaultValue={report.status} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
-            <label className="text-xs font-semibold text-slate-600">담당자<input name="assignee" defaultValue={report.assignee || ""} maxLength={100} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="담당 부서 또는 담당자" /></label>
-            <label className="text-xs font-semibold text-slate-600">처리 메모 <span className="font-normal text-slate-400">(공개 — 신고 상세의 "처리 결과"에 표시)</span><textarea name="resolutionNote" defaultValue={report.resolutionNote || ""} maxLength={1000} rows={2} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="확인 및 조치 내용을 입력하세요" /></label>
-            <label className="text-xs font-semibold text-slate-600">신고한 학생에게 답변 <span className="font-normal text-slate-400">(신고한 학생에게만 보임)</span><textarea name="reporterReply" defaultValue={report.reporterReply || ""} maxLength={1000} rows={2} className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="예: 알려줘서 고마워요. 이번 주 금요일에 교체할 예정이에요." /></label>
+          <form onSubmit={(event) => saveReport(event, report)} className="grid gap-3 border-t border-slate-100 bg-slate-50 p-4 sm:p-5 md:grid-cols-2">
+            <label className="text-xs font-semibold text-slate-600">처리 상태<select name="status" defaultValue={report.status} className="mt-1 block h-10 w-full px-3 text-sm">{Object.entries(STATUS_MAP).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}</select></label>
+            <label className="text-xs font-semibold text-slate-600">담당자<input name="assignee" defaultValue={report.assignee || ""} maxLength={100} className="mt-1 block h-10 w-full px-3 text-sm" placeholder="담당 부서 또는 담당자" /></label>
+            <label className="text-xs font-semibold text-slate-600">처리 메모 <span className="font-normal text-slate-400">(공개 — 신고 상세의 "처리 결과")</span><textarea name="resolutionNote" defaultValue={report.resolutionNote || ""} maxLength={1000} rows={2} className="mt-1 block w-full px-3 py-2 text-sm" placeholder="확인 및 조치 내용을 입력하세요" /></label>
+            <label className="text-xs font-semibold text-slate-600">신고한 학생에게 답변 <span className="font-normal text-slate-400">(그 학생에게만 보여요)</span><textarea name="reporterReply" defaultValue={report.reporterReply || ""} maxLength={1000} rows={2} className="mt-1 block w-full px-3 py-2 text-sm" placeholder="예: 알려줘서 고마워요. 이번 주 금요일에 교체할 예정이에요." /></label>
             <div className="flex flex-wrap items-center gap-2 md:col-span-2">
-              <button disabled={busyId === report.id} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"><Save className="h-4 w-4" />{busyId === report.id ? "저장 중…" : "처리 내용 저장"}</button>
-              {report.moderationStatus !== "held" && <button type="button" onClick={() => printWorkOrder(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400"><Printer className="h-4 w-4" />작업 요청서</button>}
-              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => markSpam(report)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-600 hover:border-rose-300 hover:text-rose-700 disabled:opacity-60"><Ban className="h-4 w-4" />장난 신고로 처리</button>}
-              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => setDeletingId(deletingId === report.id ? null : report.id)} aria-expanded={deletingId === report.id} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-700 disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제</button>}
-              {role === "staff" && !canDelete && <span className="text-[11px] text-slate-500">{deleteHint}</span>}
+              <button disabled={busyId === report.id} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"><Save className="h-4 w-4" />{busyId === report.id ? "저장 중…" : "처리 내용 저장"}</button>
+              {!held && <button type="button" onClick={() => printWorkOrder(report)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-400"><Printer className="h-4 w-4 text-slate-500" />작업 요청서</button>}
+              <span className="flex-1" />
+              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => markSpam(report)} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-500 hover:bg-white hover:text-rose-700 disabled:opacity-60"><Ban className="h-4 w-4" />장난 신고</button>}
+              {role === "staff" && <button type="button" disabled={busyId === report.id || !canDelete} title={canDelete ? undefined : deleteHint} onClick={() => setDeletingId(deletingId === report.id ? null : report.id)} aria-expanded={deletingId === report.id} className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-rose-600 hover:bg-white disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제</button>}
+              {role === "staff" && !canDelete && <span className="w-full text-right text-xs text-slate-500">{deleteHint}</span>}
             </div>
           </form>
           {deletingId === report.id && (
-            <form onSubmit={(event) => deleteReport(event, report)} className="mt-3 space-y-2 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+            <form onSubmit={(event) => deleteReport(event, report)} className="space-y-2 border-t border-rose-200 bg-rose-50 p-4 sm:p-5">
               <label className="block text-xs font-semibold text-rose-900">삭제 사유 (필수 — 처리 이력과 운영 기록에 남습니다)
-                <textarea name="reason" required minLength={2} maxLength={300} rows={2} placeholder="예: 같은 내용 중복 신고 (REP-…와 같음)" className="mt-1 block w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm" />
+                <textarea name="reason" required minLength={2} maxLength={300} rows={2} placeholder="예: 같은 내용 중복 신고 (REP-…와 같음)" className="mt-1 block w-full px-3 py-2 text-sm" />
               </label>
               <div className="flex flex-wrap items-center gap-2">
-                <button disabled={busyId === report.id} className="inline-flex items-center gap-1.5 rounded-lg bg-rose-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제하기</button>
-                <button type="button" onClick={() => setDeletingId(null)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">취소</button>
-                <span className="text-[11px] text-slate-600">공개 목록에서 내려가고, 관리자는 '삭제된 신고'에서 되살릴 수 있습니다. 사진은 30일 동안 보관됩니다.</span>
+                <button disabled={busyId === report.id} className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-sm font-bold text-white disabled:opacity-60"><Trash2 className="h-4 w-4" />삭제하기</button>
+                <button type="button" onClick={() => setDeletingId(null)} className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700">취소</button>
+                <span className="text-xs text-slate-600">공개 목록에서 내려가고, 관리자는 '삭제된 신고'에서 되살릴 수 있습니다. 사진은 30일 동안 보관됩니다.</span>
               </div>
             </form>
           )}
-          {report.history.length > 0 && <details className="mt-3 rounded-lg bg-slate-50 px-3 py-2">
-            <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold text-slate-600"><History className="h-3.5 w-3.5" /> 처리 이력 {report.history.length}건</summary>
+          {report.history.length > 0 && <details className="border-t border-slate-100 px-4 py-3 sm:px-5">
+            <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800"><History className="h-3.5 w-3.5" /> 처리 이력 {report.history.length}건</summary>
             <ol className="mt-2 space-y-1">{[...report.history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`} className="text-xs text-slate-600"><span className="font-mono text-slate-400">{new Date(entry.at).toLocaleString("ko-KR")}</span> · <strong className="text-slate-700">{actorLabel(entry)}</strong> · {describeHistory(entry)}</li>)}</ol>
           </details>}
+          </div>
         </article>
         );
       })}
       </>}
+      </div>
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BellRing, Loader2, Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 import { monthKey, shiftMonth } from "../utils/monthlyStats";
 
 interface NotificationState {
@@ -103,10 +103,10 @@ export function NotificationSettingsPanel({ schoolId, schoolName }: Props) {
 
   return (
     <div className="space-y-4">
-      <section className={`rounded-2xl border p-5 ${connected ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <BellRing className={`h-6 w-6 ${connected ? "text-emerald-700" : "text-amber-700"}`} />
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${connected ? "bg-emerald-500" : "bg-amber-400"}`} />
             <div>
               <h2 className="font-bold text-slate-900">{connected ? `${CHANNEL_LABEL[state.channel!]}에 연결됨` : "알림 채널이 연결되지 않았습니다"}</h2>
               <p className="text-sm text-slate-600">

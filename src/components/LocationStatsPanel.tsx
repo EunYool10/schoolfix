@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MapPin, Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 import { LocationStatistic } from "../types";
 import { LocationStatsState } from "../hooks/useLocationStats";
 
@@ -30,12 +30,11 @@ export function LocationStatsPanel({ stats, hasFilters, rangeLabel }: LocationSt
   const topCount = locations[0]?.reportCount ?? 0;
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 print:hidden">
+    <section className="rounded-2xl border border-slate-200 bg-white px-5 py-4 print:hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold text-slate-900">
-          <MapPin className="h-4 w-4 text-blue-700" />
-          <span>위치별 신고 현황</span>
-          <span className="text-[11px] font-medium text-slate-400">{rangeLabel}</span>
+        <h2 className="inline-flex items-baseline gap-2">
+          <span className="font-display text-lg text-slate-900">어디서 많이 신고됐을까?</span>
+          <span className="text-xs font-medium text-slate-400">{rangeLabel}</span>
         </h2>
 
         {!isLoading && !error && locations.length > 0 && (
@@ -58,9 +57,8 @@ export function LocationStatsPanel({ stats, hasFilters, rangeLabel }: LocationSt
         </div>
       ) : locations.length === 0 ? (
         /* 빈 그래프나 0 을 그리지 않는다. 없는 데이터를 만들어 채우지도 않는다 (§7, §23). */
-        <div className="rounded-lg bg-slate-50 border border-slate-200 py-8 text-center">
-          <MapPin className="h-6 w-6 text-slate-300 mx-auto mb-2" />
-          <p className="text-xs text-slate-600">
+        <div className="py-6 text-center">
+          <p className="text-sm text-slate-600">
             {hasFilters
               ? "선택한 조건에 해당하는 신고가 없습니다."
               : "아직 집계할 신고 데이터가 없습니다."}
@@ -73,7 +71,7 @@ export function LocationStatsPanel({ stats, hasFilters, rangeLabel }: LocationSt
         </div>
       ) : (
         <>
-          <ol className="space-y-2">
+          <ol className="divide-y divide-slate-100">
             {shown.map((item, index) => (
               <LocationRow key={item.name} rank={index + 1} item={item} topCount={topCount} />
             ))}
@@ -117,32 +115,26 @@ function LocationRow({
   const ratio = topCount > 0 ? Math.max(6, Math.round((item.reportCount / topCount) * 100)) : 0;
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5">
-      <div className="flex items-center gap-2">
-        <span
-          className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-bold ${
-            rank === 1 ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-600"
-          }`}
-        >
-          {rank}
-        </span>
+    <li className="py-3">
+      <div className="flex items-baseline gap-3">
+        <span className={`w-4 shrink-0 font-display text-base ${rank === 1 ? "text-blue-600" : "text-slate-400"}`}>{rank}</span>
 
-        <span className="text-xs font-bold text-slate-900 truncate">{item.name}</span>
+        <span className="truncate text-sm font-semibold text-slate-900">{item.name}</span>
 
-        <span className="ml-auto shrink-0 text-xs font-bold font-mono tabular-nums text-slate-900">
+        <span className="ml-auto shrink-0 text-sm font-bold tabular-nums text-slate-900">
           {item.reportCount}
-          <span className="text-[10px] font-normal text-slate-500 ml-0.5">건</span>
+          <span className="ml-0.5 text-xs font-normal text-slate-500">건</span>
         </span>
       </div>
 
-      <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+      <div className="ml-7 mt-2 h-1 overflow-hidden rounded-full bg-slate-100">
         <div
-          className={`h-full rounded-full ${item.urgentCount > 0 ? "bg-rose-500" : item.highRiskCount > 0 ? "bg-orange-500" : "bg-blue-600"}`}
+          className={`h-full rounded-full ${item.urgentCount > 0 ? "bg-rose-400" : item.highRiskCount > 0 ? "bg-orange-400" : "bg-blue-400"}`}
           style={{ width: `${ratio}%` }}
         />
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+      <div className="ml-7 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
         {item.mainCategory && (
           <span>
             주요 문제{" "}

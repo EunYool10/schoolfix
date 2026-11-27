@@ -62,7 +62,7 @@ export function StaffDeletedReportsPanel({ schoolId, schoolName, canPurge, onRes
 
   return (
     <div className="space-y-3">
-      <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed text-slate-600">
+      <p className="break-keep text-sm leading-relaxed text-slate-600">
         <strong>{schoolName}</strong>에서 삭제한 신고입니다. 삭제·장난 신고 처리·검토 후 삭제한 신고가 모두 여기 남습니다.
         <strong> 되살리면</strong> 공개 목록에 다시 나타나고, 사진은 삭제 후 30일 안에 되살려야 함께 돌아옵니다.
         <strong> 영구 삭제</strong>는 글과 사진을 저장소에서 완전히 지우며 되돌릴 수 없습니다.
@@ -70,7 +70,7 @@ export function StaffDeletedReportsPanel({ schoolId, schoolName, canPurge, onRes
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
       {loading ? <p className="py-8 text-center text-sm text-slate-500"><Loader2 className="inline h-4 w-4 animate-spin" /> 불러오는 중</p>
-        : items.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">삭제된 신고가 없습니다.</p>
+        : items.length === 0 ? <p className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">삭제된 신고가 없습니다.</p>
         : items.map((item) => (
           <article key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">

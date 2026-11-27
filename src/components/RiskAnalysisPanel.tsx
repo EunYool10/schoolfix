@@ -36,7 +36,7 @@ export function RiskAnalysisPanel({
   // 분석 결과가 없는 경우 — 없는 값을 지어내지 않고 상태만 알린다.
   if (!analysis) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div>
         <div className="flex items-start gap-2.5">
           <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
           <div className="min-w-0 flex-1">

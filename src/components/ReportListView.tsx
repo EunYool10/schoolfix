@@ -1,15 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  Search,
-  Sparkles,
-  FileDown,
-  Printer,
-  Inbox,
-  RefreshCw,
-  X,
-  Loader2,
-  ShieldAlert,
-} from "lucide-react";
+import { Search, Sparkles, Printer, RefreshCw, X, Loader2 } from "lucide-react";
 import {
   SchoolReport,
   AiSummaryResponse,
@@ -249,32 +239,27 @@ export function ReportListView({
         type="button"
         onClick={() => setTab(value)}
         aria-current={active ? "page" : undefined}
-        className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
+        className={`inline-flex items-center gap-1.5 px-1 pb-3 pt-1 mr-6 text-base font-bold border-b-[3px] transition cursor-pointer whitespace-nowrap ${
           active
-            ? "border-blue-700 text-blue-700"
+            ? "border-blue-600 text-slate-900"
             : "border-transparent text-slate-500 hover:text-slate-800"
         }`}
       >
         <span>{label}</span>
-        <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-            active ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
-          }`}
-        >
-          {count}
-        </span>
-        {fresh > 0 && (
-          <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-white">
-            새 소식 {fresh}
-          </span>
-        )}
+        <span className={`tabular-nums ${active ? "text-blue-500" : "text-slate-400"}`}>{count}</span>
+        {fresh > 0 && <span className="text-xs font-bold text-rose-600">새 소식 {fresh}</span>}
       </button>
     );
   };
 
   return (
-    <div className="space-y-4">
-      {/* 상단: 탭 + 액션 버튼 */}
+    <div className="space-y-5">
+      <div className="print:hidden">
+        <h1 className="text-[28px] leading-snug text-slate-900 sm:text-[32px]">신고 목록</h1>
+        <p className="mt-1 text-[15px] text-slate-600">우리 학교에 들어온 신고와 처리 상황이에요. 누르면 자세히 볼 수 있어요.</p>
+      </div>
+
+      {/* 탭 + 액션 버튼 */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 border-b border-slate-200 print:hidden">
         <div className="flex items-center overflow-x-auto">
           {tabButton("MINE", "내 신고", myReports.length, updates?.size ?? 0)}
@@ -286,39 +271,31 @@ export function ReportListView({
             type="button"
             onClick={handleAiSummary}
             disabled={isSummarizing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-700 text-white text-xs font-semibold hover:bg-blue-800 transition cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:border-slate-400 transition cursor-pointer disabled:opacity-50"
           >
             {isSummarizing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             ) : (
-              <Sparkles className="h-3.5 w-3.5" />
+              <Sparkles className="h-4 w-4 text-blue-600" />
             )}
             <span>AI 요약</span>
           </button>
           <button
             type="button"
             onClick={openReportWindow}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:border-slate-400 transition cursor-pointer"
           >
-            <FileDown className="h-3.5 w-3.5" />
-            <span>PDF 저장</span>
-          </button>
-          <button
-            type="button"
-            onClick={openReportWindow}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            <span>인쇄</span>
+            <Printer className="h-4 w-4 text-slate-500" />
+            <span>PDF·인쇄</span>
           </button>
           <button
             type="button"
             onClick={onRefresh}
             disabled={isRefreshing}
             aria-label="새로고침"
-            className="p-1.5 rounded-lg border border-slate-300 bg-white text-slate-500 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+            className="p-2 rounded-xl border border-slate-300 bg-white text-slate-500 hover:border-slate-400 transition cursor-pointer disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
           </button>
         </div>
       </div>
@@ -326,13 +303,13 @@ export function ReportListView({
       {/* 필터 */}
       <div className="flex flex-wrap items-center gap-2 print:hidden">
         <div className="relative flex-1 min-w-[180px]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <input
             type="search"
             value={filters.search}
             onChange={(e) => setField("search", e.target.value)}
             placeholder="접수번호, 위치, 내용 검색"
-            className="w-full rounded-lg border border-slate-300 pl-8 pr-3 py-2 text-xs outline-none focus:border-slate-900 transition"
+            className="h-10 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm outline-none transition"
           />
         </div>
 
@@ -340,7 +317,7 @@ export function ReportListView({
           value={filters.category}
           onChange={(e) => setField("category", e.target.value)}
           aria-label="카테고리 필터"
-          className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs bg-white cursor-pointer"
+          className="h-10 rounded-xl border border-slate-300 px-3 text-sm bg-white cursor-pointer"
         >
           <option value="ALL">전체 유형</option>
           {availableCategories.map((c) => (
@@ -354,7 +331,7 @@ export function ReportListView({
           value={filters.risk}
           onChange={(e) => setField("risk", e.target.value)}
           aria-label="위험도 필터"
-          className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs bg-white cursor-pointer"
+          className="h-10 rounded-xl border border-slate-300 px-3 text-sm bg-white cursor-pointer"
         >
           <option value="ALL">전체 위험도</option>
           {RISK_OPTIONS.map((r) => (
@@ -368,7 +345,7 @@ export function ReportListView({
           value={filters.status}
           onChange={(e) => setField("status", e.target.value)}
           aria-label="처리 상태 필터"
-          className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs bg-white cursor-pointer"
+          className="h-10 rounded-xl border border-slate-300 px-3 text-sm bg-white cursor-pointer"
         >
           <option value="ALL">전체 상태</option>
           {STATUS_OPTIONS.map((s) => (
@@ -382,7 +359,7 @@ export function ReportListView({
           value={filters.dateRange}
           onChange={(e) => setField("dateRange", e.target.value as DateRange)}
           aria-label="기간 필터"
-          className="rounded-lg border border-slate-300 px-2.5 py-2 text-xs bg-white cursor-pointer"
+          className="h-10 rounded-xl border border-slate-300 px-3 text-sm bg-white cursor-pointer"
         >
           {(Object.keys(DATE_RANGE_LABELS) as DateRange[]).map((d) => (
             <option key={d} value={d}>
@@ -395,7 +372,7 @@ export function ReportListView({
           <button
             type="button"
             onClick={reset}
-            className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+            className="inline-flex items-center gap-1 px-2.5 py-2 rounded-xl text-sm font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
           >
             <X className="h-3.5 w-3.5" />
             <span>필터 해제 ({activeCount})</span>
@@ -406,10 +383,7 @@ export function ReportListView({
       {/* AI 위험도 등급 분포 — 누르면 해당 등급으로 필터링된다 */}
       {source.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 print:hidden">
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 mr-0.5">
-            <ShieldAlert className="h-3.5 w-3.5" />
-            AI 위험도
-          </span>
+          <span className="mr-1 text-xs font-semibold text-slate-500">위험도</span>
 
           {RISK_OPTIONS.map((lvl) => {
             const n = riskCounts.counts[lvl] ?? 0;
@@ -422,8 +396,8 @@ export function ReportListView({
                 onClick={() => setField("risk", active ? "ALL" : lvl)}
                 aria-pressed={active}
                 disabled={n === 0}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-default ${
-                  active ? c.badgeClass : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+                  active ? "bg-white border-slate-400 text-slate-900" : "border-transparent text-slate-600 hover:bg-white"
                 }`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${c.dotClass}`} />
@@ -478,60 +452,45 @@ export function ReportListView({
             onNavigateNewReport={onNavigateNewReport}
           />
         ) : (
-          <ul className="space-y-2">
-            {filtered.map((r) => (
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            {filtered.map((r) => {
+              const statusInfo = r.moderationStatus === "held" ? null : STATUS_MAP[r.status] || STATUS_MAP.pending;
+              const news = updates?.get(r.id);
+              return (
               <li key={r.id}>
                 <button
                   type="button"
                   onClick={() => onOpenReport(r)}
-                  className="w-full text-left rounded-xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-xs transition cursor-pointer"
+                  className="flex w-full items-start gap-3.5 px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"
                 >
-                  <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                  <span className={`mt-[7px] h-2.5 w-2.5 shrink-0 rounded-full ${statusInfo ? statusInfo.dotClass : "bg-amber-400"}`} aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline gap-2">
+                      <span className="truncate text-[15px] font-bold text-slate-900">{r.title || `${r.location} ${r.category}`}</span>
+                      {news && <span className="shrink-0 text-xs font-bold text-rose-600">새 소식 · {news.map((kind) => UPDATE_LABEL[kind]).join(" · ")}</span>}
+                    </span>
+                    <span className="mt-0.5 block truncate text-sm text-slate-600">{r.description}</span>
+                    <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                      <span>{[r.locationType || r.location, r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · ")}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>{r.category}</span>
+                      <span className="text-slate-300">·</span>
+                      <span>{new Date(r.createdAt).toLocaleDateString("ko-KR")}</span>
+                      <RiskChip level={r.riskLevel ?? null} score={r.riskScore} />
+                      {r.isMine && <span className="font-semibold text-blue-700">내 신고</span>}
+                      {(r.meTooCount ?? 0) > 0 && <span className="font-semibold text-rose-600">나도 겪었어요 {r.meTooCount}</span>}
+                      {r.isMine && r.reporterReply && <span className="font-semibold text-indigo-700">학교 답변 있음</span>}
+                      {r.isMine && feedbackPending(r) && <span className="font-semibold text-emerald-700">해결됐는지 알려주세요</span>}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right">
                     <StatusChip status={r.status} moderationStatus={r.moderationStatus} />
-                    <RiskChip level={r.riskLevel ?? null} score={r.riskScore} />
-                    {r.isMine && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
-                        내 신고
-                      </span>
-                    )}
-                    {(r.meTooCount ?? 0) > 0 && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 font-semibold">
-                        나도 겪었어요 {r.meTooCount}
-                      </span>
-                    )}
-                    {r.isMine && r.reporterReply && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-semibold">
-                        학교 답변 있음
-                      </span>
-                    )}
-                    {updates?.get(r.id) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-600 text-white font-extrabold">
-                        NEW · {updates.get(r.id)!.map((kind) => UPDATE_LABEL[kind]).join(" · ")}
-                      </span>
-                    )}
-                    {r.isMine && feedbackPending(r) && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
-                        해결됐는지 알려주세요
-                      </span>
-                    )}
-                    <span className="ml-auto text-[10px] font-mono text-slate-400">{r.id}</span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-900 truncate">
-                    {r.title || `${r.location} ${r.category}`}
-                  </p>
-                  <p className="text-xs text-slate-600 mt-1 line-clamp-2 leading-relaxed">
-                    {r.description}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-500">
-                    <span>{[r.locationType || r.location, r.locationDetail, r.buildingName, r.floor, r.department, r.grade ? `${r.grade}학년` : null, r.className, r.roomName].filter(Boolean).join(" · ")}</span>
-                    <span className="text-slate-300">·</span>
-                    <span>{r.category}</span>
-                    <span className="text-slate-300">·</span>
-                    <span>{new Date(r.createdAt).toLocaleDateString("ko-KR")}</span>
-                  </div>
+                    <span className="mt-1 hidden font-mono text-[11px] text-slate-400 sm:block">{r.id}</span>
+                  </span>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>
@@ -549,16 +508,9 @@ export function ReportListView({
 }
 
 function StatusChip({ status, moderationStatus }: { status: ReportStatus; moderationStatus?: SchoolReport["moderationStatus"] }) {
-  if (moderationStatus === "held") return <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />운영진 검토 대기</span>;
+  if (moderationStatus === "held") return <span className="text-xs font-semibold text-amber-700">검토 대기</span>;
   const c = STATUS_MAP[status] || STATUS_MAP.pending;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-semibold ${c.badgeClass}`}
-    >
-      <span className={`h-1.5 w-1.5 rounded-full ${c.dotClass}`} />
-      {c.label}
-    </span>
-  );
+  return <span className={`text-xs font-semibold ${c.textColor}`}>{c.label}</span>;
 }
 
 /**
@@ -570,21 +522,20 @@ function StatusChip({ status, moderationStatus }: { status: ReportStatus; modera
 function RiskChip({ level, score }: { level: RiskLevel | null; score?: number | null }) {
   if (!level) {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-slate-300 bg-slate-50 text-[10px] text-slate-500">
-        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+      <span className="inline-flex items-center gap-1 text-slate-400">
+        <span className="text-slate-300">·</span>
+        <Loader2 className="h-3 w-3 animate-spin" />
         위험도 분석 중
       </span>
     );
   }
-
   const c = RISK_LEVEL_MAP[level];
   return (
-    <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] ${c.badgeClass}`}
-    >
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-slate-300">·</span>
       <span className={`h-1.5 w-1.5 rounded-full ${c.dotClass}`} />
-      {level}
-      {typeof score === "number" && <span className="font-mono opacity-70">{score}</span>}
+      <span className={`font-semibold ${c.textColor}`}>위험도 {level}</span>
+      {typeof score === "number" && <span className="tabular-nums text-slate-400">{score}</span>}
     </span>
   );
 }
@@ -603,7 +554,7 @@ function EmptyState({
   if (hasFilters) {
     return (
       <div className="py-16 text-center space-y-3">
-        <Inbox className="h-8 w-8 text-slate-300 mx-auto" />
+        
         <p className="text-sm text-slate-600">조건에 맞는 신고가 없습니다.</p>
         <button
           type="button"
@@ -619,15 +570,15 @@ function EmptyState({
   if (tab === "MINE") {
     return (
       <div className="py-16 text-center space-y-3">
-        <Inbox className="h-8 w-8 text-slate-300 mx-auto" />
-        <p className="text-sm font-semibold text-slate-800">이 기기에서 등록한 신고가 없습니다.</p>
+        
+        <p className="font-hand text-2xl text-slate-600">이 기기에서 보낸 신고가 아직 없어요</p>
         <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
           학교에서 불편하거나 개선이 필요한 문제를 발견했다면 신고를 등록해주세요. 다른 기기에서 접수했다면 위의 "신고 불러오기" 를 이용하세요.
         </p>
         <button
           type="button"
           onClick={onNavigateNewReport}
-          className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition cursor-pointer"
+          className="inline-flex items-center px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition cursor-pointer"
         >
           신고하기
         </button>
@@ -637,12 +588,12 @@ function EmptyState({
 
   return (
     <div className="py-16 text-center space-y-3">
-      <Inbox className="h-8 w-8 text-slate-300 mx-auto" />
-      <p className="text-sm text-slate-600">아직 등록된 신고가 없습니다.</p>
+      
+      <p className="font-hand text-2xl text-slate-600">아직 들어온 신고가 없어요</p>
       <button
         type="button"
         onClick={onNavigateNewReport}
-        className="inline-flex items-center px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 transition cursor-pointer"
+        className="inline-flex items-center px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition cursor-pointer"
       >
         신고하기
       </button>
